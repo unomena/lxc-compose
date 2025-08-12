@@ -247,6 +247,13 @@ sudo ufw route allow out on lxcbr0 || true
 
 log "Setting up Python environment for LXC Compose CLI..."
 
+# Check network connectivity first
+log "Checking network connectivity..."
+if ! ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
+    warning "No internet connectivity detected. Some packages may not install."
+    warning "You may need to configure DNS or proxy settings."
+fi
+
 # Install Python packages - handle both old and new pip versions
 PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
 
@@ -259,13 +266,31 @@ fi
 
 # Don't try to upgrade pip, just install packages
 log "Installing Python packages..."
-sudo pip3 install $PIP_FLAGS \
-    click \
-    pyyaml \
-    jinja2 \
-    tabulate \
-    colorama \
-    requests || warning "Some Python packages may have failed to install"
+
+# Try to install packages, but continue if some fail
+for package in click pyyaml jinja2 tabulate colorama requests; do
+    if sudo pip3 install $PIP_FLAGS $package 2>/dev/null; then
+        info "Installed $package"
+    else
+        # Try with apt if pip fails
+        case $package in
+            click) sudo apt-get install -y python3-click 2>/dev/null || true ;;
+            pyyaml) sudo apt-get install -y python3-yaml 2>/dev/null || true ;;
+            jinja2) sudo apt-get install -y python3-jinja2 2>/dev/null || true ;;
+            tabulate) sudo apt-get install -y python3-tabulate 2>/dev/null || true ;;
+            colorama) sudo apt-get install -y python3-colorama 2>/dev/null || true ;;
+            requests) sudo apt-get install -y python3-requests 2>/dev/null || true ;;
+        esac
+    fi
+done
+
+# Check if essential packages are installed
+if ! python3 -c "import click" 2>/dev/null; then
+    warning "Python click module not installed - CLI may not work properly"
+fi
+if ! python3 -c "import yaml" 2>/dev/null; then
+    warning "Python yaml module not installed - CLI may not work properly"
+fi
 
 #############################################################################
 # 6. DIRECTORY STRUCTURE
@@ -290,7 +315,7 @@ sudo chown -R $OWNER_USER:$OWNER_USER /srv/
 log "Configuring centralized log rotation..."
 
 OWNER_USER=${SUDO_USER:-ubuntu}
-sudo tee /etc/logrotate.d/lxc-apps > /dev/null <<EOF
+sudo tee /etc/logrotate.d/lxc-apps > /dev/null <<'EOF'
 /srv/logs/*/*.log {
     daily
     rotate 7
@@ -298,7 +323,7 @@ sudo tee /etc/logrotate.d/lxc-apps > /dev/null <<EOF
     delaycompress
     missingok
     notifempty
-    create 0644 $OWNER_USER $OWNER_USER
+    create 0644 ubuntu ubuntu
     sharedscripts
     postrotate
         for container in $(lxc-ls --running 2>/dev/null); do
@@ -307,6 +332,9 @@ sudo tee /etc/logrotate.d/lxc-apps > /dev/null <<EOF
     endscript
 }
 EOF
+
+# Update the ownership in the logrotate file
+sudo sed -i "s/create 0644 ubuntu ubuntu/create 0644 $OWNER_USER $OWNER_USER/" /etc/logrotate.d/lxc-apps
 
 #############################################################################
 # 8. MONITORING TOOLS
