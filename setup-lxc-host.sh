@@ -714,7 +714,6 @@ alias cdlogs='cd /srv/logs'
 alias ports='sudo netstat -tulpn | grep LISTEN'
 alias monitor='glances'
 EOF
-fi
 
 #############################################################################
 # 13. DOCUMENTATION
