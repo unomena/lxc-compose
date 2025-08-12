@@ -33,10 +33,17 @@ info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-# Check if running as ubuntu user
-if [[ "$USER" != "ubuntu" ]]; then
-    error "This script should be run as the 'ubuntu' user"
+# Check if running with proper permissions
+# Accept either ubuntu user or root (when run via sudo)
+if [[ "$USER" != "ubuntu" ]] && [[ "$EUID" -ne 0 ]]; then
+    error "This script should be run as the 'ubuntu' user or with sudo"
     exit 1
+fi
+
+# Get the actual user (even when running with sudo)
+ACTUAL_USER=${SUDO_USER:-$USER}
+if [[ "$ACTUAL_USER" != "ubuntu" ]] && [[ "$ACTUAL_USER" != "root" ]]; then
+    warning "Script is designed for the 'ubuntu' user, running as '$ACTUAL_USER'"
 fi
 
 log "Starting LXC host machine setup..."
@@ -109,6 +116,7 @@ log "Configuring SSH hardening..."
 sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d_%H%M%S)
 
 # SSH Hardening
+OWNER_USER=${SUDO_USER:-ubuntu}
 sudo mkdir -p /etc/ssh/sshd_config.d/
 sudo tee /etc/ssh/sshd_config.d/99-hardening.conf > /dev/null <<EOF
 # SSH Hardening Configuration
@@ -124,7 +132,7 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 MaxAuthTries 3
 MaxSessions 10
-AllowUsers ubuntu
+AllowUsers $OWNER_USER
 Protocol 2
 EOF
 
@@ -271,8 +279,9 @@ sudo mkdir -p /srv/lxc-compose/templates/{base,app,database,monitor}
 sudo mkdir -p /srv/shared/{database,media,certificates}
 sudo mkdir -p /srv/shared/database/{postgres,redis}
 
-# Set ownership
-sudo chown -R ubuntu:ubuntu /srv/
+# Set ownership to the actual user
+OWNER_USER=${SUDO_USER:-ubuntu}
+sudo chown -R $OWNER_USER:$OWNER_USER /srv/
 
 #############################################################################
 # 7. LOG ROTATION CONFIGURATION
@@ -280,7 +289,8 @@ sudo chown -R ubuntu:ubuntu /srv/
 
 log "Configuring centralized log rotation..."
 
-sudo tee /etc/logrotate.d/lxc-apps > /dev/null <<'EOF'
+OWNER_USER=${SUDO_USER:-ubuntu}
+sudo tee /etc/logrotate.d/lxc-apps > /dev/null <<EOF
 /srv/logs/*/*.log {
     daily
     rotate 7
@@ -288,7 +298,7 @@ sudo tee /etc/logrotate.d/lxc-apps > /dev/null <<'EOF'
     delaycompress
     missingok
     notifempty
-    create 0644 ubuntu ubuntu
+    create 0644 $OWNER_USER $OWNER_USER
     sharedscripts
     postrotate
         for container in $(lxc-ls --running 2>/dev/null); do
@@ -434,7 +444,8 @@ EOF
 # Create directories
 sudo mkdir -p /srv/apps/$CONTAINER_NAME/{code,config,media}
 sudo mkdir -p /srv/logs/$CONTAINER_NAME
-sudo chown -R ubuntu:ubuntu /srv/apps/$CONTAINER_NAME /srv/logs/$CONTAINER_NAME
+OWNER_USER=${SUDO_USER:-ubuntu}
+sudo chown -R $OWNER_USER:$OWNER_USER /srv/apps/$CONTAINER_NAME /srv/logs/$CONTAINER_NAME
 
 # Copy setup script
 sudo cp /srv/lxc-compose/scripts/setup-container-internal.sh /srv/apps/$CONTAINER_NAME/
