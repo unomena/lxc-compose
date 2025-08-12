@@ -18,7 +18,11 @@ After installation:
 # Source the new aliases
 source ~/.bashrc
 
-# Create your first container
+# Option 1: Use the interactive setup wizard (recommended)
+sudo /srv/lxc-compose/wizard.sh
+
+# Option 2: Create containers manually
+lxcc-create datastore 10.0.3.2 database
 lxcc-create app-1 10.0.3.11 app
 ```
 

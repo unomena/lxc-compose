@@ -166,6 +166,12 @@ install_files() {
         sudo chmod +x /srv/lxc-compose/setup-lxc-host.sh
     fi
     
+    # Copy wizard if exists
+    if [[ -f "wizard.sh" ]]; then
+        sudo cp wizard.sh /srv/lxc-compose/wizard.sh
+        sudo chmod +x /srv/lxc-compose/wizard.sh
+    fi
+    
     # Set ownership
     sudo chown -R ubuntu:ubuntu /srv/
     
