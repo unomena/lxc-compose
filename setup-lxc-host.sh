@@ -458,16 +458,18 @@ sudo tee -a "$CONFIG_FILE" > /dev/null <<EOF
 # Network
 lxc.net.0.ipv4.address = $CONTAINER_IP/24
 lxc.net.0.ipv4.gateway = 10.0.3.1
-lxc.net.0.dns.nameserver = 8.8.8.8
 
-# Resources
-lxc.cgroup2.memory.max = 2G
-lxc.cgroup2.cpu.max = 200000 100000
+# Resources (comment out if not supported)
+# lxc.cgroup2.memory.max = 2G
+# lxc.cgroup2.cpu.max = 200000 100000
 
 # Mounts
 lxc.mount.entry = /srv/apps/$CONTAINER_NAME srv/app none bind,create=dir 0 0
 lxc.mount.entry = /srv/logs/$CONTAINER_NAME var/log/app none bind,create=dir 0 0
 EOF
+
+# Add DNS configuration inside the container's resolv.conf after it starts
+echo "nameserver 8.8.8.8" | sudo tee /srv/apps/$CONTAINER_NAME/resolv.conf.template > /dev/null
 
 # Create directories
 sudo mkdir -p /srv/apps/$CONTAINER_NAME/{code,config,media}
@@ -481,6 +483,9 @@ sudo cp /srv/lxc-compose/scripts/setup-container-internal.sh /srv/apps/$CONTAINE
 echo "Container created! Start with: sudo lxc-start -n $CONTAINER_NAME"
 echo "Then attach: sudo lxc-attach -n $CONTAINER_NAME"
 echo "Run inside: /srv/app/setup-container-internal.sh $CONTAINER_TYPE"
+echo ""
+echo "Note: If DNS doesn't work, run inside container:"
+echo "  echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
 SCRIPT
 
 # Container list script
