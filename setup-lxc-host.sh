@@ -647,11 +647,22 @@ SCRIPT
 # Make scripts executable
 chmod +x /srv/lxc-compose/scripts/*.sh 2>/dev/null || true
 
+# Download and install wizard if not present
+if [[ ! -f /srv/lxc-compose/wizard.sh ]]; then
+    log "Downloading setup wizard..."
+    sudo curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/wizard.sh -o /srv/lxc-compose/wizard.sh
+    sudo chmod +x /srv/lxc-compose/wizard.sh
+fi
+
 # Verify scripts were created
 if [[ ! -f /srv/lxc-compose/scripts/create-container.sh ]]; then
     warning "Helper scripts may not have been created properly"
 else
     info "Helper scripts created successfully"
+fi
+
+if [[ -f /srv/lxc-compose/wizard.sh ]]; then
+    info "Setup wizard available at /srv/lxc-compose/wizard.sh"
 fi
 
 #############################################################################
@@ -788,8 +799,11 @@ echo "📂 Base: /srv/"
 echo ""
 echo "🚀 Next Steps:"
 echo "   1. source ~/.bashrc"
-echo "   2. lxcc-create database 10.0.3.2 database"
-echo "   3. lxcc-create app-1 10.0.3.11 app"
+echo "   2. sudo /srv/lxc-compose/wizard.sh  (Interactive setup wizard)"
+echo ""
+echo "   Or manually create containers:"
+echo "   - lxcc-create datastore 10.0.3.2 database"
+echo "   - lxcc-create app-1 10.0.3.11 app"
 echo ""
 echo "📖 Full docs: /srv/README.md"
 echo ""
