@@ -1,0 +1,30 @@
+# /srv/lxc-compose/templates/app/nginx.conf.template
+
+upstream django_backend {
+    {% for server in upstream_servers %}
+    server {{ server }};
+    {% endfor %}
+}
+
+server {
+    listen 80;
+    server_name _;
+    
+    client_max_body_size 100M;
+    
+    location /static/ {
+        alias {{ static_root }}/;
+    }
+    
+    location /media/ {
+        alias {{ media_root }}/;
+    }
+    
+    location / {
+        proxy_pass http://django_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

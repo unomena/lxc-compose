@@ -1,0 +1,64 @@
+# /srv/lxc-compose/configs/app-1.yaml
+container:
+  name: app-1
+  template: app-template
+  ip: 10.0.3.11
+  
+services:
+  django:
+    instances: 2
+    ports: 
+      - 8000
+      - 8001
+    command: "gunicorn myapp.wsgi:application --bind 0.0.0.0:{port}"
+    environment_file: /srv/apps/app-1/secrets.env
+    
+  celery:
+    instances: 3
+    queues:
+      - default: "celery -A myapp worker -Q default -n worker{instance}@%h"
+      - email: "celery -A myapp worker -Q email -n email{instance}@%h"
+      - heavy: "celery -A myapp worker -Q heavy -n heavy{instance}@%h"
+    environment_file: /srv/apps/app-1/secrets.env
+    
+  celerybeat:
+    instances: 1
+    command: "celery -A myapp beat"
+    environment_file: /srv/apps/app-1/secrets.env
+    
+  nginx:
+    upstream_servers:
+      - localhost:8000
+      - localhost:8001
+    ssl:
+      enabled: false  # Can be enabled with certificates
+      cert_path: /etc/certificates/app-1.crt
+      key_path: /etc/certificates/app-1.key
+    static_root: /app/code/static
+    media_root: /app/media
+
+mounts:
+  - host: /srv/apps/app-1/code
+    container: /app/code
+  - host: /srv/apps/app-1/media
+    container: /app/media
+  - host: /srv/apps/app-1/config
+    container: /app/config
+  - host: /srv/logs/app-1
+    container: /var/log/app
+
+hosts:
+  - ip: 10.0.3.2
+    names: 
+      - postgres
+      - redis
+      - database
+  - ip: 10.0.3.3
+    names:
+      - monitor
+
+logging:
+  rotation: daily
+  keep_days: 7
+  centralized: true
+  path: /srv/logs/app-1
