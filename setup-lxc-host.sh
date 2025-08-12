@@ -607,27 +607,31 @@ if [[ "$CONTAINER_TYPE" == "app" ]]; then
     echo "App container ready!"
 
 elif [[ "$CONTAINER_TYPE" == "database" ]]; then
-    # PostgreSQL
-    echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-    apt-get update
-    
+    # Use Ubuntu's standard PostgreSQL packages (more reliable)
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        postgresql-15 postgresql-client-15 postgresql-contrib-15 \
+        postgresql postgresql-client postgresql-contrib \
         redis-server redis-tools
     
+    # Get PostgreSQL version
+    PG_VERSION=$(ls /etc/postgresql/ | head -1)
+    
     # Configure PostgreSQL
-    echo "listen_addresses = '*'" >> /etc/postgresql/15/main/postgresql.conf
-    echo "host all all 10.0.3.0/24 md5" >> /etc/postgresql/15/main/pg_hba.conf
+    if [[ -n "$PG_VERSION" ]]; then
+        echo "listen_addresses = '*'" >> /etc/postgresql/$PG_VERSION/main/postgresql.conf
+        echo "host all all 10.0.3.0/24 md5" >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf
+        
+        systemctl restart postgresql
+    fi
     
     # Configure Redis
-    sed -i 's/^bind 127.0.0.1/bind 0.0.0.0/' /etc/redis/redis.conf
-    sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
-    
-    systemctl restart postgresql
-    systemctl restart redis-server
+    if [[ -f /etc/redis/redis.conf ]]; then
+        sed -i 's/^bind 127.0.0.1/bind 0.0.0.0/' /etc/redis/redis.conf
+        sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
+        systemctl restart redis-server
+    fi
     
     echo "Database container ready!"
+    echo "PostgreSQL version: $PG_VERSION"
     echo "Create PostgreSQL user: sudo -u postgres createuser --interactive"
     echo "Create database: sudo -u postgres createdb dbname"
 
