@@ -6,6 +6,13 @@
 
 A Docker Compose-like orchestration tool for LXC containers that provides simple, declarative configuration for deploying and managing multi-container applications using Linux Containers (LXC).
 
+## 🚀 Quick Start
+
+Install with one command:
+```bash
+curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
+```
+
 ## Features
 
 - **Docker Compose-like syntax** - Familiar YAML configuration format
@@ -15,17 +22,22 @@ A Docker Compose-like orchestration tool for LXC containers that provides simple
 - **Centralized logging** - Structured log management across all containers
 - **Template-based deployment** - Reusable container templates for different service types
 
-## Quick Start
+## Quick Usage Example
+
+After installation:
 
 ```bash
-# Setup LXC host environment
-sudo ./setup-lxc-host.sh
-
 # Deploy database container
 lxc-compose up -f /srv/lxc-compose/configs/database.yaml
 
 # Deploy application
 lxc-compose up -f /srv/lxc-compose/configs/app-1.yaml
+
+# Check status
+lxc-compose ps
+
+# View logs
+lxc-compose logs -f /srv/lxc-compose/configs/app-1.yaml
 ```
 
 ## Prerequisites
@@ -37,26 +49,54 @@ lxc-compose up -f /srv/lxc-compose/configs/app-1.yaml
 
 ## Installation
 
-### 1. Clone Repository
+### Quick Install (Recommended)
+
+Install LXC Compose with a single command:
+
 ```bash
-git clone <repository-url>
-cd devops
+# Using curl
+curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
+
+# Or using wget
+wget -qO- https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
 ```
 
-### 2. Setup Host Environment
+This will:
+- Download the latest version from GitHub
+- Install all files to `/srv/lxc-compose/`
+- Create the `lxc-compose` command
+- Optionally run the full host setup
+
+### Manual Installation
+
+If you prefer to install manually:
+
+#### 1. Clone Repository
 ```bash
-# Run as ubuntu user with sudo privileges
+git clone https://github.com/unomena/lxc-compose.git
+cd lxc-compose
+```
+
+#### 2. Run Installation Script
+```bash
+# Install LXC Compose files
+sudo ./install.sh
+
+# Or directly run the host setup
 sudo ./setup-lxc-host.sh
 ```
 
-This script will:
+### Post-Installation
+
+After installation, the setup script will:
 - Install and configure LXC/LXD
 - Setup bridge networking (10.0.3.0/24)
 - Create required directories in `/srv/`
 - Install Python dependencies
 - Configure system parameters
+- Create helper scripts and aliases
 
-### 3. Verify Installation
+### Verify Installation
 ```bash
 # Check LXC status
 lxc list
@@ -65,7 +105,10 @@ lxc list
 ip addr show lxcbr0
 
 # Test CLI tool
-/srv/lxc-compose/cli/lxc_compose.py --help
+lxc-compose --help
+
+# View available commands
+lxc-compose
 ```
 
 ## Architecture Overview
