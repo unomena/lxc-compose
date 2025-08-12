@@ -46,7 +46,7 @@ welcome() {
     clear
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║           LXC Compose Setup Wizard                          ║"
+    echo "║           LXC Compose Setup Wizard                           ║"
     echo "║     Configure Database, Cache, and Application Containers    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
@@ -226,9 +226,17 @@ create_app_container() {
     log "Configuring container network..."
     sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
     
-    # Run setup script
+    # Run setup script if it exists
     log "Setting up application environment..."
-    sudo lxc-attach -n "$container_name" -- /srv/app/setup-container-internal.sh app
+    if sudo lxc-attach -n "$container_name" -- test -f /srv/app/setup-container-internal.sh; then
+        sudo lxc-attach -n "$container_name" -- /srv/app/setup-container-internal.sh app
+    else
+        # Manual setup if script doesn't exist
+        sudo lxc-attach -n "$container_name" -- bash -c "
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv nginx supervisor
+        "
+    fi
     
     log "Application container '$container_name' created successfully!"
     info "Container IP: $container_ip"
