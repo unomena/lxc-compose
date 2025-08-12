@@ -645,7 +645,14 @@ echo "Setup complete for $CONTAINER_TYPE container!"
 SCRIPT
 
 # Make scripts executable
-chmod +x /srv/lxc-compose/scripts/*.sh
+chmod +x /srv/lxc-compose/scripts/*.sh 2>/dev/null || true
+
+# Verify scripts were created
+if [[ ! -f /srv/lxc-compose/scripts/create-container.sh ]]; then
+    warning "Helper scripts may not have been created properly"
+else
+    info "Helper scripts created successfully"
+fi
 
 #############################################################################
 # 11. SYSTEMD SERVICE
@@ -678,8 +685,12 @@ sudo systemctl enable lxc-containers.service
 
 log "Setting up bash aliases..."
 
-if ! grep -q "# LXC Aliases" ~/.bashrc; then
-    cat >> ~/.bashrc <<'EOF'
+# Remove old aliases if they exist
+sed -i '/# LXC Compose Aliases/,/^$/d' ~/.bashrc 2>/dev/null || true
+sed -i '/# LXC Aliases/,/^$/d' ~/.bashrc 2>/dev/null || true
+
+# Add new aliases
+cat >> ~/.bashrc <<'EOF'
 
 # LXC Compose Aliases
 alias lxcc-list='/srv/lxc-compose/scripts/list-containers.sh'
