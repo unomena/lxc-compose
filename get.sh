@@ -1,9 +1,16 @@
 #!/bin/bash
 
 #############################################################################
-# LXC Compose Quick Installer
-# This script is designed to be downloaded and executed via curl/wget
+# LXC Compose Quick Installer (get.sh)
+# 
+# This is a lightweight wrapper that downloads and runs the full installer.
+# It's designed to be used with curl/wget for one-liner installation.
+# 
 # Usage: curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
+# 
+# This script will:
+# 1. Download the full install.sh script
+# 2. Run it automatically (which installs files AND runs setup)
 #############################################################################
 
 set -euo pipefail

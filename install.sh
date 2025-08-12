@@ -1,9 +1,20 @@
 #!/bin/bash
 
 #############################################################################
-# LXC Compose Installation Script
-# Downloads and installs LXC Compose from GitHub repository
+# LXC Compose Installation Script (install.sh)
+# 
+# Full installation script that:
+# 1. Downloads LXC Compose from GitHub repository
+# 2. Installs all files to /srv/lxc-compose/
+# 3. Creates the lxc-compose command
+# 4. Automatically runs the host setup (unless in interactive mode)
+#
 # Compatible with Ubuntu 22.04 and 24.04 LTS
+# 
+# Usage:
+#   - Via curl one-liner: Use get.sh instead
+#   - Direct: ./install.sh
+#   - Skip setup: SKIP_SETUP=true ./install.sh
 #############################################################################
 
 set -euo pipefail
@@ -182,18 +193,40 @@ EOF
 run_setup() {
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║           LXC Compose Installation Complete! ✓               ║"
+    echo "║           LXC Compose Files Installed! ✓                     ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     info "Files installed to: /srv/lxc-compose/"
     info "Command available: lxc-compose"
     echo ""
     
-    read -p "Would you like to run the full host setup now? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Check if we should skip setup (for manual runs or if already set up)
+    SKIP_SETUP=${SKIP_SETUP:-false}
+    
+    # If running interactively and not skipping, ask
+    if [[ -t 0 ]] && [[ "$SKIP_SETUP" != "true" ]]; then
+        read -p "Would you like to run the full host setup now? (Y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            RUN_SETUP=true
+        else
+            RUN_SETUP=false
+        fi
+    else
+        # Non-interactive mode (piped) or SKIP_SETUP=true - run setup automatically unless skipped
+        if [[ "$SKIP_SETUP" == "true" ]]; then
+            RUN_SETUP=false
+            info "Skipping host setup (SKIP_SETUP=true)"
+        else
+            RUN_SETUP=true
+            log "Running host setup automatically..."
+        fi
+    fi
+    
+    if [[ "$RUN_SETUP" == "true" ]]; then
         if [[ -f "/srv/lxc-compose/setup-lxc-host.sh" ]]; then
-            log "Running host setup..."
+            log "Setting up LXC host environment..."
+            echo ""
             sudo bash /srv/lxc-compose/setup-lxc-host.sh
         else
             warning "Setup script not found at /srv/lxc-compose/setup-lxc-host.sh"
@@ -223,15 +256,6 @@ main() {
     run_setup
     
     cleanup
-    
-    echo ""
-    log "Installation complete! ✓"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Review configuration in /srv/lxc-compose/configs/"
-    echo "  2. Create your first container: lxc-compose up -f /srv/lxc-compose/configs/database.yaml"
-    echo "  3. Check status: lxc-compose ps"
-    echo ""
 }
 
 # Run main function

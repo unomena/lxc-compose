@@ -51,25 +51,28 @@ lxc-compose logs -f /srv/lxc-compose/configs/app-1.yaml
 
 ### Quick Install (Recommended)
 
-Install LXC Compose with a single command:
+Install and configure LXC Compose with a single command:
 
 ```bash
-# Using curl
+# Using curl (recommended)
 curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
 
 # Or using wget
 wget -qO- https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
 ```
 
-This will:
-- Download the latest version from GitHub
-- Install all files to `/srv/lxc-compose/`
-- Create the `lxc-compose` command
-- Optionally run the full host setup
+This will automatically:
+1. Download the latest version from GitHub
+2. Install all files to `/srv/lxc-compose/`
+3. Create the `lxc-compose` command
+4. **Run the full LXC host setup** (install LXC, configure networking, etc.)
+5. Configure your system for container management
+
+The entire process takes about 2-3 minutes and your system will be ready to use.
 
 ### Manual Installation
 
-If you prefer to install manually:
+If you prefer more control over the installation process:
 
 #### 1. Clone Repository
 ```bash
@@ -77,13 +80,16 @@ git clone https://github.com/unomena/lxc-compose.git
 cd lxc-compose
 ```
 
-#### 2. Run Installation Script
+#### 2. Installation Options
 ```bash
-# Install LXC Compose files
+# Full installation (files + host setup) - same as one-liner
 sudo ./install.sh
 
-# Or directly run the host setup
-sudo ./setup-lxc-host.sh
+# Install files only (skip host setup)
+SKIP_SETUP=true sudo ./install.sh
+
+# Just run host setup (if files already installed)
+sudo /srv/lxc-compose/setup-lxc-host.sh
 ```
 
 ### Post-Installation
