@@ -672,13 +672,18 @@ log "Setting up bash aliases..."
 if ! grep -q "# LXC Aliases" ~/.bashrc; then
     cat >> ~/.bashrc <<'EOF'
 
-# LXC Aliases
-alias lxc-list='/srv/lxc-compose/scripts/list-containers.sh'
-alias lxc-create='/srv/lxc-compose/scripts/create-container.sh'
-alias lxc-manage='/srv/lxc-compose/scripts/manage-container.sh'
-alias lxc-running='sudo lxc-ls --running'
-alias lxc-stop-all='for c in $(sudo lxc-ls --running); do sudo lxc-stop -n $c; done'
-alias lxc-start-all='for c in $(sudo lxc-ls); do sudo lxc-start -n $c; done'
+# LXC Compose Aliases
+alias lxcc-list='/srv/lxc-compose/scripts/list-containers.sh'
+alias lxcc-create='/srv/lxc-compose/scripts/create-container.sh'
+alias lxcc-manage='/srv/lxc-compose/scripts/manage-container.sh'
+alias lxcc-running='sudo lxc-ls --running'
+alias lxcc-stop-all='for c in $(sudo lxc-ls --running); do sudo lxc-stop -n $c; done'
+alias lxcc-start-all='for c in $(sudo lxc-ls); do sudo lxc-start -n $c; done'
+
+# Shortcuts (alternative names)
+alias create-container='/srv/lxc-compose/scripts/create-container.sh'
+alias list-containers='/srv/lxc-compose/scripts/list-containers.sh'
+alias manage-container='/srv/lxc-compose/scripts/manage-container.sh'
 
 # Navigation
 alias cdlxc='cd /srv/lxc-compose'
@@ -705,14 +710,14 @@ cat > /srv/README.md <<'DOCUMENTATION'
 ### Create containers:
 ```bash
 # Database container
-lxc-create database 10.0.3.2 database
+lxcc-create database 10.0.3.2 database
 sudo lxc-start -n database
 sudo lxc-attach -n database
 # Inside container:
 /srv/app/setup-container-internal.sh database
 
 # App container
-lxc-create app-1 10.0.3.11 app
+lxcc-create app-1 10.0.3.11 app
 sudo lxc-start -n app-1
 sudo lxc-attach -n app-1
 # Inside container:
@@ -721,11 +726,11 @@ sudo lxc-attach -n app-1
 
 ### Manage containers:
 ```bash
-lxc-list                     # List all containers
-lxc-manage start app-1       # Start container
-lxc-manage stop app-1        # Stop container
-lxc-manage attach app-1      # Enter container
-lxc-manage info app-1        # Container info
+lxcc-list                     # List all containers
+lxcc-manage start app-1       # Start container
+lxcc-manage stop app-1        # Stop container
+lxcc-manage attach app-1      # Enter container
+lxcc-manage info app-1        # Container info
 ```
 
 ## Network Layout
@@ -764,8 +769,8 @@ echo "📂 Base: /srv/"
 echo ""
 echo "🚀 Next Steps:"
 echo "   1. source ~/.bashrc"
-echo "   2. lxc-create database 10.0.3.2 database"
-echo "   3. lxc-create app-1 10.0.3.11 app"
+echo "   2. lxcc-create database 10.0.3.2 database"
+echo "   3. lxcc-create app-1 10.0.3.11 app"
 echo ""
 echo "📖 Full docs: /srv/README.md"
 echo ""

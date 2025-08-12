@@ -13,6 +13,15 @@ Install with one command:
 curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
 ```
 
+After installation:
+```bash
+# Source the new aliases
+source ~/.bashrc
+
+# Create your first container
+lxcc-create app-1 10.0.3.11 app
+```
+
 ## Features
 
 - **Docker Compose-like syntax** - Familiar YAML configuration format
