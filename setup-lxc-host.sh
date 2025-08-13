@@ -468,12 +468,12 @@ lxc.mount.entry = /srv/apps/$CONTAINER_NAME srv/app none bind,create=dir 0 0
 lxc.mount.entry = /srv/logs/$CONTAINER_NAME var/log/app none bind,create=dir 0 0
 EOF
 
-# Add DNS configuration inside the container's resolv.conf after it starts
-echo "nameserver 8.8.8.8" | sudo tee /srv/apps/$CONTAINER_NAME/resolv.conf.template > /dev/null
-
-# Create directories
+# Create directories first
 sudo mkdir -p /srv/apps/$CONTAINER_NAME/{code,config,media}
 sudo mkdir -p /srv/logs/$CONTAINER_NAME
+
+# Add DNS configuration inside the container's resolv.conf after it starts
+echo "nameserver 8.8.8.8" | sudo tee /srv/apps/$CONTAINER_NAME/resolv.conf.template > /dev/null
 OWNER_USER=${SUDO_USER:-ubuntu}
 sudo chown -R $OWNER_USER:$OWNER_USER /srv/apps/$CONTAINER_NAME /srv/logs/$CONTAINER_NAME
 
