@@ -161,6 +161,22 @@ run_doctor() {
         log "System health check passed - no issues found!"
     else
         warning "System health check found $issues issue(s)"
+        
+        # Check if updates are available and show how to update
+        if [[ -d "/srv/lxc-compose/.git" ]]; then
+            cd /srv/lxc-compose
+            git fetch origin main --quiet 2>/dev/null || true
+            LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "")
+            REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
+            
+            if [[ -n "$LOCAL" ]] && [[ -n "$REMOTE" ]] && [[ "$LOCAL" != "$REMOTE" ]]; then
+                echo ""
+                info "To update LXC Compose to the latest version, run:"
+                echo "  sudo lxc-compose update"
+                echo "  or"
+                echo "  cd /srv/lxc-compose && sudo git pull origin main"
+            fi
+        fi
     fi
     
     return $issues
