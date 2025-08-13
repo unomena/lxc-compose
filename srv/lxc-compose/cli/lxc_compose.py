@@ -98,5 +98,14 @@ def update():
     else:
         click.echo(f"Error: Update script not found at {script_path}", err=True)
 
+@cli.command()
+def wizard():
+    """Run the interactive setup wizard"""
+    script_path = '/srv/lxc-compose/wizard.sh'
+    if os.path.exists(script_path):
+        subprocess.run(['sudo', script_path])
+    else:
+        click.echo(f"Error: Wizard script not found at {script_path}", err=True)
+
 if __name__ == '__main__':
     cli()
