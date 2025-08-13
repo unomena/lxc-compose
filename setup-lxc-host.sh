@@ -704,17 +704,14 @@ sed -i '/# LXC Aliases/,/^$/d' ~/.bashrc 2>/dev/null || true
 cat >> ~/.bashrc <<'EOF'
 
 # LXC Compose Aliases
-alias lxcc-list='/srv/lxc-compose/scripts/list-containers.sh'
-alias lxcc-create='/srv/lxc-compose/scripts/create-container.sh'
-alias lxcc-manage='/srv/lxc-compose/scripts/manage-container.sh'
+alias lxcc-list='sudo lxc-ls --fancy'
+alias lxcc-info='sudo lxc-info'
+alias lxcc-attach='sudo lxc-attach -n'
 alias lxcc-running='sudo lxc-ls --running'
+alias lxcc-stop='sudo lxc-stop -n'
+alias lxcc-start='sudo lxc-start -n'
 alias lxcc-stop-all='for c in $(sudo lxc-ls --running); do sudo lxc-stop -n $c; done'
 alias lxcc-start-all='for c in $(sudo lxc-ls); do sudo lxc-start -n $c; done'
-
-# Shortcuts (alternative names)
-alias create-container='/srv/lxc-compose/scripts/create-container.sh'
-alias list-containers='/srv/lxc-compose/scripts/list-containers.sh'
-alias manage-container='/srv/lxc-compose/scripts/manage-container.sh'
 
 # Navigation
 alias cdlxc='cd /srv/lxc-compose'
