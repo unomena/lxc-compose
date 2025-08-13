@@ -340,12 +340,16 @@ def test(service, container):
                     click.echo(f"  Connection: psql -h {ips[0]} -U postgres")
         else:
             click.echo("✗ PostgreSQL test failed")
-            if 'psql: error' in result.stderr:
-                click.echo(f"  Error: {result.stderr.strip()}")
-            elif 'command not found' in result.stderr:
-                click.echo("  PostgreSQL does not appear to be installed")
-            else:
-                click.echo("  PostgreSQL may not be running or properly configured")
+            if result.stderr:
+                if 'psql: error' in result.stderr:
+                    click.echo(f"  Error: {result.stderr.strip()}")
+                elif 'command not found' in result.stderr:
+                    click.echo("  PostgreSQL does not appear to be installed")
+                else:
+                    click.echo(f"  Error output: {result.stderr.strip()}")
+            if result.stdout:
+                click.echo(f"  Output: {result.stdout.strip()}")
+            click.echo("  PostgreSQL may not be running or properly configured")
             
     # Test Redis
     elif service in ['redis', 'cache']:
@@ -398,12 +402,16 @@ def test(service, container):
                     click.echo(f"  Connection: redis-cli -h {ips[0]}")
         else:
             click.echo("✗ Redis test failed")
-            if 'command not found' in result.stderr:
-                click.echo("  Redis does not appear to be installed")
-            elif 'Could not connect' in result.stderr:
-                click.echo("  Redis is installed but not running")
-            else:
-                click.echo("  Redis may not be properly configured")
+            if result.stderr:
+                if 'command not found' in result.stderr:
+                    click.echo("  Redis does not appear to be installed")
+                elif 'Could not connect' in result.stderr:
+                    click.echo("  Redis is installed but not running")
+                else:
+                    click.echo(f"  Error output: {result.stderr.strip()}")
+            if result.stdout:
+                click.echo(f"  Output: {result.stdout.strip()}")
+            click.echo("  Redis may not be properly configured")
 
 @cli.command()
 def examples():
