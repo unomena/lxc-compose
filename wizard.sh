@@ -183,12 +183,44 @@ create_datastore() {
         # Configure Redis
         log "Configuring Redis..."
         sudo lxc-attach -n "$container_name" -- bash -c "
-            sed -i 's/^bind .*/bind 0.0.0.0/' /etc/redis/redis.conf
+            # Remove all existing bind lines and add a clean one
+            sed -i '/^bind/d' /etc/redis/redis.conf
+            echo 'bind 0.0.0.0' >> /etc/redis/redis.conf
+            
+            # Set protected mode off
             sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
-            systemctl restart redis-server
+            
+            # Comment out supervised mode (causes issues in LXC containers)
+            sed -i 's/^supervised/#supervised/' /etc/redis/redis.conf
+            
+            # Try to restart Redis service
+            systemctl restart redis-server || true
+            
+            # Verify Redis is working
+            sleep 2
+            redis-cli ping > /dev/null 2>&1 && echo 'Redis is running' || echo 'Redis service failed but may still be accessible'
         "
         
         log "Redis installed and configured"
+    fi
+    
+    # Verify services are working
+    log "Verifying services..."
+    
+    if [[ "$install_postgres" == "true" ]]; then
+        if sudo lxc-attach -n "$container_name" -- sudo -u postgres psql -c "SELECT 1" > /dev/null 2>&1; then
+            log "PostgreSQL is working correctly"
+        else
+            warning "PostgreSQL may need manual configuration"
+        fi
+    fi
+    
+    if [[ "$install_redis" == "true" ]]; then
+        if sudo lxc-attach -n "$container_name" -- redis-cli ping > /dev/null 2>&1; then
+            log "Redis is working correctly"
+        else
+            warning "Redis may need manual configuration"
+        fi
     fi
     
     # Show status
