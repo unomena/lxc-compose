@@ -34,10 +34,6 @@ check_installation() {
         error "LXC Compose is not installed. Please run: curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash"
     fi
     
-    if [[ ! -f /srv/lxc-compose/scripts/create-container.sh ]]; then
-        error "LXC Compose scripts not found. Please reinstall."
-    fi
-    
     log "LXC Compose installation verified"
 }
 
