@@ -59,29 +59,6 @@ def cli():
     """
     pass
 
-@cli.command()
-@click.option('-f', '--file', required=True, help='Configuration file')
-def up(file):
-    """Create and start container with all services"""
-    compose = LXCCompose(file)
-    compose.create_container()
-    click.echo(f"Container {compose.config['container']['name']} started")
-
-@cli.command()
-@click.option('-f', '--file', required=True)
-def down(file):
-    """Stop and destroy container"""
-    # Implementation
-    pass
-
-
-@cli.command()
-@click.option('-f', '--file', required=True)
-@click.argument('service')
-def logs(file, service):
-    """Tail logs for a specific service"""
-    # Implementation
-    pass
 
 
 @cli.command()
