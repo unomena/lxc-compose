@@ -80,5 +80,23 @@ def exec(file, service, command):
     # Implementation
     pass
 
+@cli.command()
+def doctor():
+    """Check system health and diagnose issues"""
+    script_path = '/srv/lxc-compose/update.sh'
+    if os.path.exists(script_path):
+        subprocess.run(['sudo', script_path, 'doctor'])
+    else:
+        click.echo(f"Error: Update script not found at {script_path}", err=True)
+
+@cli.command()
+def update():
+    """Update LXC Compose to the latest version"""
+    script_path = '/srv/lxc-compose/update.sh'
+    if os.path.exists(script_path):
+        subprocess.run(['sudo', script_path, 'update'])
+    else:
+        click.echo(f"Error: Update script not found at {script_path}", err=True)
+
 if __name__ == '__main__':
     cli()
