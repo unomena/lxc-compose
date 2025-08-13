@@ -109,8 +109,29 @@ create_datastore() {
     
     log "Creating datastore container '$container_name' at IP $container_ip..."
     
-    # Create the container
-    /srv/lxc-compose/scripts/create-container.sh "$container_name" "$container_ip" database
+    # Create the container using our own method to avoid the script error
+    log "Creating container..."
+    sudo lxc-create -n "$container_name" -t download -- \
+        --dist ubuntu --release jammy --arch $(dpkg --print-architecture)
+    
+    # Configure container
+    local CONFIG_FILE="/var/lib/lxc/$container_name/config"
+    sudo tee -a "$CONFIG_FILE" > /dev/null <<EOF
+
+# Network
+lxc.net.0.ipv4.address = $container_ip/24
+lxc.net.0.ipv4.gateway = 10.0.3.1
+
+# Mounts
+lxc.mount.entry = /srv/apps/$container_name srv/app none bind,create=dir 0 0
+lxc.mount.entry = /srv/logs/$container_name var/log/app none bind,create=dir 0 0
+EOF
+    
+    # Create directories
+    sudo mkdir -p /srv/apps/$container_name/{code,config,media}
+    sudo mkdir -p /srv/logs/$container_name
+    local OWNER_USER=${SUDO_USER:-ubuntu}
+    sudo chown -R $OWNER_USER:$OWNER_USER /srv/apps/$container_name /srv/logs/$container_name
     
     # Start the container
     log "Starting container..."
@@ -246,8 +267,29 @@ create_app_container() {
     
     log "Creating application container '$container_name' at IP $container_ip..."
     
-    # Create the container
-    /srv/lxc-compose/scripts/create-container.sh "$container_name" "$container_ip" app
+    # Create the container using our own method
+    log "Creating container..."
+    sudo lxc-create -n "$container_name" -t download -- \
+        --dist ubuntu --release jammy --arch $(dpkg --print-architecture)
+    
+    # Configure container
+    local CONFIG_FILE="/var/lib/lxc/$container_name/config"
+    sudo tee -a "$CONFIG_FILE" > /dev/null <<EOF
+
+# Network
+lxc.net.0.ipv4.address = $container_ip/24
+lxc.net.0.ipv4.gateway = 10.0.3.1
+
+# Mounts
+lxc.mount.entry = /srv/apps/$container_name srv/app none bind,create=dir 0 0
+lxc.mount.entry = /srv/logs/$container_name var/log/app none bind,create=dir 0 0
+EOF
+    
+    # Create directories
+    sudo mkdir -p /srv/apps/$container_name/{code,config,media}
+    sudo mkdir -p /srv/logs/$container_name
+    local OWNER_USER=${SUDO_USER:-ubuntu}
+    sudo chown -R $OWNER_USER:$OWNER_USER /srv/apps/$container_name /srv/logs/$container_name
     
     # Start the container
     log "Starting container..."
@@ -257,18 +299,14 @@ create_app_container() {
     # Configure DNS
     log "Configuring container network..."
     sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
+    sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 1.1.1.1' >> /etc/resolv.conf"
     
-    # Run setup script if it exists
+    # Setup application environment
     log "Setting up application environment..."
-    if sudo lxc-attach -n "$container_name" -- test -f /srv/app/setup-container-internal.sh; then
-        sudo lxc-attach -n "$container_name" -- /srv/app/setup-container-internal.sh app
-    else
-        # Manual setup if script doesn't exist
-        sudo lxc-attach -n "$container_name" -- bash -c "
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv nginx supervisor
-        "
-    fi
+    sudo lxc-attach -n "$container_name" -- bash -c "
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv nginx supervisor
+    "
     
     log "Application container '$container_name' created successfully!"
     info "Container IP: $container_ip"
