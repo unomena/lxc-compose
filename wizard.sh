@@ -105,6 +105,29 @@ create_datastore() {
     
     log "Creating datastore container '$container_name' at IP $container_ip..."
     
+    # Check if container already exists
+    if sudo lxc-info -n "$container_name" &>/dev/null; then
+        warning "Container '$container_name' already exists"
+        
+        # Check if it's running
+        if sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
+            info "Container is already running"
+            return 0
+        else
+            # Try to start existing container
+            log "Starting existing container..."
+            sudo lxc-start -n "$container_name"
+            sleep 5
+            return 0
+        fi
+    fi
+    
+    # Check if container directory exists but container isn't registered
+    if [[ -d "/var/lib/lxc/$container_name" ]]; then
+        warning "Container directory exists but container not registered, cleaning up..."
+        sudo rm -rf "/var/lib/lxc/$container_name"
+    fi
+    
     # Create the container using our own method to avoid the script error
     log "Creating container..."
     sudo lxc-create -n "$container_name" -t download -- \
@@ -262,6 +285,29 @@ create_app_container() {
     local container_ip="$2"
     
     log "Creating application container '$container_name' at IP $container_ip..."
+    
+    # Check if container already exists
+    if sudo lxc-info -n "$container_name" &>/dev/null; then
+        warning "Container '$container_name' already exists"
+        
+        # Check if it's running
+        if sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
+            info "Container is already running"
+            return 0
+        else
+            # Try to start existing container
+            log "Starting existing container..."
+            sudo lxc-start -n "$container_name"
+            sleep 5
+            return 0
+        fi
+    fi
+    
+    # Check if container directory exists but container isn't registered
+    if [[ -d "/var/lib/lxc/$container_name" ]]; then
+        warning "Container directory exists but container not registered, cleaning up..."
+        sudo rm -rf "/var/lib/lxc/$container_name"
+    fi
     
     # Create the container using our own method
     log "Creating container..."
