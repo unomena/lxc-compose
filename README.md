@@ -75,13 +75,21 @@ wget -qO- https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | ba
 ```
 
 This will automatically:
-1. Download the latest version from GitHub
-2. Install all files to `/srv/lxc-compose/`
+1. Clone the git repository to `/srv/lxc-compose/`
+2. Create additional directories in `/srv/`
 3. Create the `lxc-compose` command
 4. **Run the full LXC host setup** (install LXC, configure networking, etc.)
 5. Configure your system for container management
 
 The entire process takes about 2-3 minutes and your system will be ready to use.
+
+### Updating LXC Compose
+
+Since the installation creates a git repository, you can easily update to the latest version:
+```bash
+cd /srv/lxc-compose
+sudo git pull
+```
 
 ### Manual Installation
 

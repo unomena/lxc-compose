@@ -22,7 +22,6 @@ set -euo pipefail
 # Configuration
 REPO_URL="https://github.com/unomena/lxc-compose.git"
 INSTALL_DIR="/srv"
-TEMP_DIR="/tmp/lxc-compose-install-$$"
 
 # Color codes for output
 RED='\033[0;31m'
@@ -38,7 +37,6 @@ log() {
 
 error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
-    cleanup
     exit 1
 }
 
@@ -50,14 +48,7 @@ info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-cleanup() {
-    if [[ -d "$TEMP_DIR" ]]; then
-        rm -rf "$TEMP_DIR"
-    fi
-}
-
-# Trap cleanup on exit
-trap cleanup EXIT
+# No cleanup needed since we clone directly to /srv/lxc-compose
 
 # Check prerequisites
 check_prerequisites() {
@@ -101,84 +92,58 @@ check_prerequisites() {
 
 # Download repository
 download_repo() {
-    log "Downloading LXC Compose repository..."
+    log "Setting up LXC Compose repository in /srv/lxc-compose..."
     
-    # Create temp directory
-    mkdir -p "$TEMP_DIR"
-    cd "$TEMP_DIR"
+    # Create /srv directory if it doesn't exist
+    sudo mkdir -p /srv
     
-    # Clone repository
-    if ! git clone "$REPO_URL" lxc-compose 2>/dev/null; then
-        # If clone fails, try downloading as archive
-        warning "Git clone failed, trying archive download..."
-        curl -L "https://github.com/unomena/lxc-compose/archive/main.tar.gz" -o lxc-compose.tar.gz
-        tar -xzf lxc-compose.tar.gz
-        mv lxc-compose-main lxc-compose
+    # Check if it's already a git repository
+    if [[ -d "/srv/lxc-compose/.git" ]]; then
+        log "Repository exists, pulling latest changes..."
+        cd /srv/lxc-compose
+        sudo git pull || warning "Could not pull latest changes"
+    else
+        # Remove old installation if it exists (non-git)
+        if [[ -d "/srv/lxc-compose" ]]; then
+            warning "Removing old non-git installation..."
+            sudo rm -rf /srv/lxc-compose
+        fi
+        
+        # Clone directly to /srv/lxc-compose
+        log "Cloning repository to /srv/lxc-compose..."
+        sudo git clone "$REPO_URL" /srv/lxc-compose || {
+            error "Failed to clone repository to /srv/lxc-compose"
+        }
     fi
     
-    if [[ ! -d "lxc-compose" ]]; then
-        error "Failed to download repository"
+    # Ensure we have the repository
+    if [[ ! -d "/srv/lxc-compose" ]]; then
+        error "Failed to set up repository in /srv/lxc-compose"
     fi
+    
+    log "Repository ready at /srv/lxc-compose"
 }
 
 # Install files
 install_files() {
-    log "Installing LXC Compose files..."
+    log "Setting up LXC Compose structure..."
     
-    cd "$TEMP_DIR/lxc-compose"
-    
-    # Create directory structure
-    sudo mkdir -p /srv/{lxc-compose,apps,shared,logs}
-    sudo mkdir -p /srv/lxc-compose/{cli,templates,configs,scripts,lib}
-    sudo mkdir -p /srv/lxc-compose/templates/{base,app,database,monitor}
+    # Create additional directories needed
+    sudo mkdir -p /srv/{apps,shared,logs}
     sudo mkdir -p /srv/shared/{database,media,certificates}
     sudo mkdir -p /srv/shared/database/{postgres,redis}
     
-    # Copy files from srv/ directory
-    if [[ -d "srv" ]]; then
-        log "Copying srv/ contents..."
-        sudo cp -r srv/* /srv/ 2>/dev/null || true
-    fi
-    
-    # Copy CLI files
-    if [[ -d "srv/lxc-compose/cli" ]]; then
-        sudo cp -r srv/lxc-compose/cli/* /srv/lxc-compose/cli/ 2>/dev/null || true
-    fi
-    
-    # Copy templates
-    if [[ -d "srv/lxc-compose/templates" ]]; then
-        sudo cp -r srv/lxc-compose/templates/* /srv/lxc-compose/templates/ 2>/dev/null || true
-    fi
-    
-    # Copy configs
-    if [[ -d "srv/lxc-compose/configs" ]]; then
-        sudo cp -r srv/lxc-compose/configs/* /srv/lxc-compose/configs/ 2>/dev/null || true
-    fi
-    
-    # Copy scripts
-    if [[ -d "srv/lxc-compose/scripts" ]]; then
-        sudo cp -r srv/lxc-compose/scripts/* /srv/lxc-compose/scripts/ 2>/dev/null || true
-    fi
-    
-    # Copy setup script if exists
-    if [[ -f "setup-lxc-host.sh" ]]; then
-        sudo cp setup-lxc-host.sh /srv/lxc-compose/setup-lxc-host.sh
-        sudo chmod +x /srv/lxc-compose/setup-lxc-host.sh
-    fi
-    
-    # Copy wizard if exists
-    if [[ -f "wizard.sh" ]]; then
-        sudo cp wizard.sh /srv/lxc-compose/wizard.sh
-        sudo chmod +x /srv/lxc-compose/wizard.sh
-    fi
-    
-    # Set ownership
-    sudo chown -R ubuntu:ubuntu /srv/
-    
-    # Make scripts executable
+    # Ensure all scripts are executable
+    sudo chmod +x /srv/lxc-compose/*.sh 2>/dev/null || true
     sudo chmod +x /srv/lxc-compose/cli/*.py 2>/dev/null || true
     sudo chmod +x /srv/lxc-compose/scripts/*.sh 2>/dev/null || true
     sudo chmod +x /srv/lxc-compose/scripts/*.py 2>/dev/null || true
+    
+    # Set ownership
+    OWNER_USER=${SUDO_USER:-ubuntu}
+    sudo chown -R $OWNER_USER:$OWNER_USER /srv/
+    
+    log "Directory structure created"
 }
 
 # Create lxc-compose command
@@ -260,8 +225,6 @@ main() {
     install_files
     create_command
     run_setup
-    
-    cleanup
 }
 
 # Run main function
