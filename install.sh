@@ -99,9 +99,26 @@ download_repo() {
     
     # Check if it's already a git repository
     if [[ -d "/srv/lxc-compose/.git" ]]; then
-        log "Repository exists, pulling latest changes..."
+        log "Repository exists, updating to latest version..."
         cd /srv/lxc-compose
-        sudo git pull || warning "Could not pull latest changes"
+        
+        # Stash any local changes
+        if sudo git status --porcelain | grep -q .; then
+            warning "Stashing local changes..."
+            sudo git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)"
+        fi
+        
+        # Pull latest changes
+        if sudo git pull origin main; then
+            log "Successfully updated to latest version"
+            
+            # Check if there were stashed changes
+            if sudo git stash list | grep -q "Auto-stash before update"; then
+                info "Local changes were stashed. To restore: cd /srv/lxc-compose && sudo git stash pop"
+            fi
+        else
+            warning "Could not pull latest changes - continuing with existing version"
+        fi
     else
         # Remove old installation if it exists (non-git)
         if [[ -d "/srv/lxc-compose" ]]; then
@@ -174,19 +191,42 @@ EOF
 # Run setup if requested
 run_setup() {
     echo ""
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║           LXC Compose Files Installed! ✓                     ║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
+    
+    # Check if LXC is already set up
+    local NEEDS_SETUP=false
+    
+    if ! command -v lxc >/dev/null 2>&1; then
+        NEEDS_SETUP=true
+        info "LXC not installed - setup required"
+    elif ! ip link show lxcbr0 >/dev/null 2>&1; then
+        NEEDS_SETUP=true
+        info "LXC bridge not configured - setup required"
+    elif [[ ! -d "/srv/apps" ]] || [[ ! -d "/srv/shared" ]] || [[ ! -d "/srv/logs" ]]; then
+        NEEDS_SETUP=true
+        info "Directory structure incomplete - setup required"
+    fi
+    
+    if [[ "$NEEDS_SETUP" == "true" ]]; then
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║           Initial Setup Required                              ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+    else
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║           LXC Compose Updated! ✓                              ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+        info "System already configured"
+    fi
+    
     echo ""
-    info "Files installed to: /srv/lxc-compose/"
-    info "Command available: lxc-compose"
+    info "Repository: /srv/lxc-compose/"
+    info "Command: lxc-compose"
     echo ""
     
-    # Check if we should skip setup (for manual runs or if already set up)
+    # Check if we should skip setup
     SKIP_SETUP=${SKIP_SETUP:-false}
     
-    # If running interactively and not skipping, ask
-    if [[ -t 0 ]] && [[ "$SKIP_SETUP" != "true" ]]; then
+    # If running interactively and setup is needed
+    if [[ -t 0 ]] && [[ "$SKIP_SETUP" != "true" ]] && [[ "$NEEDS_SETUP" == "true" ]]; then
         read -p "Would you like to run the full host setup now? (Y/n): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
@@ -194,15 +234,17 @@ run_setup() {
         else
             RUN_SETUP=false
         fi
+    elif [[ "$SKIP_SETUP" == "true" ]]; then
+        RUN_SETUP=false
+        info "Skipping host setup (SKIP_SETUP=true)"
+    elif [[ "$NEEDS_SETUP" == "true" ]]; then
+        # Non-interactive mode and setup needed - run it
+        RUN_SETUP=true
+        log "Running host setup automatically..."
     else
-        # Non-interactive mode (piped) or SKIP_SETUP=true - run setup automatically unless skipped
-        if [[ "$SKIP_SETUP" == "true" ]]; then
-            RUN_SETUP=false
-            info "Skipping host setup (SKIP_SETUP=true)"
-        else
-            RUN_SETUP=true
-            log "Running host setup automatically..."
-        fi
+        # Setup not needed
+        RUN_SETUP=false
+        log "System already configured - skipping setup"
     fi
     
     if [[ "$RUN_SETUP" == "true" ]]; then
@@ -216,8 +258,16 @@ run_setup() {
         fi
     else
         echo ""
-        echo "To complete the setup later, run:"
-        echo "  sudo bash /srv/lxc-compose/setup-lxc-host.sh"
+        if [[ "$NEEDS_SETUP" == "true" ]]; then
+            echo "To complete the setup, run:"
+            echo "  sudo bash /srv/lxc-compose/setup-lxc-host.sh"
+        else
+            echo "To run the setup wizard:"
+            echo "  sudo /srv/lxc-compose/wizard.sh"
+            echo ""
+            echo "To check system health:"
+            echo "  lxc-compose doctor"
+        fi
         echo ""
     fi
 }
