@@ -83,14 +83,6 @@ def logs(file, service):
     # Implementation
     pass
 
-@cli.command()
-@click.option('-f', '--file', required=True)
-@click.argument('service')
-@click.argument('command', nargs=-1)
-def exec(file, service, command):
-    """Execute command in container context"""
-    # Implementation
-    pass
 
 @cli.command()
 def doctor():
@@ -235,6 +227,22 @@ def execute(container, command):
       lxc-compose execute datastore sudo -u postgres psql -l
       lxc-compose execute app-1 python3 --version
       lxc-compose execute app-1 cat /etc/os-release
+    """
+    cmd = ['sudo', 'lxc-attach', '-n', container, '--'] + list(command)
+    subprocess.run(cmd)
+
+@cli.command()
+@click.argument('container')
+@click.argument('command', nargs=-1, required=True)
+def exec(container, command):
+    """Execute a command in a container (alias for execute)
+    
+    \b
+    Examples:
+      lxc-compose exec datastore redis-cli ping
+      lxc-compose exec datastore sudo -u postgres psql -l
+      lxc-compose exec app-1 python3 --version
+      lxc-compose exec app-1 cat /etc/os-release
     """
     cmd = ['sudo', 'lxc-attach', '-n', container, '--'] + list(command)
     subprocess.run(cmd)
@@ -431,7 +439,7 @@ CONTAINER ACCESS
 ----------------
   lxc-compose attach datastore    # Enter container shell
   lxc-compose execute datastore ls -la /srv
-  lxc-compose execute app-1 python3 --version
+  lxc-compose exec app-1 python3 --version  # 'exec' is alias for 'execute'
 
 SERVICE TESTING
 ---------------
