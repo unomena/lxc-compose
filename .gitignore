@@ -1,0 +1,29 @@
+# Local scripts created by setup
+scripts/create-container.sh
+scripts/list-containers.sh
+scripts/manage-container.sh
+scripts/setup-container-internal.sh
+
+# Local modifications
+setup-lxc-host.sh.local
+
+# System files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Logs
+*.log
+logs/
+
+# Local environment
+.env
+.env.local
