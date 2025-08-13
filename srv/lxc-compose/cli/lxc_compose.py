@@ -39,7 +39,24 @@ class LXCCompose:
 
 @click.group()
 def cli():
-    """LXC Compose - Docker Compose-like orchestration for LXC"""
+    """LXC Compose - Docker Compose-like orchestration for LXC
+    
+    \b
+    QUICK START:
+      lxc-compose wizard         # Interactive setup wizard
+      lxc-compose list           # List all containers
+      lxc-compose status         # System overview
+    
+    \b
+    COMMON EXAMPLES:
+      lxc-compose test db        # Test PostgreSQL in datastore
+      lxc-compose test redis     # Test Redis in datastore
+      lxc-compose attach datastore  # Enter container shell
+      lxc-compose execute datastore redis-cli ping
+    
+    \b
+    Use 'lxc-compose COMMAND --help' for more information on a command.
+    """
     pass
 
 @cli.command()
@@ -105,7 +122,13 @@ def wizard():
 @cli.command(name='list')
 @click.option('--running', is_flag=True, help='Show only running containers')
 def list_containers(running):
-    """List all containers"""
+    """List all containers
+    
+    \b
+    Examples:
+      lxc-compose list           # Show all containers with details
+      lxc-compose list --running # Show only running containers
+    """
     if running:
         subprocess.run(['sudo', 'lxc-ls', '--running'])
     else:
@@ -114,13 +137,25 @@ def list_containers(running):
 @cli.command()
 @click.argument('container')
 def attach(container):
-    """Attach to a container shell"""
+    """Attach to a container shell
+    
+    \b
+    Examples:
+      lxc-compose attach datastore  # Enter the datastore container
+      lxc-compose attach app-1      # Enter app-1 container
+    """
     subprocess.run(['sudo', 'lxc-attach', '-n', container])
 
 @cli.command()
 @click.argument('container', required=False)
 def info(container):
-    """Show container information"""
+    """Show container information
+    
+    \b
+    Examples:
+      lxc-compose info             # Show info for all containers
+      lxc-compose info datastore   # Show info for specific container
+    """
     if container:
         subprocess.run(['sudo', 'lxc-info', '-n', container])
     else:
@@ -135,13 +170,25 @@ def info(container):
 @cli.command()
 @click.argument('container')
 def start(container):
-    """Start a container"""
+    """Start a container
+    
+    \b
+    Examples:
+      lxc-compose start datastore  # Start the datastore container
+      lxc-compose start app-1      # Start app-1 container
+    """
     subprocess.run(['sudo', 'lxc-start', '-n', container])
 
 @cli.command()
 @click.argument('container')
 def stop(container):
-    """Stop a container"""
+    """Stop a container
+    
+    \b
+    Examples:
+      lxc-compose stop datastore   # Stop the datastore container
+      lxc-compose stop app-1       # Stop app-1 container
+    """
     subprocess.run(['sudo', 'lxc-stop', '-n', container])
 
 @cli.command()
@@ -180,7 +227,15 @@ def ports():
 @click.argument('container')
 @click.argument('command', nargs=-1, required=True)
 def execute(container, command):
-    """Execute a command in a container"""
+    """Execute a command in a container
+    
+    \b
+    Examples:
+      lxc-compose execute datastore redis-cli ping
+      lxc-compose execute datastore sudo -u postgres psql -l
+      lxc-compose execute app-1 python3 --version
+      lxc-compose execute app-1 cat /etc/os-release
+    """
     cmd = ['sudo', 'lxc-attach', '-n', container, '--'] + list(command)
     subprocess.run(cmd)
 
@@ -213,7 +268,21 @@ def status():
 @click.argument('service', type=click.Choice(['db', 'database', 'postgres', 'postgresql', 'redis', 'cache'], case_sensitive=False))
 @click.argument('container', default='datastore')
 def test(service, container):
-    """Test database or Redis connectivity in a container"""
+    """Test database or Redis connectivity in a container
+    
+    \b
+    Examples:
+      lxc-compose test db          # Test PostgreSQL in datastore
+      lxc-compose test redis       # Test Redis in datastore  
+      lxc-compose test db mycontainer    # Test in specific container
+      lxc-compose test postgres datastore # Using alias names
+      lxc-compose test cache datastore    # 'cache' for Redis
+    
+    \b
+    Service aliases:
+      PostgreSQL: db, database, postgres, postgresql
+      Redis: redis, cache
+    """
     service = service.lower()
     
     # Check if container exists and is running
@@ -327,6 +396,85 @@ def test(service, container):
                 click.echo("  Redis is installed but not running")
             else:
                 click.echo("  Redis may not be properly configured")
+
+@cli.command()
+def examples():
+    """Show comprehensive examples for all commands"""
+    examples_text = """
+LXC COMPOSE COMMAND EXAMPLES
+============================
+
+SETUP & MAINTENANCE
+-------------------
+  lxc-compose wizard              # Run interactive setup wizard
+  lxc-compose doctor              # Check system health
+  lxc-compose update              # Update LXC Compose
+  lxc-compose status              # Show system overview
+
+CONTAINER LISTING
+-----------------
+  lxc-compose list                # List all containers with details
+  lxc-compose list --running      # List only running containers
+  lxc-compose info                # Info for all containers
+  lxc-compose info datastore      # Info for specific container
+
+CONTAINER MANAGEMENT
+--------------------
+  lxc-compose start datastore     # Start a container
+  lxc-compose stop datastore      # Stop a container
+  lxc-compose restart app-1       # Restart a container
+  lxc-compose start-all           # Start all containers
+  lxc-compose stop-all            # Stop all running containers
+  lxc-compose destroy test-app    # Destroy container (with confirmation)
+
+CONTAINER ACCESS
+----------------
+  lxc-compose attach datastore    # Enter container shell
+  lxc-compose execute datastore ls -la /srv
+  lxc-compose execute app-1 python3 --version
+
+SERVICE TESTING
+---------------
+  lxc-compose test db             # Test PostgreSQL in datastore
+  lxc-compose test redis          # Test Redis in datastore
+  lxc-compose test db app-1       # Test PostgreSQL in app-1
+  lxc-compose test postgres mydb  # Using 'postgres' alias
+  lxc-compose test cache myredis  # Using 'cache' alias for Redis
+
+DATABASE OPERATIONS
+-------------------
+  lxc-compose execute datastore sudo -u postgres createdb myapp
+  lxc-compose execute datastore sudo -u postgres createuser myuser
+  lxc-compose execute datastore sudo -u postgres psql -l
+  lxc-compose execute datastore sudo -u postgres psql -c "SELECT version();"
+
+REDIS OPERATIONS
+----------------
+  lxc-compose execute datastore redis-cli ping
+  lxc-compose execute datastore redis-cli info server
+  lxc-compose execute datastore redis-cli set mykey "myvalue"
+  lxc-compose execute datastore redis-cli get mykey
+
+MONITORING
+----------
+  lxc-compose ports               # Show all listening ports
+  lxc-compose status              # System overview with network & disk
+
+CONFIGURATION FILE OPERATIONS
+------------------------------
+  lxc-compose up -f config.yml    # Create container from config
+  lxc-compose down -f config.yml  # Stop and destroy container
+  lxc-compose logs -f config.yml nginx  # View service logs
+  lxc-compose exec -f config.yml app bash  # Execute in service
+
+TIPS
+----
+  • Default container for 'test' command is 'datastore'
+  • PostgreSQL aliases: db, database, postgres, postgresql
+  • Redis aliases: redis, cache
+  • Use 'lxc-compose COMMAND --help' for command-specific help
+    """
+    click.echo(examples_text)
 
 if __name__ == '__main__':
     cli()
