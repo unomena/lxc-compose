@@ -59,6 +59,9 @@ run_doctor() {
         log "Git repository found"
         cd /srv/lxc-compose
         
+        # Add repository to safe.directory for git (when running with sudo)
+        git config --global --add safe.directory /srv/lxc-compose 2>/dev/null || true
+        
         # Check git status
         if git status --porcelain | grep -q .; then
             warning "Repository has uncommitted changes"
@@ -165,6 +168,8 @@ run_doctor() {
         # Check if updates are available and show how to update
         if [[ -d "/srv/lxc-compose/.git" ]]; then
             cd /srv/lxc-compose
+            # Add repository to safe.directory for git (when running with sudo)
+            git config --global --add safe.directory /srv/lxc-compose 2>/dev/null || true
             git fetch origin main --quiet 2>/dev/null || true
             LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "")
             REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
@@ -194,6 +199,9 @@ run_update() {
     fi
     
     cd /srv/lxc-compose
+    
+    # Add repository to safe.directory for git (when running with sudo)
+    git config --global --add safe.directory /srv/lxc-compose 2>/dev/null || true
     
     # Stash any local changes
     if git status --porcelain | grep -q .; then
@@ -284,6 +292,8 @@ main() {
             # Ask if user wants to update if updates are available
             if [[ -d "/srv/lxc-compose/.git" ]]; then
                 cd /srv/lxc-compose
+                # Add repository to safe.directory for git (when running with sudo)
+                git config --global --add safe.directory /srv/lxc-compose 2>/dev/null || true
                 git fetch origin main --quiet
                 LOCAL=$(git rev-parse HEAD)
                 REMOTE=$(git rev-parse origin/main)
