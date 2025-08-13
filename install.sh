@@ -154,7 +154,18 @@ create_command() {
     sudo tee /usr/local/bin/lxc-compose > /dev/null <<'EOF'
 #!/bin/bash
 # LXC Compose CLI wrapper
-exec python3 /srv/lxc-compose/cli/lxc_compose.py "$@"
+# Check where the CLI actually is
+if [[ -f "/srv/lxc-compose/srv/lxc-compose/cli/lxc_compose.py" ]]; then
+    exec python3 /srv/lxc-compose/srv/lxc-compose/cli/lxc_compose.py "$@"
+elif [[ -f "/srv/lxc-compose/cli/lxc_compose.py" ]]; then
+    exec python3 /srv/lxc-compose/cli/lxc_compose.py "$@"
+else
+    echo "Error: lxc_compose.py not found"
+    echo "Checked:"
+    echo "  - /srv/lxc-compose/srv/lxc-compose/cli/lxc_compose.py"
+    echo "  - /srv/lxc-compose/cli/lxc_compose.py"
+    exit 1
+fi
 EOF
     
     sudo chmod +x /usr/local/bin/lxc-compose
