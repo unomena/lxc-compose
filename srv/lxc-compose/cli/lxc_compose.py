@@ -209,5 +209,124 @@ def status():
     click.echo("\n=== Disk Usage ===")
     subprocess.run(['df', '-h', '/srv'])
 
+@cli.command()
+@click.argument('service', type=click.Choice(['db', 'database', 'postgres', 'postgresql', 'redis', 'cache'], case_sensitive=False))
+@click.argument('container', default='datastore')
+def test(service, container):
+    """Test database or Redis connectivity in a container"""
+    service = service.lower()
+    
+    # Check if container exists and is running
+    result = subprocess.run(['sudo', 'lxc-info', '-n', container], capture_output=True, text=True)
+    if result.returncode != 0:
+        click.echo(f"Error: Container '{container}' not found", err=True)
+        return
+    
+    if 'STOPPED' in result.stdout:
+        click.echo(f"Error: Container '{container}' is not running", err=True)
+        click.echo(f"Start it with: lxc-compose start {container}")
+        return
+    
+    # Test PostgreSQL
+    if service in ['db', 'database', 'postgres', 'postgresql']:
+        click.echo(f"Testing PostgreSQL in container '{container}'...")
+        
+        # Test connection as postgres user
+        cmd = ['sudo', 'lxc-attach', '-n', container, '--', 
+               'sudo', '-u', 'postgres', 'psql', '-c', 'SELECT version();']
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            click.echo("✓ PostgreSQL is running and accessible")
+            # Extract and show version
+            for line in result.stdout.split('\n'):
+                if 'PostgreSQL' in line:
+                    click.echo(f"  Version: {line.strip()}")
+                    break
+            
+            # Show databases
+            cmd = ['sudo', 'lxc-attach', '-n', container, '--', 
+                   'sudo', '-u', 'postgres', 'psql', '-l', '-t']
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                databases = [db.split('|')[0].strip() for db in result.stdout.strip().split('\n') 
+                           if '|' in db and db.split('|')[0].strip()]
+                click.echo(f"  Databases: {', '.join(databases[:5])}")  # Show first 5 databases
+            
+            # Show connection info
+            # Get container IP
+            info_cmd = ['sudo', 'lxc-info', '-n', container, '-iH']
+            info_result = subprocess.run(info_cmd, capture_output=True, text=True)
+            if info_result.returncode == 0:
+                ips = info_result.stdout.strip().split('\n')
+                if ips:
+                    click.echo(f"  Connection: psql -h {ips[0]} -U postgres")
+        else:
+            click.echo("✗ PostgreSQL test failed")
+            if 'psql: error' in result.stderr:
+                click.echo(f"  Error: {result.stderr.strip()}")
+            elif 'command not found' in result.stderr:
+                click.echo("  PostgreSQL does not appear to be installed")
+            else:
+                click.echo("  PostgreSQL may not be running or properly configured")
+            
+    # Test Redis
+    elif service in ['redis', 'cache']:
+        click.echo(f"Testing Redis in container '{container}'...")
+        
+        # Test Redis ping
+        cmd = ['sudo', 'lxc-attach', '-n', container, '--', 'redis-cli', 'ping']
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0 and 'PONG' in result.stdout:
+            click.echo("✓ Redis is running and accessible")
+            
+            # Get Redis version
+            cmd = ['sudo', 'lxc-attach', '-n', container, '--', 'redis-cli', 'info', 'server']
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if line.startswith('redis_version:'):
+                        click.echo(f"  Version: Redis {line.split(':')[1]}")
+                        break
+            
+            # Test set/get
+            test_key = 'lxc_compose_test'
+            test_value = 'test_successful'
+            
+            # Set a test value
+            cmd = ['sudo', 'lxc-attach', '-n', container, '--', 
+                   'redis-cli', 'set', test_key, test_value]
+            subprocess.run(cmd, capture_output=True)
+            
+            # Get the test value
+            cmd = ['sudo', 'lxc-attach', '-n', container, '--', 
+                   'redis-cli', 'get', test_key]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if test_value in result.stdout:
+                click.echo("  Read/Write: Working")
+            
+            # Clean up test key
+            cmd = ['sudo', 'lxc-attach', '-n', container, '--', 
+                   'redis-cli', 'del', test_key]
+            subprocess.run(cmd, capture_output=True)
+            
+            # Show connection info
+            info_cmd = ['sudo', 'lxc-info', '-n', container, '-iH']
+            info_result = subprocess.run(info_cmd, capture_output=True, text=True)
+            if info_result.returncode == 0:
+                ips = info_result.stdout.strip().split('\n')
+                if ips:
+                    click.echo(f"  Connection: redis-cli -h {ips[0]}")
+        else:
+            click.echo("✗ Redis test failed")
+            if 'command not found' in result.stderr:
+                click.echo("  Redis does not appear to be installed")
+            elif 'Could not connect' in result.stderr:
+                click.echo("  Redis is installed but not running")
+            else:
+                click.echo("  Redis may not be properly configured")
+
 if __name__ == '__main__':
     cli()
