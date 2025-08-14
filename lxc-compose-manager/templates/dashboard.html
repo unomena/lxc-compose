@@ -206,7 +206,7 @@
         </svg>
         Refresh
     </button>
-    <button class="action-btn" onclick="runDoctor()">
+    <button class="action-btn" onclick="runHealthCheck()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
         </svg>
@@ -336,19 +336,18 @@ function openShell(name) {
     window.open(`/api/container/${name}/shell`, '_blank');
 }
 
-function runDoctor() {
-    fetch('/api/command/execute', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({command: 'doctor'})
-    })
+function runHealthCheck() {
+    fetch('/health')
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            alert('Health Check Results:\n\n' + data.stdout);
+        if (data.status === 'healthy') {
+            alert('✅ Health Check Results:\n\nStatus: ' + data.status + '\nMessage: ' + data.message);
         } else {
-            alert('Health check failed');
+            alert('⚠️ Health Check Results:\n\nStatus: ' + data.status + '\nMessage: ' + data.message);
         }
+    })
+    .catch(error => {
+        alert('❌ Health check failed:\n\n' + error.message);
     });
 }
 </script>
