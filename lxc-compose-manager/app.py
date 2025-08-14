@@ -385,8 +385,30 @@ def api_command_execute():
         if len(parts) >= 3:
             container = parts[1]
             cmd = parts[2]
-            result = run_command(f'sudo lxc-attach -n {container} -- {cmd}')
-            return jsonify(result)
+            # Use subprocess directly for better control over lxc-attach commands
+            try:
+                result = subprocess.run(
+                    ['sudo', 'lxc-attach', '-n', container, '--', 'bash', '-c', cmd],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                return jsonify({
+                    'success': result.returncode == 0 or bool(result.stdout),
+                    'stdout': result.stdout,
+                    'stderr': result.stderr,
+                    'returncode': result.returncode
+                })
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    'success': False,
+                    'error': 'Command timed out after 30 seconds'
+                })
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                })
     
     # For all other commands, use the actual lxc-compose CLI
     # This ensures commands like 'test db', 'test redis', 'doctor', 'update' work properly

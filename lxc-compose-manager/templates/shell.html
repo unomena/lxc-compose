@@ -209,15 +209,27 @@
                 if (data.stdout) {
                     appendToTerminal(data.stdout);
                 }
+                if (data.stderr && data.stderr.trim()) {
+                    // Only show stderr if it's not empty
+                    appendToTerminal(data.stderr, 'terminal-error');
+                }
+            } else if (data.error) {
+                // Only show error if there's an actual error message
+                appendToTerminal(`Error: ${data.error}`, 'terminal-error');
+            } else if (data.stdout || data.stderr) {
+                // If we have output but success is false, still show the output
+                if (data.stdout) {
+                    appendToTerminal(data.stdout);
+                }
                 if (data.stderr) {
                     appendToTerminal(data.stderr, 'terminal-error');
                 }
-            } else {
-                appendToTerminal(`Error: ${data.error || 'Command execution failed'}`, 'terminal-error');
             }
             
             // Show next prompt
-            appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+            setTimeout(() => {
+                appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+            }, 100);
         })
         .catch(error => {
             appendToTerminal(`Error: ${error.message}`, 'terminal-error');
@@ -225,6 +237,7 @@
         });
         
         commandInput.value = '';
+        commandInput.focus();
     }
     
     function clearTerminal() {
