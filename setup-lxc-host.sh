@@ -50,6 +50,17 @@ log "Starting LXC host machine setup..."
 info "Detected OS: $(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
 info "Architecture: $(uname -m)"
 
+# Check for force reinstall mode
+FORCE_REINSTALL=${FORCE_REINSTALL:-false}
+if [[ "$FORCE_REINSTALL" == "true" ]]; then
+    echo ""
+    warning "╔══════════════════════════════════════════════════════════════╗"
+    warning "║              FORCE REINSTALL MODE ACTIVE                     ║"
+    warning "║         All components will be reconfigured                  ║"
+    warning "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+fi
+
 #############################################################################
 # 1. SYSTEM UPDATE AND BASIC PACKAGES
 #############################################################################
@@ -180,8 +191,27 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 # Install LXD via snap if available (optional)
 if command -v snap >/dev/null 2>&1; then
-    log "Installing LXD via snap (optional)..."
-    sudo snap install lxd || warning "Could not install LXD - this is optional"
+    if [[ "$FORCE_REINSTALL" == "true" ]]; then
+        log "Force reinstalling LXD via snap..."
+        # Remove existing LXD snap if present
+        if snap list | grep -q "^lxd "; then
+            warning "Removing existing LXD snap installation..."
+            sudo snap remove --purge lxd || warning "Could not remove LXD snap"
+        fi
+        # Install fresh
+        log "Installing LXD via snap..."
+        sudo snap install lxd || warning "Could not install LXD snap - continuing anyway"
+    else
+        # Check if LXD is already installed
+        if snap list 2>/dev/null | grep -q "^lxd "; then
+            info "LXD snap already installed"
+        else
+            log "Installing LXD via snap (optional)..."
+            sudo snap install lxd || warning "Could not install LXD - this is optional"
+        fi
+    fi
+else
+    warning "Snap is not available on this system - skipping LXD snap installation"
 fi
 
 #############################################################################

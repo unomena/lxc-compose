@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Django + Celery Sample App</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #2e7d32; }
+        .section { margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 5px; }
+        button { background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        button:hover { background: #45a049; }
+        .result { margin: 10px 0; padding: 10px; background: #e8f5e9; border-left: 4px solid #4CAF50; }
+        .error { background: #ffebee; border-left-color: #f44336; }
+        #taskResults { margin-top: 20px; }
+        .task-item { padding: 10px; margin: 5px 0; background: white; border: 1px solid #ddd; border-radius: 3px; }
+        code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Django + Celery Sample Application</h1>
+        
+        <div class="section">
+            <h2>System Status</h2>
+            <p>✅ Django is running</p>
+            <p>✅ PostgreSQL connected</p>
+            <p>✅ Redis connected</p>
+            <p>✅ Celery workers active</p>
+        </div>
+        
+        <div class="section">
+            <h2>Submit Celery Task</h2>
+            <p>Click to submit tasks to the Celery queue:</p>
+            
+            <button onclick="submitTask('sample')">Submit Sample Task</button>
+            <button onclick="submitTask('database')">Submit Database Task</button>
+            <button onclick="listTasks()">List Recent Tasks</button>
+            
+            <div id="taskResults"></div>
+        </div>
+        
+        <div class="section">
+            <h2>API Endpoints</h2>
+            <ul>
+                <li><code>GET /api/health/</code> - Health check</li>
+                <li><code>POST /api/task/submit/</code> - Submit task</li>
+                <li><code>GET /api/task/status/{id}/</code> - Check task status</li>
+                <li><code>GET /api/tasks/</code> - List recent tasks</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        function submitTask(type) {
+            const taskName = 'task_' + Date.now();
+            fetch('/api/task/submit/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    type: type,
+                    name: taskName,
+                    count: 5
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const resultsDiv = document.getElementById('taskResults');
+                resultsDiv.innerHTML = '<div class="result">Task submitted! ID: ' + data.task_id + '</div>' + resultsDiv.innerHTML;
+                
+                // Check status after 3 seconds
+                setTimeout(() => checkTaskStatus(data.task_id), 3000);
+            })
+            .catch(error => {
+                document.getElementById('taskResults').innerHTML = '<div class="result error">Error: ' + error + '</div>';
+            });
+        }
+        
+        function checkTaskStatus(taskId) {
+            fetch('/api/task/status/' + taskId + '/')
+                .then(response => response.json())
+                .then(data => {
+                    const resultsDiv = document.getElementById('taskResults');
+                    resultsDiv.innerHTML = '<div class="result">Task ' + taskId + ' status: ' + data.status + '</div>' + resultsDiv.innerHTML;
+                });
+        }
+        
+        function listTasks() {
+            fetch('/api/tasks/')
+                .then(response => response.json())
+                .then(data => {
+                    const resultsDiv = document.getElementById('taskResults');
+                    let html = '<h3>Recent Tasks:</h3>';
+                    data.tasks.forEach(task => {
+                        html += '<div class="task-item">' + task.name + ' - ' + task.status + ' (' + task.created + ')</div>';
+                    });
+                    resultsDiv.innerHTML = html;
+                });
+        }
+    </script>
+</body>
+</html>

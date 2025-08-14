@@ -192,6 +192,9 @@ EOF
 run_setup() {
     echo ""
     
+    # Check for force reinstall mode
+    FORCE_REINSTALL=${FORCE_REINSTALL:-false}
+    
     # Check if LXC is already set up
     local NEEDS_SETUP=false
     
@@ -204,6 +207,12 @@ run_setup() {
     elif [[ ! -d "/srv/apps" ]] || [[ ! -d "/srv/shared" ]] || [[ ! -d "/srv/logs" ]]; then
         NEEDS_SETUP=true
         info "Directory structure incomplete - setup required"
+    fi
+    
+    # Force setup if FORCE_REINSTALL is set
+    if [[ "$FORCE_REINSTALL" == "true" ]]; then
+        NEEDS_SETUP=true
+        warning "Force reinstall mode - will reconfigure everything"
     fi
     
     if [[ "$NEEDS_SETUP" == "true" ]]; then
@@ -225,8 +234,13 @@ run_setup() {
     # Check if we should skip setup
     SKIP_SETUP=${SKIP_SETUP:-false}
     
+    # Override skip if force reinstall
+    if [[ "$FORCE_REINSTALL" == "true" ]]; then
+        SKIP_SETUP=false
+        RUN_SETUP=true
+        log "Force reinstall - running full setup..."
     # If running interactively and setup is needed
-    if [[ -t 0 ]] && [[ "$SKIP_SETUP" != "true" ]] && [[ "$NEEDS_SETUP" == "true" ]]; then
+    elif [[ -t 0 ]] && [[ "$SKIP_SETUP" != "true" ]] && [[ "$NEEDS_SETUP" == "true" ]]; then
         read -p "Would you like to run the full host setup now? (Y/n): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
@@ -251,7 +265,12 @@ run_setup() {
         if [[ -f "/srv/lxc-compose/setup-lxc-host.sh" ]]; then
             log "Setting up LXC host environment..."
             echo ""
-            sudo bash /srv/lxc-compose/setup-lxc-host.sh
+            # Pass force reinstall flag to setup script
+            if [[ "$FORCE_REINSTALL" == "true" ]]; then
+                sudo FORCE_REINSTALL=true bash /srv/lxc-compose/setup-lxc-host.sh
+            else
+                sudo bash /srv/lxc-compose/setup-lxc-host.sh
+            fi
         else
             warning "Setup script not found at /srv/lxc-compose/setup-lxc-host.sh"
             warning "You can run it manually later"

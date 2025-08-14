@@ -48,6 +48,12 @@ def cli():
       lxc-compose status         # System overview
     
     \b
+    MAINTENANCE:
+      lxc-compose update         # Update to latest version
+      lxc-compose reinstall      # Reinstall and reconfigure
+      lxc-compose doctor         # Check system health
+    
+    \b
     COMMON EXAMPLES:
       lxc-compose test db        # Test PostgreSQL in datastore
       lxc-compose test redis     # Test Redis in datastore
@@ -87,6 +93,45 @@ def wizard():
         subprocess.run(['sudo', script_path])
     else:
         click.echo(f"Error: Wizard script not found at {script_path}", err=True)
+
+@cli.command()
+@click.option('--force', is_flag=True, help='Force reinstall even if already installed')
+def reinstall(force):
+    """Reinstall LXC Compose and reconfigure the system
+    
+    \b
+    This command will:
+    - Re-download and install LXC Compose
+    - Reconfigure the LXC host environment
+    - Reinstall snap packages if needed
+    
+    \b
+    Examples:
+      lxc-compose reinstall        # Reinstall and reconfigure
+      lxc-compose reinstall --force # Force complete reinstallation
+    """
+    click.echo("Starting LXC Compose reinstallation...")
+    
+    # Set environment variable for force mode
+    env = os.environ.copy()
+    if force:
+        env['FORCE_REINSTALL'] = 'true'
+        click.echo("Force reinstall mode enabled")
+    
+    # Run the install script with reinstall mode
+    install_script = '/srv/lxc-compose/install.sh'
+    if os.path.exists(install_script):
+        result = subprocess.run(['sudo', 'bash', install_script], env=env)
+        if result.returncode == 0:
+            click.echo("\n✓ Reinstallation completed successfully!")
+            click.echo("\nNow run: lxc-compose wizard")
+        else:
+            click.echo("\n✗ Reinstallation failed. Check the error messages above.", err=True)
+            sys.exit(1)
+    else:
+        # If install script doesn't exist, download and run get.sh
+        click.echo("Install script not found. Downloading fresh installation...")
+        subprocess.run(['bash', '-c', 'curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | sudo bash'])
 
 @cli.command(name='list')
 @click.option('--running', is_flag=True, help='Show only running containers')
