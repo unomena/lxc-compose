@@ -209,9 +209,12 @@ run_update() {
         git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)"
     fi
     
-    # Pull latest changes
+    # Force pull latest changes (reset to match remote)
     log "Pulling latest changes from GitHub..."
-    if git pull origin main; then
+    git fetch origin main
+    
+    # Reset to match remote exactly
+    if git reset --hard origin/main; then
         log "Successfully updated to latest version"
         
         # Show what changed
