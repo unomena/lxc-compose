@@ -17,6 +17,10 @@
         word-wrap: break-word;
         cursor: text;
         position: relative;
+        -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
+        user-select: text;
     }
     
     #terminal:focus {
@@ -132,7 +136,7 @@
 
 {% block extra_js %}
 <script>
-    console.log('Shell.html script loaded - Version 4 - Tab completion and Ctrl+D support');
+    console.log('Shell.html script loaded - Version 5 - Mac copy/paste support');
     const containerName = '{{ container_name }}';
     const sessionId = '{{ session_id }}';
     let currentWorkingDir = '/root';
@@ -443,6 +447,23 @@
         if (!terminal) return;
         
         terminal.addEventListener('keydown', (e) => {
+            // Allow Cmd+C and Cmd+V for copy/paste on Mac
+            if (e.metaKey && (e.key === 'c' || e.key === 'v')) {
+                // Don't prevent default for copy/paste
+                if (e.key === 'v') {
+                    // Handle paste
+                    setTimeout(() => {
+                        navigator.clipboard.readText().then(text => {
+                            currentCommand += text;
+                            showInputLine();
+                        }).catch(err => {
+                            console.error('Failed to read clipboard:', err);
+                        });
+                    }, 10);
+                }
+                return; // Let the browser handle Cmd+C for copy
+            }
+            
             e.preventDefault();
             
             if (e.key === 'Enter') {
@@ -497,6 +518,16 @@
         
         terminal.addEventListener('click', () => {
             terminal.focus();
+        });
+        
+        // Handle paste event
+        terminal.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const pastedText = e.clipboardData.getData('text');
+            if (pastedText) {
+                currentCommand += pastedText;
+                showInputLine();
+            }
         });
     }
     
