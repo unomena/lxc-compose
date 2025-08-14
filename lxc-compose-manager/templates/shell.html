@@ -132,7 +132,7 @@
 
 {% block extra_js %}
 <script>
-    console.log('Shell.html script loaded - Version 3 - No inline onclick handlers');
+    console.log('Shell.html script loaded - Version 4 - Tab completion and Ctrl+D support');
     const containerName = '{{ container_name }}';
     const sessionId = '{{ session_id }}';
     let currentWorkingDir = '/root';
@@ -357,6 +357,87 @@
         showInputLine();
     }
     
+    // Handle tab completion
+    function handleTabCompletion() {
+        if (!currentCommand) return;
+        
+        const parts = currentCommand.split(' ');
+        const lastPart = parts[parts.length - 1];
+        
+        // Determine context - command or path
+        const context = parts.length === 1 ? 'command' : 'path';
+        
+        // Use the autocomplete API
+        fetch('/api/autocomplete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                container: containerName,
+                partial: lastPart,
+                context: context,
+                session_id: sessionId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.suggestions && data.suggestions.length > 0) {
+                if (data.suggestions.length === 1) {
+                    // Single match - complete it
+                    if (context === 'command') {
+                        currentCommand = data.suggestions[0] + ' ';
+                    } else {
+                        parts[parts.length - 1] = data.suggestions[0];
+                        currentCommand = parts.join(' ');
+                    }
+                    showInputLine();
+                } else {
+                    // Multiple matches - show them
+                    const displayItems = data.suggestions.map(s => {
+                        // For paths, show just the last part for readability
+                        if (context === 'path' && s.includes('/')) {
+                            const basename = s.split('/').pop() || s;
+                            return s.endsWith('/') ? basename + '/' : basename;
+                        }
+                        return s;
+                    });
+                    
+                    appendOutput('', 'terminal-output');
+                    appendOutput(displayItems.join('  '), 'terminal-output');
+                    
+                    // Find common prefix and complete to that
+                    const commonPrefix = findCommonPrefix(data.suggestions);
+                    if (commonPrefix && commonPrefix.length > lastPart.length) {
+                        if (context === 'command') {
+                            currentCommand = commonPrefix;
+                        } else {
+                            parts[parts.length - 1] = commonPrefix;
+                            currentCommand = parts.join(' ');
+                        }
+                    }
+                    showInputLine();
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Autocomplete error:', error);
+        });
+    }
+    
+    // Helper function to find common prefix among strings
+    function findCommonPrefix(strings) {
+        if (!strings || strings.length === 0) return '';
+        if (strings.length === 1) return strings[0];
+        
+        let prefix = strings[0];
+        for (let i = 1; i < strings.length; i++) {
+            while (!strings[i].startsWith(prefix)) {
+                prefix = prefix.substring(0, prefix.length - 1);
+                if (prefix === '') return '';
+            }
+        }
+        return prefix;
+    }
+    
     // Handle keyboard input (will be set up after DOM loads)
     function setupKeyboardHandler() {
         if (!terminal) return;
@@ -400,6 +481,12 @@
                 showInputLine();
             } else if (e.ctrlKey && e.key === 'l') {
                 clearTerminal();
+            } else if (e.ctrlKey && e.key === 'd') {
+                // Ctrl+D - same as clicking Close button
+                window.close();
+            } else if (e.key === 'Tab') {
+                // Tab completion
+                handleTabCompletion();
             }
         });
     }

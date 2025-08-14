@@ -500,6 +500,78 @@ def api_command_execute():
     result = run_command(f'lxc-compose {command}')
     return jsonify(result)
 
+@app.route('/api/autocomplete', methods=['POST'])
+def api_autocomplete():
+    """Provide autocomplete suggestions for commands and paths"""
+    data = request.json
+    container = data.get('container')
+    partial = data.get('partial', '')
+    context = data.get('context', 'command')  # 'command' or 'path'
+    session_id = data.get('session_id')
+    
+    if context == 'command':
+        # Command completion
+        commands = [
+            'ls', 'cd', 'pwd', 'cat', 'echo', 'grep', 'find', 'mkdir', 'rm', 'cp', 'mv',
+            'touch', 'chmod', 'chown', 'ps', 'kill', 'df', 'du', 'tar', 'zip', 'unzip',
+            'apt', 'apt-get', 'systemctl', 'service', 'python', 'python3', 'pip', 'npm',
+            'git', 'vim', 'nano', 'less', 'more', 'head', 'tail', 'wget', 'curl', 'ssh',
+            'exit', 'clear', 'history', 'which', 'whereis', 'man', 'env', 'export'
+        ]
+        matches = [cmd for cmd in commands if cmd.startswith(partial)]
+        return jsonify({'suggestions': matches})
+    
+    elif context == 'path' and container:
+        # Path completion
+        working_dir = '/root'
+        if session_id and container in shell_sessions and session_id in shell_sessions[container]:
+            working_dir = shell_sessions[container][session_id]
+        
+        # Build the path to complete
+        if partial.startswith('/'):
+            # Absolute path
+            base_path = partial
+        elif partial.startswith('~'):
+            # Home directory
+            base_path = partial.replace('~', '/root', 1)
+        else:
+            # Relative path
+            base_path = os.path.join(working_dir, partial) if partial else working_dir
+        
+        # Get directory listing
+        try:
+            # Use shell globbing to find matches
+            cmd = f'ls -d {base_path}* 2>/dev/null | head -20'
+            result = subprocess.run(
+                ['sudo', 'lxc-attach', '-n', container, '--', 'bash', '-c', cmd],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout:
+                paths = result.stdout.strip().split('\n')
+                # Check if paths are directories and append /
+                suggestions = []
+                for path in paths:
+                    if path:
+                        check_dir = subprocess.run(
+                            ['sudo', 'lxc-attach', '-n', container, '--', 'test', '-d', path],
+                            capture_output=True,
+                            timeout=2
+                        )
+                        if check_dir.returncode == 0:
+                            suggestions.append(path + '/')
+                        else:
+                            suggestions.append(path)
+                
+                return jsonify({'suggestions': suggestions})
+            
+        except Exception as e:
+            logger.error(f"Autocomplete error: {e}")
+    
+    return jsonify({'suggestions': []})
+
 @app.route('/terminal')
 def terminal():
     """Terminal interface for running commands"""
