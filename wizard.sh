@@ -506,8 +506,16 @@ main() {
             warning "Invalid number, defaulting to 1"
             num_apps=1
         fi
+        
+        # Ask about sample application
+        if ask_yes_no "Do you want to deploy the Django+Celery sample application?" "n"; then
+            deploy_django_sample=true
+        else
+            deploy_django_sample=false
+        fi
     else
         setup_apps=false
+        deploy_django_sample=false
     fi
     
     # Summary
@@ -526,6 +534,9 @@ main() {
     
     if [[ "$setup_apps" == "true" ]]; then
         info "Application Containers: $num_apps"
+        if [[ "$deploy_django_sample" == "true" ]]; then
+            echo "  Django+Celery sample: Yes (in app-1)"
+        fi
     fi
     
     echo "═══════════════════════════════════════════════════════════════"
@@ -557,6 +568,30 @@ main() {
             ((app_ip_base++))
             echo ""
         done
+        
+        # Deploy Django sample if requested
+        if [[ "$deploy_django_sample" == "true" ]] && [[ "$setup_datastore" == "true" ]]; then
+            echo ""
+            log "Deploying Django+Celery sample application..."
+            echo ""
+            
+            # Use the first app container for Django
+            local django_container="app-1"
+            local db_password="samplepass123"
+            
+            # Create the Django sample app
+            if [[ -f "/srv/lxc-compose/create-django-sample.sh" ]]; then
+                sudo bash /srv/lxc-compose/create-django-sample.sh \
+                    "$django_container" \
+                    "$datastore_ip" \
+                    "sampleapp" \
+                    "sampleuser" \
+                    "$db_password" \
+                    "$datastore_ip"
+            else
+                warning "Django sample script not found, skipping deployment"
+            fi
+        fi
     fi
     
     # Final summary
