@@ -15,6 +15,31 @@
         border-radius: 5px;
         white-space: pre-wrap;
         word-wrap: break-word;
+        cursor: text;
+        position: relative;
+    }
+    
+    #terminal:focus {
+        outline: none;
+    }
+    
+    .cursor {
+        display: inline-block;
+        width: 8px;
+        height: 16px;
+        background: #d4d4d4;
+        animation: blink 1s infinite;
+        vertical-align: text-bottom;
+        margin-left: 2px;
+    }
+    
+    @keyframes blink {
+        0%, 50% { opacity: 1; }
+        51%, 100% { opacity: 0; }
+    }
+    
+    .current-line {
+        display: inline;
     }
     
     .terminal-header {
@@ -41,6 +66,13 @@
     .input-group {
         display: flex;
         margin-top: 10px;
+        align-items: stretch;
+    }
+    
+    #promptLabel {
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
     }
     
     #commandInput {
@@ -49,9 +81,14 @@
         background: #2d2d2d;
         color: #d4d4d4;
         border: 1px solid #444;
-        border-radius: 3px 0 0 3px;
+        border-left: none;
         font-family: monospace;
         font-size: 14px;
+    }
+    
+    #commandInput:focus {
+        outline: none;
+        border-color: #667eea;
     }
     
     #sendButton {
@@ -124,12 +161,7 @@
     </div>
 </div>
 
-<div id="terminal"></div>
-
-<div class="input-group">
-    <input type="text" id="commandInput" placeholder="Enter command..." autofocus>
-    <button id="sendButton">Send</button>
-</div>
+<div id="terminal" tabindex="0"></div>
 
 <div style="margin-top: 15px;">
     <button class="btn btn-secondary" onclick="clearTerminal()">Clear</button>
@@ -144,11 +176,12 @@
     const containerName = '{{ container_name }}';
     const sessionId = '{{ session_id }}';
     let currentWorkingDir = '/root';
-    let socket = null;
+    let currentCommand = '';
+    let commandHistory = [];
+    let historyIndex = -1;
     const terminal = document.getElementById('terminal');
-    const commandInput = document.getElementById('commandInput');
-    const sendButton = document.getElementById('sendButton');
     const connectionStatus = document.getElementById('connectionStatus');
+    const promptLabel = document.getElementById('promptLabel');
     
     function updateConnectionStatus(status) {
         connectionStatus.className = 'connection-status';
@@ -172,7 +205,48 @@
         const line = document.createElement('div');
         line.className = `terminal-line ${className}`;
         line.textContent = text;
+        
+        // Remove any existing input line before adding new content
+        const existingInputLine = terminal.querySelector('.input-line');
+        if (existingInputLine) {
+            existingInputLine.remove();
+        }
+        
         terminal.appendChild(line);
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+    
+    function showInputLine() {
+        // Remove any existing input line
+        const existingInputLine = terminal.querySelector('.input-line');
+        if (existingInputLine) {
+            existingInputLine.remove();
+        }
+        
+        // Create new input line with prompt and current command
+        const inputLine = document.createElement('div');
+        inputLine.className = 'terminal-line input-line';
+        inputLine.style.display = 'flex';
+        inputLine.style.alignItems = 'center';
+        
+        const prompt = document.createElement('span');
+        prompt.className = 'terminal-prompt';
+        prompt.textContent = getPrompt();
+        prompt.style.marginRight = '5px';
+        
+        const commandText = document.createElement('span');
+        commandText.textContent = currentCommand;
+        commandText.style.color = '#d4d4d4';
+        
+        const cursor = document.createElement('span');
+        cursor.className = 'cursor';
+        cursor.textContent = '\u00A0'; // Non-breaking space
+        
+        inputLine.appendChild(prompt);
+        inputLine.appendChild(commandText);
+        inputLine.appendChild(cursor);
+        
+        terminal.appendChild(inputLine);
         terminal.scrollTop = terminal.scrollHeight;
     }
     
@@ -210,20 +284,25 @@
         appendToTerminal('═══════════════════════════════════════════════════════════════', 'terminal-output');
         appendToTerminal('', 'terminal-output');
         
-        // Show initial prompt
-        appendToTerminal(getPrompt(), 'terminal-prompt');
+        // Update the prompt label instead of showing in terminal
+        updatePrompt();
     }
     
     function getPrompt() {
         const shortPath = currentWorkingDir.replace('/root', '~');
-        return `root@${containerName}:${shortPath}# `;
+        return `root@${containerName}:${shortPath}#`;
+    }
+    
+    function updatePrompt() {
+        promptLabel.textContent = getPrompt();
     }
     
     function sendCommand() {
         const command = commandInput.value.trim();
         if (!command) return;
         
-        appendToTerminal(getPrompt() + command, 'terminal-prompt');
+        // Show the command that was executed
+        appendToTerminal(getPrompt() + ' ' + command, 'terminal-prompt');
         
         // Check for interactive commands that won't work
         const interactiveCommands = ['top', 'htop', 'less', 'more', 'vi', 'vim', 'nano', 'emacs', 'tail -f', 'watch'];
@@ -246,7 +325,6 @@
                 appendToTerminal(`💡 Edit files locally or use: cat > file.txt << EOF`, 'terminal-success');
             }
             
-            appendToTerminal(getPrompt(), 'terminal-prompt');
             commandInput.value = '';
             commandInput.focus();
             return;
@@ -268,6 +346,7 @@
             // Update working directory if it changed
             if (data.working_dir) {
                 currentWorkingDir = data.working_dir;
+                updatePrompt();
             }
             
             if (data.success) {
@@ -290,15 +369,9 @@
                     appendToTerminal(data.stderr, 'terminal-error');
                 }
             }
-            
-            // Show next prompt with updated directory
-            setTimeout(() => {
-                appendToTerminal(getPrompt(), 'terminal-prompt');
-            }, 100);
         })
         .catch(error => {
             appendToTerminal(`Error: ${error.message}`, 'terminal-error');
-            appendToTerminal(getPrompt(), 'terminal-prompt');
         });
         
         commandInput.value = '';
@@ -308,7 +381,6 @@
     function clearTerminal() {
         terminal.innerHTML = '';
         appendToTerminal(`Terminal cleared`, 'terminal-success');
-        appendToTerminal(getPrompt(), 'terminal-prompt');
     }
     
     // Event listeners
