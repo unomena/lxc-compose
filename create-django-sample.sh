@@ -82,16 +82,16 @@ sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/requirements.txt" < "
 # Copy source code
 log "Copying source code..."
 # We need to copy directory structure piece by piece due to LXC limitations
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/sample_project"
+sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/config"
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/api"
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/tasks"
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/templates"
 
 # Copy Django project files
 for file in settings.py urls.py wsgi.py celery.py __init__.py; do
-    if [ -f "$SAMPLE_APP_DIR/src/sample_project/$file" ]; then
-        log "  Copying sample_project/$file..."
-        sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/sample_project/$file" < "$SAMPLE_APP_DIR/src/sample_project/$file"
+    if [ -f "$SAMPLE_APP_DIR/src/config/$file" ]; then
+        log "  Copying config/$file..."
+        sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/config/$file" < "$SAMPLE_APP_DIR/src/config/$file"
     fi
 done
 
@@ -162,7 +162,7 @@ log "Running database migrations..."
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
     cd /app/src
     source ../venv/bin/activate
-    export DJANGO_SETTINGS_MODULE=sample_project.settings
+    export DJANGO_SETTINGS_MODULE=config.settings
     python manage.py makemigrations api tasks
     python manage.py migrate
     python manage.py collectstatic --noinput
@@ -173,7 +173,7 @@ log "Creating admin user..."
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
     cd /app/src
     source ../venv/bin/activate
-    export DJANGO_SETTINGS_MODULE=sample_project.settings
+    export DJANGO_SETTINGS_MODULE=config.settings
     echo \"from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.create_superuser('admin', 'admin@example.com', 'admin123') if not User.objects.filter(username='admin').exists() else None\" | python manage.py shell
 "
 
