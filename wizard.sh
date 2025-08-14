@@ -267,12 +267,31 @@ EOF
             # Comment out supervised mode (causes issues in LXC containers)
             sed -i 's/^supervised/#supervised/' /etc/redis/redis.conf
             
-            # Try to restart Redis service
-            systemctl restart redis-server || true
+            # Ensure Redis has the right permissions
+            chown redis:redis /var/lib/redis
+            chown redis:redis /var/log/redis
+            chmod 750 /var/lib/redis
+            chmod 750 /var/log/redis
+            
+            # Enable and start Redis service
+            systemctl enable redis-server
+            systemctl restart redis-server || {
+                # If systemctl fails, try starting Redis manually
+                echo 'Starting Redis manually...'
+                sudo -u redis redis-server /etc/redis/redis.conf --daemonize yes
+            }
             
             # Verify Redis is working
-            sleep 2
-            redis-cli ping > /dev/null 2>&1 && echo 'Redis is running' || echo 'Redis service failed but may still be accessible'
+            sleep 3
+            if redis-cli ping > /dev/null 2>&1; then
+                echo 'Redis is running successfully'
+            else
+                # Try one more time with manual start
+                pkill -f redis-server 2>/dev/null || true
+                sudo -u redis redis-server /etc/redis/redis.conf --daemonize yes
+                sleep 2
+                redis-cli ping > /dev/null 2>&1 && echo 'Redis started manually' || echo 'Redis startup failed'
+            fi
         "
         
         log "Redis installed and configured"
