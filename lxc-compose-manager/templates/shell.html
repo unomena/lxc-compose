@@ -183,6 +183,8 @@
         // In the future, this could be upgraded to use WebSockets for real-time interaction
         
         appendToTerminal(`Connecting to container ${containerName}...`, 'terminal-success');
+        appendToTerminal(`Note: This is a non-interactive shell. Commands like 'top', 'vi', etc. won't work.`, 'terminal-output');
+        appendToTerminal(`Use alternatives: 'ps aux' instead of 'top', 'cat' instead of 'less', etc.`, 'terminal-output');
         updateConnectionStatus('connected');
         
         // Show initial prompt
@@ -199,6 +201,25 @@
         if (!command) return;
         
         appendToTerminal(getPrompt() + command, 'terminal-prompt');
+        
+        // Check for interactive commands that won't work
+        const interactiveCommands = ['top', 'htop', 'less', 'more', 'vi', 'vim', 'nano', 'emacs', 'tail -f', 'watch'];
+        const isInteractive = interactiveCommands.some(cmd => command.startsWith(cmd));
+        
+        if (isInteractive) {
+            appendToTerminal(`Note: Interactive command '${command.split(' ')[0]}' requires a TTY and cannot run in this web shell.`, 'terminal-error');
+            if (command.startsWith('top') || command.startsWith('htop')) {
+                appendToTerminal(`Try 'ps aux' or 'ps aux --sort=-%cpu' instead for process information.`, 'terminal-success');
+            } else if (command.startsWith('tail -f')) {
+                appendToTerminal(`Try 'tail -n 20 <file>' instead to see the last 20 lines.`, 'terminal-success');
+            } else if (command.startsWith('less') || command.startsWith('more')) {
+                appendToTerminal(`Try 'cat <file>' or 'head -n 50 <file>' instead.`, 'terminal-success');
+            }
+            appendToTerminal(getPrompt(), 'terminal-prompt');
+            commandInput.value = '';
+            commandInput.focus();
+            return;
+        }
         
         // Execute command via API with session ID
         fetch('/api/command/execute', {
