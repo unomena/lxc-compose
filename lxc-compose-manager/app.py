@@ -4,7 +4,7 @@
 LXC Compose Manager - Complete web interface for LXC container management
 """
 
-from flask import Flask, render_template, jsonify, request, url_for
+from flask import Flask, render_template, jsonify, request, url_for, session
 from flask_socketio import SocketIO, emit
 import json
 import subprocess
@@ -13,10 +13,14 @@ import time
 from datetime import datetime
 import logging
 import secrets
+import uuid
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Store shell sessions (container -> session_id -> working_directory)
+shell_sessions = {}
 
 # Configuration
 CONFIG_FILE = '/etc/lxc-compose/registry.json'
@@ -358,7 +362,17 @@ def api_container_delete(name):
 @app.route('/api/container/<name>/shell', methods=['GET'])
 def api_container_shell(name):
     """Get shell access to a container (WebSocket endpoint)"""
-    return render_template('shell.html', container_name=name)
+    # Create a session ID for this shell
+    session_id = str(uuid.uuid4())
+    
+    # Initialize session for this container if not exists
+    if name not in shell_sessions:
+        shell_sessions[name] = {}
+    
+    # Set initial working directory
+    shell_sessions[name][session_id] = '/root'
+    
+    return render_template('shell.html', container_name=name, session_id=session_id)
 
 @app.route('/api/command/execute', methods=['POST'])
 def api_command_execute():
@@ -379,25 +393,89 @@ def api_command_execute():
             'redirect': f'/api/container/{container}/shell'
         })
     
-    # Handle execute commands
+    # Handle execute commands with session support
     if command.startswith('execute '):
         parts = command.split(None, 2)
         if len(parts) >= 3:
             container = parts[1]
             cmd = parts[2]
-            # Use subprocess directly for better control over lxc-attach commands
+            
+            # Get session ID and working directory if provided
+            session_id = data.get('session_id')
+            working_dir = '/root'  # Default working directory
+            
+            # Get the current working directory for this session
+            if session_id and container in shell_sessions and session_id in shell_sessions[container]:
+                working_dir = shell_sessions[container][session_id]
+            
+            # Handle cd command specially
+            if cmd.strip().startswith('cd '):
+                new_dir = cmd.strip()[3:].strip() or '/root'
+                # Handle relative and absolute paths
+                if new_dir.startswith('/'):
+                    # Absolute path
+                    test_dir = new_dir
+                elif new_dir == '~':
+                    test_dir = '/root'
+                elif new_dir == '..':
+                    # Go up one directory
+                    test_dir = os.path.dirname(working_dir)
+                else:
+                    # Relative path
+                    test_dir = os.path.join(working_dir, new_dir)
+                
+                # Test if directory exists in container
+                test_result = subprocess.run(
+                    ['sudo', 'lxc-attach', '-n', container, '--', 'test', '-d', test_dir],
+                    capture_output=True,
+                    timeout=5
+                )
+                
+                if test_result.returncode == 0:
+                    # Update the working directory for this session
+                    if session_id and container in shell_sessions:
+                        shell_sessions[container][session_id] = test_dir
+                    return jsonify({
+                        'success': True,
+                        'stdout': '',
+                        'stderr': '',
+                        'working_dir': test_dir
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'stdout': '',
+                        'stderr': f'cd: {new_dir}: No such file or directory',
+                        'working_dir': working_dir
+                    })
+            
+            # For other commands, execute in the working directory
             try:
+                # Build command with working directory
+                full_cmd = f'cd {working_dir} && {cmd}'
+                
                 result = subprocess.run(
-                    ['sudo', 'lxc-attach', '-n', container, '--', 'bash', '-c', cmd],
+                    ['sudo', 'lxc-attach', '-n', container, '--', 'bash', '-c', full_cmd],
                     capture_output=True,
                     text=True,
                     timeout=30
                 )
+                
+                # Special handling for pwd command
+                if cmd.strip() == 'pwd':
+                    return jsonify({
+                        'success': True,
+                        'stdout': working_dir,
+                        'stderr': '',
+                        'working_dir': working_dir
+                    })
+                
                 return jsonify({
                     'success': result.returncode == 0 or bool(result.stdout),
                     'stdout': result.stdout,
                     'stderr': result.stderr,
-                    'returncode': result.returncode
+                    'returncode': result.returncode,
+                    'working_dir': working_dir
                 })
             except subprocess.TimeoutExpired:
                 return jsonify({

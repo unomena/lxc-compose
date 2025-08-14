@@ -142,6 +142,8 @@
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
     const containerName = '{{ container_name }}';
+    const sessionId = '{{ session_id }}';
+    let currentWorkingDir = '/root';
     let socket = null;
     const terminal = document.getElementById('terminal');
     const commandInput = document.getElementById('commandInput');
@@ -187,24 +189,35 @@
         appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
     }
     
+    function getPrompt() {
+        const shortPath = currentWorkingDir.replace('/root', '~');
+        return `root@${containerName}:${shortPath}# `;
+    }
+    
     function sendCommand() {
         const command = commandInput.value.trim();
         if (!command) return;
         
-        appendToTerminal(`root@${containerName}:~# ${command}`, 'terminal-prompt');
+        appendToTerminal(getPrompt() + command, 'terminal-prompt');
         
-        // Execute command via API
+        // Execute command via API with session ID
         fetch('/api/command/execute', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                command: `execute ${containerName} ${command}`
+                command: `execute ${containerName} ${command}`,
+                session_id: sessionId
             })
         })
         .then(response => response.json())
         .then(data => {
+            // Update working directory if it changed
+            if (data.working_dir) {
+                currentWorkingDir = data.working_dir;
+            }
+            
             if (data.success) {
                 if (data.stdout) {
                     appendToTerminal(data.stdout);
@@ -226,14 +239,14 @@
                 }
             }
             
-            // Show next prompt
+            // Show next prompt with updated directory
             setTimeout(() => {
-                appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+                appendToTerminal(getPrompt(), 'terminal-prompt');
             }, 100);
         })
         .catch(error => {
             appendToTerminal(`Error: ${error.message}`, 'terminal-error');
-            appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+            appendToTerminal(getPrompt(), 'terminal-prompt');
         });
         
         commandInput.value = '';
@@ -243,7 +256,7 @@
     function clearTerminal() {
         terminal.innerHTML = '';
         appendToTerminal(`Terminal cleared`, 'terminal-success');
-        appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+        appendToTerminal(getPrompt(), 'terminal-prompt');
     }
     
     // Event listeners
