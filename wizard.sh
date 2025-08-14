@@ -105,33 +105,67 @@ create_datastore() {
     
     log "Creating datastore container '$container_name' at IP $container_ip..."
     
-    # Check if container already exists
+    # Check if container already exists by multiple methods
+    local container_exists=false
+    
+    # Method 1: Check with lxc-info
     if sudo lxc-info -n "$container_name" &>/dev/null; then
+        container_exists=true
+    fi
+    
+    # Method 2: Check if in lxc-ls output
+    if sudo lxc-ls | grep -q "^${container_name}$"; then
+        container_exists=true
+    fi
+    
+    # Method 3: Check if directory exists
+    if [[ -d "/var/lib/lxc/$container_name" ]]; then
+        container_exists=true
+    fi
+    
+    if [[ "$container_exists" == "true" ]]; then
         warning "Container '$container_name' already exists"
         
-        # Check if it's running
-        if sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
-            info "Container is already running"
-            return 0
-        else
-            # Try to start existing container
-            log "Starting existing container..."
-            sudo lxc-start -n "$container_name"
-            sleep 5
-            return 0
-        fi
+        # Ask user what to do
+        echo ""
+        echo "  Options:"
+        echo "    1) Skip this container"
+        echo "    2) Destroy and recreate"
+        echo "    3) Start existing container"
+        read -p "  Choice [1-3]: " choice
+        
+        case "$choice" in
+            1)
+                info "Skipping container '$container_name'"
+                return 0
+                ;;
+            2)
+                warning "Destroying existing container..."
+                sudo lxc-stop -n "$container_name" 2>/dev/null || true
+                sudo lxc-destroy -n "$container_name" 2>/dev/null || true
+                sudo rm -rf "/var/lib/lxc/$container_name" 2>/dev/null || true
+                log "Container destroyed, creating new one..."
+                ;;
+            3)
+                log "Starting existing container..."
+                sudo lxc-start -n "$container_name"
+                sleep 5
+                return 0
+                ;;
+            *)
+                info "Invalid choice, skipping container"
+                return 0
+                ;;
+        esac
     fi
     
-    # Check if container directory exists but container isn't registered
-    if [[ -d "/var/lib/lxc/$container_name" ]]; then
-        warning "Container directory exists but container not registered, cleaning up..."
-        sudo rm -rf "/var/lib/lxc/$container_name"
+    # Create the container
+    log "Creating container '$container_name'..."
+    if ! sudo lxc-create -n "$container_name" -t download -- \
+        --dist ubuntu --release jammy --arch $(dpkg --print-architecture); then
+        error "Failed to create container. The container may already exist or there may be a network issue."
+        return 1
     fi
-    
-    # Create the container using our own method to avoid the script error
-    log "Creating container..."
-    sudo lxc-create -n "$container_name" -t download -- \
-        --dist ubuntu --release jammy --arch $(dpkg --print-architecture)
     
     # Configure container
     local CONFIG_FILE="/var/lib/lxc/$container_name/config"
@@ -286,33 +320,67 @@ create_app_container() {
     
     log "Creating application container '$container_name' at IP $container_ip..."
     
-    # Check if container already exists
+    # Check if container already exists by multiple methods
+    local container_exists=false
+    
+    # Method 1: Check with lxc-info
     if sudo lxc-info -n "$container_name" &>/dev/null; then
+        container_exists=true
+    fi
+    
+    # Method 2: Check if in lxc-ls output
+    if sudo lxc-ls | grep -q "^${container_name}$"; then
+        container_exists=true
+    fi
+    
+    # Method 3: Check if directory exists
+    if [[ -d "/var/lib/lxc/$container_name" ]]; then
+        container_exists=true
+    fi
+    
+    if [[ "$container_exists" == "true" ]]; then
         warning "Container '$container_name' already exists"
         
-        # Check if it's running
-        if sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
-            info "Container is already running"
-            return 0
-        else
-            # Try to start existing container
-            log "Starting existing container..."
-            sudo lxc-start -n "$container_name"
-            sleep 5
-            return 0
-        fi
+        # Ask user what to do
+        echo ""
+        echo "  Options:"
+        echo "    1) Skip this container"
+        echo "    2) Destroy and recreate"
+        echo "    3) Start existing container"
+        read -p "  Choice [1-3]: " choice
+        
+        case "$choice" in
+            1)
+                info "Skipping container '$container_name'"
+                return 0
+                ;;
+            2)
+                warning "Destroying existing container..."
+                sudo lxc-stop -n "$container_name" 2>/dev/null || true
+                sudo lxc-destroy -n "$container_name" 2>/dev/null || true
+                sudo rm -rf "/var/lib/lxc/$container_name" 2>/dev/null || true
+                log "Container destroyed, creating new one..."
+                ;;
+            3)
+                log "Starting existing container..."
+                sudo lxc-start -n "$container_name"
+                sleep 5
+                return 0
+                ;;
+            *)
+                info "Invalid choice, skipping container"
+                return 0
+                ;;
+        esac
     fi
     
-    # Check if container directory exists but container isn't registered
-    if [[ -d "/var/lib/lxc/$container_name" ]]; then
-        warning "Container directory exists but container not registered, cleaning up..."
-        sudo rm -rf "/var/lib/lxc/$container_name"
+    # Create the container
+    log "Creating container '$container_name'..."
+    if ! sudo lxc-create -n "$container_name" -t download -- \
+        --dist ubuntu --release jammy --arch $(dpkg --print-architecture); then
+        error "Failed to create container. The container may already exist or there may be a network issue."
+        return 1
     fi
-    
-    # Create the container using our own method
-    log "Creating container..."
-    sudo lxc-create -n "$container_name" -t download -- \
-        --dist ubuntu --release jammy --arch $(dpkg --print-architecture)
     
     # Configure container
     local CONFIG_FILE="/var/lib/lxc/$container_name/config"
