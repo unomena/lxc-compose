@@ -27,3 +27,32 @@ logs/
 # Local environment
 .env
 .env.local
+
+# Runtime generated files
+srv/lxc-compose/scripts/*.sh
+srv/lxc-compose/configs/*.yaml.backup
+srv/lxc-compose/configs/*.yml.backup
+srv/apps/*/secrets.env
+srv/apps/*/config/*.conf
+srv/apps/*/config/*.cfg
+
+# Container runtime files
+/var/lib/lxc/*/
+/srv/apps/*/media/
+/srv/logs/*/
+
+# Backup files
+*.backup
+*.backup.*
+*~
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+cache/
+
+# User-specific configurations
+user-config.yaml
+local-config.yaml
+custom-*.yaml
