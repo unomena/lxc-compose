@@ -179,16 +179,39 @@
     function connectShell() {
         updateConnectionStatus('connecting');
         
-        // For now, use a simple approach with regular HTTP requests
-        // In the future, this could be upgraded to use WebSockets for real-time interaction
-        
         appendToTerminal(`Connecting to container ${containerName}...`, 'terminal-success');
-        appendToTerminal(`Note: This is a non-interactive shell. Commands like 'top', 'vi', etc. won't work.`, 'terminal-output');
-        appendToTerminal(`Use alternatives: 'ps aux' instead of 'top', 'cat' instead of 'less', etc.`, 'terminal-output');
         updateConnectionStatus('connected');
         
+        // Show welcome message with limitations
+        appendToTerminal('═══════════════════════════════════════════════════════════════', 'terminal-output');
+        appendToTerminal('                    Web Shell - Restricted Mode', 'terminal-success');
+        appendToTerminal('═══════════════════════════════════════════════════════════════', 'terminal-output');
+        appendToTerminal('', 'terminal-output');
+        appendToTerminal('⚠️  This is a restricted, non-interactive shell with limitations:', 'terminal-output');
+        appendToTerminal('', 'terminal-output');
+        appendToTerminal('❌ Interactive commands will NOT work:', 'terminal-error');
+        appendToTerminal('   • top, htop (use: ps aux)', 'terminal-output');
+        appendToTerminal('   • vi, vim, nano (edit files locally instead)', 'terminal-output');
+        appendToTerminal('   • less, more (use: cat or head/tail)', 'terminal-output');
+        appendToTerminal('   • tail -f (use: tail -n 20)', 'terminal-output');
+        appendToTerminal('   • Interactive installers', 'terminal-output');
+        appendToTerminal('', 'terminal-output');
+        appendToTerminal('✅ Commands that WILL work:', 'terminal-success');
+        appendToTerminal('   • Navigation: ls, cd, pwd', 'terminal-output');
+        appendToTerminal('   • File viewing: cat, head, tail, grep', 'terminal-output');
+        appendToTerminal('   • Process info: ps, ps aux, kill', 'terminal-output');
+        appendToTerminal('   • Network: ping, curl, wget', 'terminal-output');
+        appendToTerminal('   • Package management: apt update, apt install -y', 'terminal-output');
+        appendToTerminal('   • Most other non-interactive commands', 'terminal-output');
+        appendToTerminal('', 'terminal-output');
+        appendToTerminal('💡 For full shell access, SSH to the host and use:', 'terminal-output');
+        appendToTerminal(`   sudo lxc-attach -n ${containerName}`, 'terminal-output');
+        appendToTerminal('', 'terminal-output');
+        appendToTerminal('═══════════════════════════════════════════════════════════════', 'terminal-output');
+        appendToTerminal('', 'terminal-output');
+        
         // Show initial prompt
-        appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+        appendToTerminal(getPrompt(), 'terminal-prompt');
     }
     
     function getPrompt() {
@@ -207,14 +230,22 @@
         const isInteractive = interactiveCommands.some(cmd => command.startsWith(cmd));
         
         if (isInteractive) {
-            appendToTerminal(`Note: Interactive command '${command.split(' ')[0]}' requires a TTY and cannot run in this web shell.`, 'terminal-error');
+            const cmdName = command.split(' ')[0];
+            appendToTerminal(`❌ '${cmdName}' is an interactive command and won't work in this restricted shell.`, 'terminal-error');
+            
+            // Provide specific alternatives
             if (command.startsWith('top') || command.startsWith('htop')) {
-                appendToTerminal(`Try 'ps aux' or 'ps aux --sort=-%cpu' instead for process information.`, 'terminal-success');
+                appendToTerminal(`💡 Use: ps aux --sort=-%cpu`, 'terminal-success');
             } else if (command.startsWith('tail -f')) {
-                appendToTerminal(`Try 'tail -n 20 <file>' instead to see the last 20 lines.`, 'terminal-success');
+                const file = command.split(' ')[2] || '<file>';
+                appendToTerminal(`💡 Use: tail -n 20 ${file}`, 'terminal-success');
             } else if (command.startsWith('less') || command.startsWith('more')) {
-                appendToTerminal(`Try 'cat <file>' or 'head -n 50 <file>' instead.`, 'terminal-success');
+                const file = command.split(' ')[1] || '<file>';
+                appendToTerminal(`💡 Use: cat ${file} | head -50`, 'terminal-success');
+            } else if (command.startsWith('vi') || command.startsWith('vim') || command.startsWith('nano')) {
+                appendToTerminal(`💡 Edit files locally or use: cat > file.txt << EOF`, 'terminal-success');
             }
+            
             appendToTerminal(getPrompt(), 'terminal-prompt');
             commandInput.value = '';
             commandInput.focus();
