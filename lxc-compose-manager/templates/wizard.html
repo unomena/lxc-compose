@@ -1,0 +1,566 @@
+{% extends "base.html" %}
+
+{% block title %}Create Containers - LXC Compose Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .wizard-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    
+    .wizard-step {
+        background: #f7fafc;
+        border-radius: 10px;
+        padding: 30px;
+        margin-bottom: 20px;
+    }
+    
+    .wizard-step h3 {
+        color: #2d3748;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .step-number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        background: #667eea;
+        color: white;
+        border-radius: 50%;
+        font-weight: bold;
+        font-size: 14px;
+    }
+    
+    .option-card {
+        background: white;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .option-card:hover {
+        border-color: #667eea;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+    }
+    
+    .option-card.selected {
+        border-color: #667eea;
+        background: #f0f4ff;
+    }
+    
+    .option-card input[type="checkbox"] {
+        margin-right: 10px;
+    }
+    
+    .option-title {
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 5px;
+    }
+    
+    .option-description {
+        color: #718096;
+        font-size: 14px;
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #4a5568;
+        font-weight: 500;
+    }
+    
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 10px 15px;
+        border: 1px solid #cbd5e0;
+        border-radius: 5px;
+        font-size: 14px;
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .number-input {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .number-input button {
+        width: 40px;
+        height: 40px;
+        border: 1px solid #cbd5e0;
+        background: white;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 18px;
+    }
+    
+    .number-input button:hover {
+        background: #f7fafc;
+    }
+    
+    .number-input input {
+        width: 80px;
+        text-align: center;
+    }
+    
+    .services-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 15px;
+    }
+    
+    .service-chip {
+        background: #edf2f7;
+        padding: 8px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        color: #4a5568;
+        text-align: center;
+    }
+    
+    .wizard-actions {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 30px;
+        padding-top: 30px;
+        border-top: 1px solid #e2e8f0;
+    }
+    
+    .summary-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .summary-table th,
+    .summary-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .summary-table th {
+        background: #f7fafc;
+        font-weight: 600;
+        color: #4a5568;
+    }
+    
+    .creating-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 10000;
+    }
+    
+    .creating-content {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border-radius: 10px;
+        padding: 40px;
+        text-align: center;
+        max-width: 500px;
+    }
+    
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .progress-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 0;
+        padding: 10px;
+        background: #f7fafc;
+        border-radius: 5px;
+    }
+    
+    .progress-icon {
+        width: 20px;
+        height: 20px;
+    }
+    
+    .progress-icon.pending {
+        opacity: 0.3;
+    }
+    
+    .progress-icon.success {
+        color: #48bb78;
+    }
+    
+    .progress-icon.error {
+        color: #f56565;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wizard-container">
+    <h2 style="margin-bottom: 30px;">Container Creation Wizard</h2>
+    
+    <!-- Step 1: Datastore -->
+    <div class="wizard-step">
+        <h3>
+            <span class="step-number">1</span>
+            Database & Cache Services
+        </h3>
+        
+        <div class="option-card" onclick="toggleDatastore(this)">
+            <label style="cursor: pointer; display: flex; align-items: flex-start;">
+                <input type="checkbox" id="create_datastore" style="margin-top: 2px;">
+                <div>
+                    <div class="option-title">Create Datastore Container</div>
+                    <div class="option-description">
+                        PostgreSQL database server and Redis cache in a single container.
+                        This will be accessible to all application containers.
+                    </div>
+                    <div class="services-grid">
+                        <span class="service-chip">PostgreSQL 14</span>
+                        <span class="service-chip">Redis 7</span>
+                        <span class="service-chip">IP: 10.0.3.2</span>
+                    </div>
+                </div>
+            </label>
+        </div>
+        
+        <div id="datastoreOptions" style="display: none; margin-top: 20px;">
+            <div class="form-group">
+                <label>PostgreSQL Version</label>
+                <select id="postgres_version">
+                    <option value="14">PostgreSQL 14 (Recommended)</option>
+                    <option value="13">PostgreSQL 13</option>
+                    <option value="15">PostgreSQL 15</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Step 2: Application Containers -->
+    <div class="wizard-step">
+        <h3>
+            <span class="step-number">2</span>
+            Application Containers
+        </h3>
+        
+        <div class="form-group">
+            <label>Number of Application Containers</label>
+            <div class="number-input">
+                <button type="button" onclick="changeAppCount(-1)">−</button>
+                <input type="number" id="app_count" value="1" min="0" max="10" readonly>
+                <button type="button" onclick="changeAppCount(1)">+</button>
+            </div>
+            <div style="margin-top: 10px; color: #718096; font-size: 14px;">
+                Each container will have nginx, Python, and Node.js installed
+            </div>
+        </div>
+        
+        <div id="appContainersList" style="margin-top: 20px;">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+    
+    <!-- Step 3: Sample Applications -->
+    <div class="wizard-step">
+        <h3>
+            <span class="step-number">3</span>
+            Sample Applications
+        </h3>
+        
+        <div class="option-card" onclick="toggleOption(this, 'create_django_sample')">
+            <label style="cursor: pointer; display: flex; align-items: flex-start;">
+                <input type="checkbox" id="create_django_sample" style="margin-top: 2px;">
+                <div>
+                    <div class="option-title">Deploy Django + Celery Sample</div>
+                    <div class="option-description">
+                        A complete Django application with Celery task queue, 
+                        connected to PostgreSQL and Redis. Deploys to app-1 container.
+                    </div>
+                    <div class="services-grid">
+                        <span class="service-chip">Django 4.2</span>
+                        <span class="service-chip">Celery</span>
+                        <span class="service-chip">Nginx</span>
+                        <span class="service-chip">Supervisor</span>
+                    </div>
+                </div>
+            </label>
+        </div>
+    </div>
+    
+    <!-- Step 4: Review -->
+    <div class="wizard-step">
+        <h3>
+            <span class="step-number">4</span>
+            Review & Create
+        </h3>
+        
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th>Container</th>
+                    <th>Type</th>
+                    <th>IP Address</th>
+                    <th>Services</th>
+                </tr>
+            </thead>
+            <tbody id="summaryTable">
+                <!-- Dynamically populated -->
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="wizard-actions">
+        <a href="{{ url_for('index') }}" class="btn">Cancel</a>
+        <button class="btn btn-primary" onclick="createContainers()">Create Containers</button>
+    </div>
+</div>
+
+<!-- Creating overlay -->
+<div id="creatingOverlay" class="creating-overlay">
+    <div class="creating-content">
+        <div class="spinner"></div>
+        <h3>Creating Containers...</h3>
+        <div id="progressList" style="margin-top: 20px; text-align: left;">
+            <!-- Progress items will be added here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleDatastore(card) {
+    const checkbox = card.querySelector('input[type="checkbox"]');
+    const options = document.getElementById('datastoreOptions');
+    
+    if (checkbox.checked) {
+        card.classList.add('selected');
+        options.style.display = 'block';
+    } else {
+        card.classList.remove('selected');
+        options.style.display = 'none';
+    }
+    
+    updateSummary();
+}
+
+function toggleOption(card, checkboxId) {
+    const checkbox = document.getElementById(checkboxId);
+    checkbox.checked = !checkbox.checked;
+    
+    if (checkbox.checked) {
+        card.classList.add('selected');
+    } else {
+        card.classList.remove('selected');
+    }
+    
+    updateSummary();
+}
+
+function changeAppCount(delta) {
+    const input = document.getElementById('app_count');
+    let value = parseInt(input.value) + delta;
+    value = Math.max(0, Math.min(10, value));
+    input.value = value;
+    
+    updateAppContainersList();
+    updateSummary();
+}
+
+function updateAppContainersList() {
+    const count = parseInt(document.getElementById('app_count').value);
+    const list = document.getElementById('appContainersList');
+    
+    if (count === 0) {
+        list.innerHTML = '<p style="color: #718096;">No application containers will be created</p>';
+    } else {
+        let html = '<div style="display: grid; gap: 10px;">';
+        for (let i = 1; i <= count; i++) {
+            html += `
+                <div style="background: white; padding: 15px; border-radius: 5px; border: 1px solid #e2e8f0;">
+                    <strong>app-${i}</strong> - IP: 10.0.3.${10 + i}
+                </div>
+            `;
+        }
+        html += '</div>';
+        list.innerHTML = html;
+    }
+}
+
+function updateSummary() {
+    const tbody = document.getElementById('summaryTable');
+    let html = '';
+    
+    // Datastore
+    if (document.getElementById('create_datastore').checked) {
+        html += `
+            <tr>
+                <td><strong>datastore</strong></td>
+                <td>Database & Cache</td>
+                <td>10.0.3.2</td>
+                <td>PostgreSQL, Redis</td>
+            </tr>
+        `;
+    }
+    
+    // App containers
+    const appCount = parseInt(document.getElementById('app_count').value);
+    for (let i = 1; i <= appCount; i++) {
+        html += `
+            <tr>
+                <td><strong>app-${i}</strong></td>
+                <td>Application</td>
+                <td>10.0.3.${10 + i}</td>
+                <td>nginx, Python, Node.js</td>
+            </tr>
+        `;
+    }
+    
+    // Django sample
+    if (document.getElementById('create_django_sample').checked && appCount > 0) {
+        html += `
+            <tr>
+                <td colspan="4" style="background: #f0f4ff;">
+                    <strong>Django Sample</strong> will be deployed to app-1
+                </td>
+            </tr>
+        `;
+    }
+    
+    if (html === '') {
+        html = '<tr><td colspan="4" style="text-align: center; color: #718096;">No containers selected</td></tr>';
+    }
+    
+    tbody.innerHTML = html;
+}
+
+function createContainers() {
+    const data = {
+        create_datastore: document.getElementById('create_datastore').checked,
+        postgres_version: document.getElementById('postgres_version').value,
+        app_count: parseInt(document.getElementById('app_count').value),
+        create_django_sample: document.getElementById('create_django_sample').checked
+    };
+    
+    if (!data.create_datastore && data.app_count === 0) {
+        alert('Please select at least one container to create');
+        return;
+    }
+    
+    // Show progress overlay
+    document.getElementById('creatingOverlay').style.display = 'block';
+    const progressList = document.getElementById('progressList');
+    progressList.innerHTML = '';
+    
+    // Add progress items
+    if (data.create_datastore) {
+        addProgressItem('datastore', 'Creating datastore container...');
+    }
+    for (let i = 1; i <= data.app_count; i++) {
+        addProgressItem(`app-${i}`, `Creating app-${i} container...`);
+    }
+    if (data.create_django_sample) {
+        addProgressItem('django', 'Deploying Django sample application...');
+    }
+    
+    // Send create request
+    fetch('/api/wizard/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        // Update progress items with results
+        if (result.results) {
+            result.results.forEach(r => {
+                updateProgressItem(r.container, r.success, r.message);
+            });
+        }
+        
+        // Redirect after a delay
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 3000);
+    })
+    .catch(error => {
+        alert('Error creating containers: ' + error);
+        document.getElementById('creatingOverlay').style.display = 'none';
+    });
+}
+
+function addProgressItem(id, text) {
+    const progressList = document.getElementById('progressList');
+    const item = document.createElement('div');
+    item.className = 'progress-item';
+    item.id = 'progress-' + id;
+    item.innerHTML = `
+        <svg class="progress-icon pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+        </svg>
+        <span>${text}</span>
+    `;
+    progressList.appendChild(item);
+}
+
+function updateProgressItem(id, success, message) {
+    const item = document.getElementById('progress-' + id);
+    if (item) {
+        const icon = item.querySelector('.progress-icon');
+        const text = item.querySelector('span');
+        
+        if (success) {
+            icon.className = 'progress-icon success';
+            icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+            text.textContent = message || 'Success';
+        } else {
+            icon.className = 'progress-icon error';
+            icon.innerHTML = '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>';
+            text.textContent = message || 'Failed';
+        }
+    }
+}
+
+// Initialize
+updateAppContainersList();
+updateSummary();
+</script>
+{% endblock %}

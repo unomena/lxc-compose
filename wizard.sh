@@ -330,6 +330,11 @@ EOF
     log "Datastore container '$container_name' created successfully!"
     info "Container IP: $container_ip"
     
+    # Register container with Flask manager
+    if [ -f "/srv/lxc-compose/scripts/register-container.sh" ]; then
+        sudo bash /srv/lxc-compose/scripts/register-container.sh "$container_name" "datastore" "$container_ip" "postgresql,redis" || true
+    fi
+    
     if [[ "$install_postgres" == "true" ]]; then
         info "PostgreSQL: $container_ip:5432"
         info "Create database: sudo lxc-attach -n $container_name -- sudo -u postgres createdb dbname"
@@ -459,6 +464,11 @@ EOF
     
     log "Application container '$container_name' created successfully!"
     info "Container IP: $container_ip"
+    
+    # Register container with Flask manager
+    if [ -f "/srv/lxc-compose/scripts/register-container.sh" ]; then
+        sudo bash /srv/lxc-compose/scripts/register-container.sh "$container_name" "app" "$container_ip" "nginx,python,nodejs" || true
+    fi
 }
 
 # Main wizard flow

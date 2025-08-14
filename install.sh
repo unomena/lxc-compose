@@ -147,6 +147,7 @@ install_files() {
     
     # Create additional directories needed
     sudo mkdir -p /srv/{apps,shared,logs}
+    sudo mkdir -p /etc/lxc-compose
     sudo mkdir -p /srv/shared/{database,media,certificates}
     sudo mkdir -p /srv/shared/database/{postgres,redis}
     
@@ -186,6 +187,43 @@ fi
 EOF
     
     sudo chmod +x /usr/local/bin/lxc-compose
+}
+
+# Setup Flask Manager
+setup_flask_manager() {
+    log "Setting up LXC Compose Manager web interface..."
+    
+    # Copy Flask app files
+    if [[ -d "/srv/lxc-compose/lxc-compose-manager" ]]; then
+        sudo cp -r /srv/lxc-compose/lxc-compose-manager /srv/
+        
+        # Install Python dependencies
+        log "Installing Python dependencies for web interface..."
+        sudo apt-get install -y python3-pip python3-venv supervisor nginx
+        
+        # Create virtual environment and install requirements
+        cd /srv/lxc-compose-manager
+        sudo python3 -m venv venv
+        sudo ./venv/bin/pip install --upgrade pip
+        sudo ./venv/bin/pip install -r requirements.txt
+        
+        # Setup supervisor configuration
+        if [[ -f "/srv/lxc-compose-manager/supervisor.conf" ]]; then
+            sudo cp /srv/lxc-compose-manager/supervisor.conf /etc/supervisor/conf.d/lxc-compose-manager.conf
+            
+            # Generate a secret key for Flask
+            FLASK_SECRET_KEY=$(openssl rand -hex 32)
+            sudo sed -i "s/%(ENV_FLASK_SECRET_KEY)s/$FLASK_SECRET_KEY/g" /etc/supervisor/conf.d/lxc-compose-manager.conf
+            
+            # Reload supervisor
+            sudo supervisorctl reread
+            sudo supervisorctl update
+        fi
+        
+        log "Web interface installed at http://$(hostname -I | awk '{print $1}'):5000"
+    else
+        warning "Flask manager directory not found, skipping web interface setup"
+    fi
 }
 
 # Run setup if requested
@@ -313,6 +351,7 @@ main() {
     download_repo
     install_files
     create_command
+    setup_flask_manager
     run_setup
 }
 
