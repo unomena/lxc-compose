@@ -198,10 +198,9 @@ EOF
     
     # Update and install base packages
     log "Updating container packages..."
-    sudo lxc-attach -n "$container_name" -- apt-get update
-    sudo lxc-attach -n "$container_name" -- DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-    sudo lxc-attach -n "$container_name" -- DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        curl wget vim htop sudo systemd systemd-sysv ca-certificates gnupg lsb-release
+    sudo lxc-attach -n "$container_name" -- bash -c "apt-get update"
+    sudo lxc-attach -n "$container_name" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
+    sudo lxc-attach -n "$container_name" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget vim htop sudo systemd systemd-sysv ca-certificates gnupg lsb-release"
     
     # Install PostgreSQL if requested
     if [[ "$install_postgres" == "true" ]]; then
@@ -218,8 +217,7 @@ EOF
             local pg_version="$postgres_version"
         else
             # Install default Ubuntu version
-            sudo lxc-attach -n "$container_name" -- DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                postgresql postgresql-client postgresql-contrib
+            sudo lxc-attach -n "$container_name" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client postgresql-contrib"
             local pg_version=$(sudo lxc-attach -n "$container_name" -- ls /etc/postgresql/ | head -1)
         fi
         
@@ -247,11 +245,11 @@ EOF
                 DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server=$redis_version* redis-tools=$redis_version*
             " || {
                 warning "Specific Redis version not available, installing default"
-                sudo lxc-attach -n "$container_name" -- DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server redis-tools
+                sudo lxc-attach -n "$container_name" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server redis-tools"
             }
         else
             # Install default Ubuntu version
-            sudo lxc-attach -n "$container_name" -- DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server redis-tools
+            sudo lxc-attach -n "$container_name" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server redis-tools"
         fi
         
         # Configure Redis
