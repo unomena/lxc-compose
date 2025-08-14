@@ -462,7 +462,7 @@ def web():
     
     # Check if Flask manager is running
     result = subprocess.run(['sudo', 'supervisorctl', 'status', 'lxc-compose-manager'], 
-                          capture_output=True, text=True, stderr=subprocess.DEVNULL)
+                          capture_output=True, text=True)
     
     if result.returncode == 0 and 'RUNNING' in result.stdout:
         click.echo("\n╔══════════════════════════════════════════════════════════════╗")
@@ -519,7 +519,7 @@ def manager(action, start, stop, restart, status):
     
     if status:
         result = subprocess.run(['sudo', 'supervisorctl', 'status', 'lxc-compose-manager'], 
-                              capture_output=True, text=True, stderr=subprocess.DEVNULL)
+                              capture_output=True, text=True)
         if result.returncode == 0:
             click.echo(result.stdout.strip())
         else:
