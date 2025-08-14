@@ -25,7 +25,7 @@ question() { echo -e "${CYAN}[?]${NC} $1"; }
 # Default values
 DEFAULT_DATASTORE_IP="10.0.3.2"
 DEFAULT_APP_IP_START="10.0.3.11"
-POSTGRES_VERSIONS=("14" "15" "16")
+POSTGRES_VERSIONS=("13" "14" "15" "16")
 REDIS_VERSIONS=("6" "7")
 
 # Check if LXC Compose is installed
