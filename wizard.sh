@@ -552,19 +552,82 @@ main() {
     sudo lxc-ls --fancy
     echo ""
     
-    # Show next steps
-    info "Next steps:"
+    # Show next steps and commands
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║                    Quick Commands                             ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    info "Container Management:"
+    echo "  lxc-compose list              # View all containers"
+    echo "  lxc-compose attach datastore  # Enter a container"
+    echo "  lxc-compose info              # Show container details"
+    echo "  lxc-compose status            # System overview"
+    echo ""
+    
+    info "Test Your Services:"
     if [[ "$setup_datastore" == "true" ]]; then
-        echo "  - Configure database users and permissions"
-        echo "  - Update application connection strings to use $datastore_ip"
+        if [[ "$install_postgres" == "true" ]]; then
+            echo "  lxc-compose test db           # Test PostgreSQL"
+        fi
+        if [[ "$install_redis" == "true" ]]; then
+            echo "  lxc-compose test redis        # Test Redis"
+        fi
     fi
-    if [[ "$setup_apps" == "true" ]]; then
-        echo "  - Deploy your application code to /srv/apps/app-*/code/"
-        echo "  - Configure environment variables in /srv/apps/app-*/secrets.env"
+    echo "  lxc-compose examples          # Show all command examples"
+    echo ""
+    
+    info "Database Operations:"
+    if [[ "$install_postgres" == "true" ]]; then
+        echo "  # Create a database:"
+        echo "  lxc-compose exec datastore sudo -u postgres createdb myapp"
+        echo ""
+        echo "  # Create a user:"
+        echo "  lxc-compose exec datastore sudo -u postgres createuser myuser"
+        echo ""
+        echo "  # Access PostgreSQL:"
+        echo "  lxc-compose exec datastore sudo -u postgres psql"
+    fi
+    if [[ "$install_redis" == "true" ]]; then
+        echo ""
+        echo "  # Test Redis:"
+        echo "  lxc-compose exec datastore redis-cli ping"
     fi
     echo ""
-    info "Use 'lxcc-list' to view all containers"
-    info "Use 'lxcc-manage attach <container>' to enter a container"
+    
+    info "Connection Details:"
+    if [[ "$setup_datastore" == "true" ]]; then
+        echo "  Datastore IP: $datastore_ip"
+        if [[ "$install_postgres" == "true" ]]; then
+            echo "  PostgreSQL:   $datastore_ip:5432"
+        fi
+        if [[ "$install_redis" == "true" ]]; then
+            echo "  Redis:        $datastore_ip:6379"
+        fi
+    fi
+    if [[ "$setup_apps" == "true" ]]; then
+        echo "  Application containers:"
+        local app_ip_base=11
+        for ((i=1; i<=num_apps; i++)); do
+            echo "    app-$i:      10.0.3.$app_ip_base"
+            ((app_ip_base++))
+        done
+    fi
+    echo ""
+    
+    info "Development Workflow:"
+    if [[ "$setup_apps" == "true" ]]; then
+        echo "  1. Deploy code to:     /srv/apps/app-*/code/"
+        echo "  2. Set environment:    /srv/apps/app-*/secrets.env"
+        echo "  3. View logs:          /srv/logs/app-*/"
+        echo "  4. Enter container:    lxc-compose attach app-1"
+    fi
+    echo ""
+    
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║           🎉 Your LXC environment is ready! 🎉                ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    info "Test everything now: lxc-compose test db && lxc-compose test redis"
 }
 
 # Run main function
