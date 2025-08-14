@@ -31,6 +31,9 @@ DB_USER="${4:-appuser}"
 DB_PASSWORD="${5:-apppass123}"
 REDIS_HOST="${6:-10.0.3.2}"
 
+# Generate a Django secret key once for the entire deployment
+DJANGO_SECRET_KEY=$(openssl rand -hex 32)
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║        Deploying Django+Celery Sample Application            ║"
@@ -121,9 +124,10 @@ sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/templates/index.h
 
 # Create .env file with deployment-specific configuration
 log "Creating environment configuration..."
+# Note: DJANGO_SECRET_KEY is generated when creating supervisor config
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/.env" <<EOF
 DEBUG=True
-DJANGO_SECRET_KEY=django-insecure-$(openssl rand -hex 32)
+DJANGO_SECRET_KEY=$DJANGO_SECRET_KEY
 DB_NAME=$DB_NAME
 DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
@@ -136,9 +140,54 @@ CELERY_RESULT_BACKEND=redis://$REDIS_HOST:6379/0
 ALLOWED_HOSTS=*
 EOF
 
-# Copy configuration files
-log "Copying configuration files..."
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /etc/supervisor/conf.d/django-app.conf" < "$SAMPLE_APP_DIR/config/supervisor.conf"
+# Generate supervisor configuration with environment variables
+log "Generating supervisor configuration..."
+sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /etc/supervisor/conf.d/django-app.conf" <<EOF
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:django]
+command=/app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
+directory=/app/src
+autostart=true
+autorestart=true
+stdout_logfile=/app/logs/django.log
+stderr_logfile=/app/logs/django_err.log
+environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
+user=www-data
+
+[program:celery]
+command=/app/venv/bin/celery -A config worker -l info
+directory=/app/src
+autostart=true
+autorestart=true
+stdout_logfile=/app/logs/celery.log
+stderr_logfile=/app/logs/celery_err.log
+environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
+user=www-data
+
+[program:celery-beat]
+command=/app/venv/bin/celery -A config beat -l info
+directory=/app/src
+autostart=true
+autorestart=true
+stdout_logfile=/app/logs/celery-beat.log
+stderr_logfile=/app/logs/celery-beat_err.log
+environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
+user=www-data
+
+[program:nginx]
+command=/usr/sbin/nginx -g "daemon off;"
+autostart=true
+autorestart=true
+stdout_logfile=/app/logs/nginx.log
+stderr_logfile=/app/logs/nginx_err.log
+EOF
+
+# Copy nginx configuration
+log "Copying nginx configuration..."
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /etc/nginx/sites-available/django-app" < "$SAMPLE_APP_DIR/config/nginx.conf"
 
 # Enable nginx site
