@@ -366,22 +366,14 @@ def api_command_execute():
     data = request.json
     command = data.get('command', '')
     
-    # Map commands to actual implementations
-    command_map = {
-        'list': 'sudo lxc-ls --fancy',
-        'doctor': 'sudo bash /srv/lxc-compose/update.sh doctor',
-        'update': 'sudo bash /srv/lxc-compose/update.sh update',
-        'test db': 'sudo lxc-attach -n datastore -- sudo -u postgres psql -c "SELECT version();"',
-        'test redis': 'sudo lxc-attach -n datastore -- redis-cli ping'
-    }
-    
-    if command in command_map:
-        result = run_command(command_map[command])
+    # Special handling for some commands
+    if command == 'list':
+        result = run_command('sudo lxc-ls --fancy')
         return jsonify(result)
     
-    # Handle attach commands
+    # Handle attach commands specially (they need interactive terminal)
     if command.startswith('attach '):
-        container = command.split()[1]
+        container = command.split()[1] if len(command.split()) > 1 else 'datastore'
         return jsonify({
             'success': True,
             'redirect': f'/api/container/{container}/shell'
@@ -396,10 +388,10 @@ def api_command_execute():
             result = run_command(f'sudo lxc-attach -n {container} -- {cmd}')
             return jsonify(result)
     
-    return jsonify({
-        'success': False,
-        'error': f'Unknown command: {command}'
-    })
+    # For all other commands, use the actual lxc-compose CLI
+    # This ensures commands like 'test db', 'test redis', 'doctor', 'update' work properly
+    result = run_command(f'lxc-compose {command}')
+    return jsonify(result)
 
 @app.route('/terminal')
 def terminal():
