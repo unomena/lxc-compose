@@ -520,5 +520,5 @@ if __name__ == '__main__':
     os.makedirs('/etc/lxc-compose', exist_ok=True)
     os.makedirs('/var/log', exist_ok=True)
     
-    # Run with SocketIO
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    # Run with SocketIO (allow_unsafe_werkzeug is OK for local management interface)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
