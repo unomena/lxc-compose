@@ -417,15 +417,17 @@ def api_command_execute():
                 # Handle relative and absolute paths
                 if new_dir.startswith('/'):
                     # Absolute path
-                    test_dir = new_dir
+                    test_dir = os.path.normpath(new_dir)
                 elif new_dir == '~':
                     test_dir = '/root'
                 elif new_dir == '..':
                     # Go up one directory
-                    test_dir = os.path.dirname(working_dir)
+                    test_dir = os.path.normpath(os.path.dirname(working_dir))
+                    if not test_dir:
+                        test_dir = '/'
                 else:
                     # Relative path
-                    test_dir = os.path.join(working_dir, new_dir)
+                    test_dir = os.path.normpath(os.path.join(working_dir, new_dir))
                 
                 # Test if directory exists in container
                 test_result = subprocess.run(
@@ -435,14 +437,16 @@ def api_command_execute():
                 )
                 
                 if test_result.returncode == 0:
+                    # Normalize the path before storing
+                    normalized_dir = os.path.normpath(test_dir)
                     # Update the working directory for this session
                     if session_id and container in shell_sessions:
-                        shell_sessions[container][session_id] = test_dir
+                        shell_sessions[container][session_id] = normalized_dir
                     return jsonify({
                         'success': True,
                         'stdout': '',
                         'stderr': '',
-                        'working_dir': test_dir
+                        'working_dir': normalized_dir
                     })
                 else:
                     return jsonify({
