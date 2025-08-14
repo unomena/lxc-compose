@@ -223,6 +223,22 @@ def create_container(name, container_type='app', ip_address=None):
     save_registry(registry)
     return {'success': True, 'container': registry['containers'][name]}
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    try:
+        # Check if we can list containers
+        result = subprocess.run(['sudo', 'lxc-ls'], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        if result.returncode == 0:
+            return jsonify({'status': 'healthy', 'message': 'LXC Compose Manager is running'}), 200
+        else:
+            return jsonify({'status': 'unhealthy', 'message': 'Cannot access LXC commands'}), 503
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'message': str(e)}), 503
+
 @app.route('/')
 def index():
     """Main dashboard"""
