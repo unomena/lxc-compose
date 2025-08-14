@@ -482,22 +482,40 @@ def web():
             click.echo(f"\n[✓] Web interface started at http://{host_ip}:5000")
 
 @cli.command()
+@click.argument('action', type=click.Choice(['status', 'start', 'stop', 'restart'], case_sensitive=False), required=False)
 @click.option('--start', is_flag=True, help='Start the web interface')
 @click.option('--stop', is_flag=True, help='Stop the web interface')
 @click.option('--restart', is_flag=True, help='Restart the web interface')
 @click.option('--status', is_flag=True, help='Show web interface status')
-def manager(start, stop, restart, status):
+def manager(action, start, stop, restart, status):
     """Control the web management interface
     
     \b
     Examples:
-      lxc-compose manager --status   # Check if web interface is running
-      lxc-compose manager --start    # Start the web interface
-      lxc-compose manager --stop     # Stop the web interface
-      lxc-compose manager --restart  # Restart the web interface
+      lxc-compose manager              # Show status (default)
+      lxc-compose manager status       # Check if web interface is running
+      lxc-compose manager start        # Start the web interface
+      lxc-compose manager stop         # Stop the web interface
+      lxc-compose manager restart      # Restart the web interface
+      
+      # Alternative flag-based usage:
+      lxc-compose manager --status     # Check status
+      lxc-compose manager --restart    # Restart service
     """
+    # Handle new action-based syntax
+    if action:
+        if action == 'status':
+            status = True
+        elif action == 'start':
+            start = True
+        elif action == 'stop':
+            stop = True
+        elif action == 'restart':
+            restart = True
+    
+    # Default to status if no action specified
     if not any([start, stop, restart, status]):
-        status = True  # Default to status if no option given
+        status = True
     
     if status:
         result = subprocess.run(['sudo', 'supervisorctl', 'status', 'lxc-compose-manager'], 
@@ -505,19 +523,31 @@ def manager(start, stop, restart, status):
         if result.returncode == 0:
             click.echo(result.stdout.strip())
         else:
-            click.echo("[!] Web interface is not configured")
+            click.echo("[!] Web interface is not configured or supervisor is not running")
     
     if start:
-        subprocess.run(['sudo', 'supervisorctl', 'start', 'lxc-compose-manager'])
-        click.echo("[✓] Web interface started")
+        result = subprocess.run(['sudo', 'supervisorctl', 'start', 'lxc-compose-manager'],
+                              capture_output=True, text=True)
+        if 'started' in result.stdout.lower() or result.returncode == 0:
+            click.echo("[✓] Web interface started")
+        else:
+            click.echo(f"[!] Failed to start: {result.stdout.strip()}")
     
     if stop:
-        subprocess.run(['sudo', 'supervisorctl', 'stop', 'lxc-compose-manager'])
-        click.echo("[✓] Web interface stopped")
+        result = subprocess.run(['sudo', 'supervisorctl', 'stop', 'lxc-compose-manager'],
+                              capture_output=True, text=True)
+        if 'stopped' in result.stdout.lower() or result.returncode == 0:
+            click.echo("[✓] Web interface stopped")
+        else:
+            click.echo(f"[!] Failed to stop: {result.stdout.strip()}")
     
     if restart:
-        subprocess.run(['sudo', 'supervisorctl', 'restart', 'lxc-compose-manager'])
-        click.echo("[✓] Web interface restarted")
+        result = subprocess.run(['sudo', 'supervisorctl', 'restart', 'lxc-compose-manager'],
+                              capture_output=True, text=True)
+        if 'started' in result.stdout.lower() or result.returncode == 0:
+            click.echo("[✓] Web interface restarted")
+        else:
+            click.echo(f"[!] Failed to restart: {result.stdout.strip()}")
 
 @cli.command()
 def examples():
@@ -536,9 +566,11 @@ SETUP & MAINTENANCE
 WEB MANAGEMENT INTERFACE
 ------------------------
   lxc-compose web                 # Open web management interface
-  lxc-compose manager --status    # Check web interface status
-  lxc-compose manager --start     # Start web interface
-  lxc-compose manager --restart   # Restart web interface
+  lxc-compose manager             # Check web interface status
+  lxc-compose manager status      # Check web interface status
+  lxc-compose manager start       # Start web interface
+  lxc-compose manager stop        # Stop web interface
+  lxc-compose manager restart     # Restart web interface
 
 CONTAINER LISTING
 -----------------
