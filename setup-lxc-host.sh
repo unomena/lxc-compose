@@ -119,6 +119,9 @@ sudo ufw allow 22/tcp comment 'SSH'
 sudo ufw allow 80/tcp comment 'HTTP'
 sudo ufw allow 443/tcp comment 'HTTPS'
 
+# Allow Flask Web Interface
+sudo ufw allow 5000/tcp comment 'LXC Compose Web Interface'
+
 # Enable UFW
 sudo ufw --force enable
 

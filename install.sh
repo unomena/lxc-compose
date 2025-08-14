@@ -228,6 +228,11 @@ setup_flask_manager() {
         fi
         sudo chmod 644 /etc/lxc-compose/registry.json
         
+        # Open firewall port for Flask interface
+        if command -v ufw &> /dev/null; then
+            sudo ufw allow 5000/tcp comment 'LXC Compose Web Interface' 2>/dev/null || true
+        fi
+        
         # Display Flask interface info
         local HOST_IP=$(hostname -I | awk '{print $1}')
         sleep 2
