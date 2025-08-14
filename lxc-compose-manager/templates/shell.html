@@ -124,15 +124,15 @@
 <div id="terminal" tabindex="0"></div>
 
 <div style="margin-top: 15px;">
-    <button class="btn btn-secondary" onclick="clearTerminal()">Clear</button>
-    <button class="btn btn-secondary" onclick="window.close()">Close</button>
-    <button class="btn btn-primary" onclick="connectShell()">Reconnect</button>
+    <button id="clearBtn" class="btn btn-secondary">Clear</button>
+    <button id="closeBtn" class="btn btn-secondary">Close</button>
+    <button id="reconnectBtn" class="btn btn-primary">Reconnect</button>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    console.log('Shell.html script loaded - Version 2');
+    console.log('Shell.html script loaded - Version 3 - No inline onclick handlers');
     const containerName = '{{ container_name }}';
     const sessionId = '{{ session_id }}';
     let currentWorkingDir = '/root';
@@ -424,7 +424,22 @@
             return;
         }
         
-        // Set up event handlers
+        // Set up button event handlers
+        const clearBtn = document.getElementById('clearBtn');
+        const closeBtn = document.getElementById('closeBtn');
+        const reconnectBtn = document.getElementById('reconnectBtn');
+        
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => clearTerminal());
+        }
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => window.close());
+        }
+        if (reconnectBtn) {
+            reconnectBtn.addEventListener('click', () => connectShell());
+        }
+        
+        // Set up keyboard and click handlers
         setupKeyboardHandler();
         setupClickHandler();
         
