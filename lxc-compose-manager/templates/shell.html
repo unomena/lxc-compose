@@ -138,10 +138,11 @@
     let currentCommand = '';
     let commandHistory = [];
     let historyIndex = -1;
-    const terminal = document.getElementById('terminal');
-    const connectionStatus = document.getElementById('connectionStatus');
+    let terminal = null;
+    let connectionStatus = null;
     
     function updateConnectionStatus(status) {
+        if (!connectionStatus) return;
         connectionStatus.className = 'connection-status';
         switch(status) {
             case 'connected':
@@ -165,6 +166,8 @@
     }
     
     function appendOutput(text, className = 'terminal-output') {
+        if (!terminal) return;
+        
         // Remove the input line temporarily
         const inputLine = terminal.querySelector('.input-line');
         if (inputLine) inputLine.remove();
@@ -181,6 +184,8 @@
     }
     
     function showInputLine() {
+        if (!terminal) return;
+        
         // Remove any existing input line
         const existingInputLine = terminal.querySelector('.input-line');
         if (existingInputLine) {
@@ -210,6 +215,8 @@
     }
     
     function executeCommand(command) {
+        if (!terminal) return;
+        
         // Remove input line and show command being executed
         const inputLine = terminal.querySelector('.input-line');
         if (inputLine) inputLine.remove();
@@ -296,6 +303,11 @@
     }
     
     function connectShell() {
+        if (!terminal) {
+            console.error('Cannot connect: terminal not initialized');
+            return;
+        }
+        
         updateConnectionStatus('connecting');
         
         terminal.innerHTML = '';
@@ -336,14 +348,19 @@
     }
     
     function clearTerminal() {
+        if (!terminal) return;
+        
         terminal.innerHTML = '';
         appendOutput(`Terminal cleared`, 'terminal-success');
         currentCommand = '';
         showInputLine();
     }
     
-    // Handle keyboard input
-    terminal.addEventListener('keydown', (e) => {
+    // Handle keyboard input (will be set up after DOM loads)
+    function setupKeyboardHandler() {
+        if (!terminal) return;
+        
+        terminal.addEventListener('keydown', (e) => {
         e.preventDefault();
         
         if (e.key === 'Enter') {
@@ -384,15 +401,33 @@
             clearTerminal();
         }
     });
+    }
     
-    // Focus terminal on click
-    terminal.addEventListener('click', () => {
-        terminal.focus();
-    });
+    // Focus terminal on click (will be set up after DOM loads)
+    function setupClickHandler() {
+        if (!terminal) return;
+        
+        terminal.addEventListener('click', () => {
+            terminal.focus();
+        });
+    }
     
     // Connect on load
     window.addEventListener('load', () => {
-        // Ensure DOM is fully ready before connecting
+        // Initialize DOM elements
+        terminal = document.getElementById('terminal');
+        connectionStatus = document.getElementById('connectionStatus');
+        
+        if (!terminal || !connectionStatus) {
+            console.error('Terminal elements not found in DOM');
+            return;
+        }
+        
+        // Set up event handlers
+        setupKeyboardHandler();
+        setupClickHandler();
+        
+        // Connect to shell
         setTimeout(() => {
             connectShell();
             terminal.focus();
