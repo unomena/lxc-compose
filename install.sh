@@ -215,12 +215,39 @@ setup_flask_manager() {
             FLASK_SECRET_KEY=$(openssl rand -hex 32)
             sudo sed -i "s/%(ENV_FLASK_SECRET_KEY)s/$FLASK_SECRET_KEY/g" /etc/supervisor/conf.d/lxc-compose-manager.conf
             
-            # Reload supervisor
+            # Reload supervisor and start Flask app
             sudo supervisorctl reread
             sudo supervisorctl update
+            sudo supervisorctl restart lxc-compose-manager || sudo supervisorctl start lxc-compose-manager
         fi
         
-        log "Web interface installed at http://$(hostname -I | awk '{print $1}'):5000"
+        # Create registry directory and file
+        sudo mkdir -p /etc/lxc-compose
+        if [[ ! -f "/etc/lxc-compose/registry.json" ]]; then
+            echo '[]' | sudo tee /etc/lxc-compose/registry.json > /dev/null
+        fi
+        sudo chmod 644 /etc/lxc-compose/registry.json
+        
+        # Display Flask interface info
+        local HOST_IP=$(hostname -I | awk '{print $1}')
+        sleep 2
+        if sudo supervisorctl status lxc-compose-manager 2>/dev/null | grep -q "RUNNING"; then
+            echo ""
+            echo "╔══════════════════════════════════════════════════════════════╗"
+            echo "║         🌐 LXC Compose Web Interface Ready! 🌐               ║"
+            echo "╚══════════════════════════════════════════════════════════════╝"
+            echo ""
+            echo "[✓] Web Interface: http://${HOST_IP}:5000"
+            echo "[i] Access the web interface to:"
+            echo "    • View and manage all containers"
+            echo "    • Create new containers with wizard"
+            echo "    • Configure port forwarding"
+            echo "    • Execute commands via web terminal"
+            echo ""
+        else
+            log "Web interface installed at http://${HOST_IP}:5000"
+            info "Start with: sudo supervisorctl start lxc-compose-manager"
+        fi
     else
         warning "Flask manager directory not found, skipping web interface setup"
     fi

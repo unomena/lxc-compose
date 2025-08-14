@@ -825,7 +825,7 @@ echo "📂 Base: /srv/"
 echo ""
 echo "🚀 Next Steps:"
 echo "   1. source ~/.bashrc"
-echo "   2. sudo /srv/lxc-compose/wizard.sh  (Interactive setup wizard)"
+echo "   2. lxc-compose wizard
 echo ""
 echo "   Or manually create containers:"
 echo "   - lxcc-create datastore 10.0.3.2 database"

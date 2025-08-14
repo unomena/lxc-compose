@@ -44,8 +44,14 @@ def cli():
     \b
     QUICK START:
       lxc-compose wizard         # Interactive setup wizard
+      lxc-compose web            # Open web management interface
       lxc-compose list           # List all containers
       lxc-compose status         # System overview
+    
+    \b
+    WEB INTERFACE:
+      lxc-compose web            # Open web management interface
+      lxc-compose manager        # Control web interface service
     
     \b
     MAINTENANCE:
@@ -436,6 +442,84 @@ def test(service, container):
             click.echo("  Redis may not be properly configured")
 
 @cli.command()
+def web():
+    """Open web management interface
+    
+    \b
+    This command will:
+    - Check if the Flask manager is running
+    - Display the web interface URL
+    - Optionally restart the service if needed
+    """
+    import socket
+    
+    # Get host IP
+    hostname = socket.gethostname()
+    try:
+        host_ip = subprocess.run(['hostname', '-I'], capture_output=True, text=True).stdout.split()[0]
+    except:
+        host_ip = "localhost"
+    
+    # Check if Flask manager is running
+    result = subprocess.run(['sudo', 'supervisorctl', 'status', 'lxc-compose-manager'], 
+                          capture_output=True, text=True, stderr=subprocess.DEVNULL)
+    
+    if result.returncode == 0 and 'RUNNING' in result.stdout:
+        click.echo("\n╔══════════════════════════════════════════════════════════════╗")
+        click.echo("║           🌐 Web Management Interface 🌐                      ║")
+        click.echo("╚══════════════════════════════════════════════════════════════╝\n")
+        click.echo(f"[✓] Web Interface: http://{host_ip}:5000\n")
+        click.echo("[i] Features available:")
+        click.echo("    • View all containers and their status")
+        click.echo("    • Create new containers with guided wizard")
+        click.echo("    • Manage port forwarding rules")
+        click.echo("    • Execute commands via web terminal")
+        click.echo("    • Monitor container resources\n")
+    else:
+        click.echo("[!] Web interface is not running")
+        if click.confirm("Would you like to start it?"):
+            subprocess.run(['sudo', 'supervisorctl', 'start', 'lxc-compose-manager'])
+            click.echo(f"\n[✓] Web interface started at http://{host_ip}:5000")
+
+@cli.command()
+@click.option('--start', is_flag=True, help='Start the web interface')
+@click.option('--stop', is_flag=True, help='Stop the web interface')
+@click.option('--restart', is_flag=True, help='Restart the web interface')
+@click.option('--status', is_flag=True, help='Show web interface status')
+def manager(start, stop, restart, status):
+    """Control the web management interface
+    
+    \b
+    Examples:
+      lxc-compose manager --status   # Check if web interface is running
+      lxc-compose manager --start    # Start the web interface
+      lxc-compose manager --stop     # Stop the web interface
+      lxc-compose manager --restart  # Restart the web interface
+    """
+    if not any([start, stop, restart, status]):
+        status = True  # Default to status if no option given
+    
+    if status:
+        result = subprocess.run(['sudo', 'supervisorctl', 'status', 'lxc-compose-manager'], 
+                              capture_output=True, text=True, stderr=subprocess.DEVNULL)
+        if result.returncode == 0:
+            click.echo(result.stdout.strip())
+        else:
+            click.echo("[!] Web interface is not configured")
+    
+    if start:
+        subprocess.run(['sudo', 'supervisorctl', 'start', 'lxc-compose-manager'])
+        click.echo("[✓] Web interface started")
+    
+    if stop:
+        subprocess.run(['sudo', 'supervisorctl', 'stop', 'lxc-compose-manager'])
+        click.echo("[✓] Web interface stopped")
+    
+    if restart:
+        subprocess.run(['sudo', 'supervisorctl', 'restart', 'lxc-compose-manager'])
+        click.echo("[✓] Web interface restarted")
+
+@cli.command()
 def examples():
     """Show comprehensive examples for all commands"""
     examples_text = """
@@ -448,6 +532,13 @@ SETUP & MAINTENANCE
   lxc-compose doctor              # Check system health
   lxc-compose update              # Update LXC Compose
   lxc-compose status              # Show system overview
+  
+WEB MANAGEMENT INTERFACE
+------------------------
+  lxc-compose web                 # Open web management interface
+  lxc-compose manager --status    # Check web interface status
+  lxc-compose manager --start     # Start web interface
+  lxc-compose manager --restart   # Restart web interface
 
 CONTAINER LISTING
 -----------------

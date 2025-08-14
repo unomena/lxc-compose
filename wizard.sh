@@ -637,12 +637,31 @@ main() {
     sudo lxc-ls --fancy
     echo ""
     
+    # Show Flask Web Interface if running
+    local HOST_IP=$(hostname -I | awk '{print $1}')
+    if sudo supervisorctl status lxc-compose-manager 2>/dev/null | grep -q "RUNNING"; then
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║           🌐 Web Management Interface 🌐                      ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "[✓] Web Interface: http://${HOST_IP}:5000"
+        echo ""
+        echo "[i] Access the web interface in your browser to:"
+        echo "    • View all containers and their status"
+        echo "    • Create new containers with guided wizard"
+        echo "    • Manage port forwarding rules"
+        echo "    • Execute commands via web terminal"
+        echo "    • Monitor container resources"
+        echo ""
+    fi
+    
     # Show next steps and commands
     echo "╔══════════════════════════════════════════════════════════════╗"
     echo "║                    Quick Commands                            ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     info "Container Management:"
+    echo "  lxc-compose web               # Open web management interface"
     echo "  lxc-compose list              # View all containers"
     echo "  lxc-compose attach datastore  # Enter a container"
     echo "  lxc-compose info              # Show container details"
