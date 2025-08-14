@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Shell - {{ container_name }} - LXC Compose Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    #terminal {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: 'Consolas', 'Monaco', 'Lucida Console', monospace;
+        font-size: 14px;
+        padding: 10px;
+        height: 600px;
+        overflow-y: auto;
+        border-radius: 5px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    
+    .terminal-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 5px 5px 0 0;
+        margin-bottom: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .terminal-title {
+        font-size: 18px;
+        font-weight: 500;
+    }
+    
+    .terminal-info {
+        font-size: 14px;
+        opacity: 0.9;
+    }
+    
+    .input-group {
+        display: flex;
+        margin-top: 10px;
+    }
+    
+    #commandInput {
+        flex: 1;
+        padding: 10px;
+        background: #2d2d2d;
+        color: #d4d4d4;
+        border: 1px solid #444;
+        border-radius: 3px 0 0 3px;
+        font-family: monospace;
+        font-size: 14px;
+    }
+    
+    #sendButton {
+        padding: 10px 20px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 0 3px 3px 0;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    
+    #sendButton:hover {
+        background: #5a67d8;
+    }
+    
+    .terminal-line {
+        margin: 2px 0;
+    }
+    
+    .terminal-prompt {
+        color: #4fc3f7;
+        font-weight: bold;
+    }
+    
+    .terminal-output {
+        color: #d4d4d4;
+    }
+    
+    .terminal-error {
+        color: #f44336;
+    }
+    
+    .terminal-success {
+        color: #4caf50;
+    }
+    
+    .connection-status {
+        padding: 5px 10px;
+        border-radius: 3px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    
+    .status-connected {
+        background: #4caf50;
+        color: white;
+    }
+    
+    .status-disconnected {
+        background: #f44336;
+        color: white;
+    }
+    
+    .status-connecting {
+        background: #ff9800;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="terminal-header">
+    <div>
+        <div class="terminal-title">Container Shell: {{ container_name }}</div>
+        <div class="terminal-info">Interactive shell session</div>
+    </div>
+    <div>
+        <span id="connectionStatus" class="connection-status status-disconnected">Disconnected</span>
+    </div>
+</div>
+
+<div id="terminal"></div>
+
+<div class="input-group">
+    <input type="text" id="commandInput" placeholder="Enter command..." autofocus>
+    <button id="sendButton">Send</button>
+</div>
+
+<div style="margin-top: 15px;">
+    <button class="btn btn-secondary" onclick="clearTerminal()">Clear</button>
+    <button class="btn btn-secondary" onclick="window.close()">Close</button>
+    <button class="btn btn-primary" onclick="connectShell()">Reconnect</button>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+    const containerName = '{{ container_name }}';
+    let socket = null;
+    const terminal = document.getElementById('terminal');
+    const commandInput = document.getElementById('commandInput');
+    const sendButton = document.getElementById('sendButton');
+    const connectionStatus = document.getElementById('connectionStatus');
+    
+    function updateConnectionStatus(status) {
+        connectionStatus.className = 'connection-status';
+        switch(status) {
+            case 'connected':
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.classList.add('status-connected');
+                break;
+            case 'disconnected':
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.classList.add('status-disconnected');
+                break;
+            case 'connecting':
+                connectionStatus.textContent = 'Connecting...';
+                connectionStatus.classList.add('status-connecting');
+                break;
+        }
+    }
+    
+    function appendToTerminal(text, className = 'terminal-output') {
+        const line = document.createElement('div');
+        line.className = `terminal-line ${className}`;
+        line.textContent = text;
+        terminal.appendChild(line);
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+    
+    function connectShell() {
+        updateConnectionStatus('connecting');
+        
+        // For now, use a simple approach with regular HTTP requests
+        // In the future, this could be upgraded to use WebSockets for real-time interaction
+        
+        appendToTerminal(`Connecting to container ${containerName}...`, 'terminal-success');
+        updateConnectionStatus('connected');
+        
+        // Show initial prompt
+        appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+    }
+    
+    function sendCommand() {
+        const command = commandInput.value.trim();
+        if (!command) return;
+        
+        appendToTerminal(`root@${containerName}:~# ${command}`, 'terminal-prompt');
+        
+        // Execute command via API
+        fetch('/api/command/execute', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                command: `execute ${containerName} ${command}`
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.stdout) {
+                    appendToTerminal(data.stdout);
+                }
+                if (data.stderr) {
+                    appendToTerminal(data.stderr, 'terminal-error');
+                }
+            } else {
+                appendToTerminal(`Error: ${data.error || 'Command execution failed'}`, 'terminal-error');
+            }
+            
+            // Show next prompt
+            appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+        })
+        .catch(error => {
+            appendToTerminal(`Error: ${error.message}`, 'terminal-error');
+            appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+        });
+        
+        commandInput.value = '';
+    }
+    
+    function clearTerminal() {
+        terminal.innerHTML = '';
+        appendToTerminal(`Terminal cleared`, 'terminal-success');
+        appendToTerminal(`root@${containerName}:~# `, 'terminal-prompt');
+    }
+    
+    // Event listeners
+    sendButton.addEventListener('click', sendCommand);
+    commandInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendCommand();
+        }
+    });
+    
+    // Connect on load
+    window.addEventListener('load', () => {
+        connectShell();
+    });
+</script>
+{% endblock %}
