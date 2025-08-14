@@ -372,7 +372,10 @@ def api_container_shell(name):
     # Set initial working directory
     shell_sessions[name][session_id] = '/root'
     
-    return render_template('shell.html', container_name=name, session_id=session_id)
+    # Get host IP for display in header
+    host_ip = get_host_ip()
+    
+    return render_template('shell.html', container_name=name, session_id=session_id, host_ip=host_ip)
 
 @app.route('/api/command/execute', methods=['POST'])
 def api_command_execute():
@@ -496,7 +499,8 @@ def api_command_execute():
 @app.route('/terminal')
 def terminal():
     """Terminal interface for running commands"""
-    return render_template('terminal.html')
+    host_ip = get_host_ip()
+    return render_template('terminal.html', host_ip=host_ip)
 
 @app.route('/api/port-forward', methods=['GET', 'POST'])
 def api_port_forward():

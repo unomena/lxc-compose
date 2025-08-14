@@ -299,7 +299,8 @@
         updateConnectionStatus('connecting');
         
         terminal.innerHTML = '';
-        appendOutput(`Connecting to container ${containerName}...`, 'terminal-success');
+        
+        // Immediately set as connected
         updateConnectionStatus('connected');
         
         // Show welcome message
@@ -391,8 +392,11 @@
     
     // Connect on load
     window.addEventListener('load', () => {
-        connectShell();
-        terminal.focus();
+        // Ensure DOM is fully ready before connecting
+        setTimeout(() => {
+            connectShell();
+            terminal.focus();
+        }, 100);
     });
 </script>
 {% endblock %}
