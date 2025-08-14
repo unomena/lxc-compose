@@ -34,6 +34,12 @@ if [ ! -d "/srv/lxc-compose-manager" ]; then
     error "Flask manager directory not found. Run: lxc-compose update"
 fi
 
+# Copy latest files from repository
+if [ -d "/srv/lxc-compose/lxc-compose-manager" ]; then
+    log "Copying latest Flask app files..."
+    sudo cp -r /srv/lxc-compose/lxc-compose-manager/* /srv/lxc-compose-manager/
+fi
+
 cd /srv/lxc-compose-manager
 
 # Remove old venv if it exists
