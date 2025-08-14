@@ -210,7 +210,8 @@ EOF
             # Install specific version from PostgreSQL repo
             sudo lxc-attach -n "$container_name" -- bash -c "
                 curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
-                echo 'deb http://apt.postgresql.org/pub/repos/apt \$(lsb_release -cs)-pgdg main' > /etc/apt/sources.list.d/pgdg.list
+                CODENAME=\$(lsb_release -cs)
+                echo \"deb http://apt.postgresql.org/pub/repos/apt \${CODENAME}-pgdg main\" > /etc/apt/sources.list.d/pgdg.list
                 apt-get update
                 DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-$postgres_version postgresql-client-$postgres_version postgresql-contrib-$postgres_version
             "
@@ -240,7 +241,8 @@ EOF
             # Install specific version from Redis repo
             sudo lxc-attach -n "$container_name" -- bash -c "
                 curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/redis.gpg
-                echo 'deb https://packages.redis.io/deb \$(lsb_release -cs) main' > /etc/apt/sources.list.d/redis.list
+                CODENAME=\$(lsb_release -cs)
+                echo \"deb https://packages.redis.io/deb \${CODENAME} main\" > /etc/apt/sources.list.d/redis.list
                 apt-get update
                 DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server=$redis_version* redis-tools=$redis_version*
             " || {

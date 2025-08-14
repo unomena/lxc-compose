@@ -263,10 +263,19 @@ run_setup() {
             echo "  sudo bash /srv/lxc-compose/setup-lxc-host.sh"
         else
             echo "To run the setup wizard:"
-            echo "  sudo /srv/lxc-compose/wizard.sh"
+            echo "  lxc-compose wizard"
             echo ""
             echo "To check system health:"
             echo "  lxc-compose doctor"
+            echo ""
+            echo "To update the repository:"
+            echo "  lxc-compose update"
+            echo ""
+            echo "To see available commands:"
+            echo "  lxc-compose --help"
+            echo ""
+            echo "To see example usage:"
+            echo "  lxc-compose examples"
         fi
         echo ""
     fi
