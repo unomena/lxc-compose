@@ -21,6 +21,7 @@
     
     #terminal:focus {
         outline: none;
+        border: 1px solid #444;
     }
     
     .cursor {
@@ -36,10 +37,6 @@
     @keyframes blink {
         0%, 50% { opacity: 1; }
         51%, 100% { opacity: 0; }
-    }
-    
-    .current-line {
-        display: inline;
     }
     
     .terminal-header {
@@ -63,50 +60,9 @@
         opacity: 0.9;
     }
     
-    .input-group {
-        display: flex;
-        margin-top: 10px;
-        align-items: stretch;
-    }
-    
-    #promptLabel {
-        display: inline-flex;
-        align-items: center;
-        white-space: nowrap;
-    }
-    
-    #commandInput {
-        flex: 1;
-        padding: 10px;
-        background: #2d2d2d;
-        color: #d4d4d4;
-        border: 1px solid #444;
-        border-left: none;
-        font-family: monospace;
-        font-size: 14px;
-    }
-    
-    #commandInput:focus {
-        outline: none;
-        border-color: #667eea;
-    }
-    
-    #sendButton {
-        padding: 10px 20px;
-        background: #667eea;
-        color: white;
-        border: none;
-        border-radius: 0 3px 3px 0;
-        cursor: pointer;
-        font-weight: 500;
-    }
-    
-    #sendButton:hover {
-        background: #5a67d8;
-    }
-    
     .terminal-line {
         margin: 2px 0;
+        line-height: 1.4;
     }
     
     .terminal-prompt {
@@ -147,6 +103,10 @@
         background: #ff9800;
         color: white;
     }
+    
+    .input-line {
+        display: inline;
+    }
 </style>
 {% endblock %}
 
@@ -171,7 +131,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
     const containerName = '{{ container_name }}';
     const sessionId = '{{ session_id }}';
@@ -181,7 +140,6 @@
     let historyIndex = -1;
     const terminal = document.getElementById('terminal');
     const connectionStatus = document.getElementById('connectionStatus');
-    const promptLabel = document.getElementById('promptLabel');
     
     function updateConnectionStatus(status) {
         connectionStatus.className = 'connection-status';
@@ -201,18 +159,24 @@
         }
     }
     
-    function appendToTerminal(text, className = 'terminal-output') {
+    function getPrompt() {
+        const shortPath = currentWorkingDir.replace('/root', '~');
+        return `root@${containerName}:${shortPath}# `;
+    }
+    
+    function appendOutput(text, className = 'terminal-output') {
+        // Remove the input line temporarily
+        const inputLine = terminal.querySelector('.input-line');
+        if (inputLine) inputLine.remove();
+        
+        // Add the output
         const line = document.createElement('div');
         line.className = `terminal-line ${className}`;
         line.textContent = text;
-        
-        // Remove any existing input line before adding new content
-        const existingInputLine = terminal.querySelector('.input-line');
-        if (existingInputLine) {
-            existingInputLine.remove();
-        }
-        
         terminal.appendChild(line);
+        
+        // Restore the input line
+        showInputLine();
         terminal.scrollTop = terminal.scrollHeight;
     }
     
@@ -223,114 +187,69 @@
             existingInputLine.remove();
         }
         
-        // Create new input line with prompt and current command
+        // Create new input line
         const inputLine = document.createElement('div');
         inputLine.className = 'terminal-line input-line';
-        inputLine.style.display = 'flex';
-        inputLine.style.alignItems = 'center';
         
         const prompt = document.createElement('span');
         prompt.className = 'terminal-prompt';
         prompt.textContent = getPrompt();
-        prompt.style.marginRight = '5px';
         
-        const commandText = document.createElement('span');
-        commandText.textContent = currentCommand;
-        commandText.style.color = '#d4d4d4';
+        const commandSpan = document.createElement('span');
+        commandSpan.textContent = currentCommand;
         
         const cursor = document.createElement('span');
         cursor.className = 'cursor';
-        cursor.textContent = '\u00A0'; // Non-breaking space
         
         inputLine.appendChild(prompt);
-        inputLine.appendChild(commandText);
+        inputLine.appendChild(commandSpan);
         inputLine.appendChild(cursor);
         
         terminal.appendChild(inputLine);
         terminal.scrollTop = terminal.scrollHeight;
     }
     
-    function connectShell() {
-        updateConnectionStatus('connecting');
+    function executeCommand(command) {
+        // Remove input line and show command being executed
+        const inputLine = terminal.querySelector('.input-line');
+        if (inputLine) inputLine.remove();
         
-        appendToTerminal(`Connecting to container ${containerName}...`, 'terminal-success');
-        updateConnectionStatus('connected');
+        // Show the executed command
+        const cmdLine = document.createElement('div');
+        cmdLine.className = 'terminal-line';
+        const prompt = document.createElement('span');
+        prompt.className = 'terminal-prompt';
+        prompt.textContent = getPrompt();
+        cmdLine.appendChild(prompt);
+        cmdLine.appendChild(document.createTextNode(command));
+        terminal.appendChild(cmdLine);
         
-        // Show welcome message with limitations
-        appendToTerminal('═══════════════════════════════════════════════════════════════', 'terminal-output');
-        appendToTerminal('                    Web Shell - Restricted Mode', 'terminal-success');
-        appendToTerminal('═══════════════════════════════════════════════════════════════', 'terminal-output');
-        appendToTerminal('', 'terminal-output');
-        appendToTerminal('⚠️  This is a restricted, non-interactive shell with limitations:', 'terminal-output');
-        appendToTerminal('', 'terminal-output');
-        appendToTerminal('❌ Interactive commands will NOT work:', 'terminal-error');
-        appendToTerminal('   • top, htop (use: ps aux)', 'terminal-output');
-        appendToTerminal('   • vi, vim, nano (edit files locally instead)', 'terminal-output');
-        appendToTerminal('   • less, more (use: cat or head/tail)', 'terminal-output');
-        appendToTerminal('   • tail -f (use: tail -n 20)', 'terminal-output');
-        appendToTerminal('   • Interactive installers', 'terminal-output');
-        appendToTerminal('', 'terminal-output');
-        appendToTerminal('✅ Commands that WILL work:', 'terminal-success');
-        appendToTerminal('   • Navigation: ls, cd, pwd', 'terminal-output');
-        appendToTerminal('   • File viewing: cat, head, tail, grep', 'terminal-output');
-        appendToTerminal('   • Process info: ps, ps aux, kill', 'terminal-output');
-        appendToTerminal('   • Network: ping, curl, wget', 'terminal-output');
-        appendToTerminal('   • Package management: apt update, apt install -y', 'terminal-output');
-        appendToTerminal('   • Most other non-interactive commands', 'terminal-output');
-        appendToTerminal('', 'terminal-output');
-        appendToTerminal('💡 For full shell access, SSH to the host and use:', 'terminal-output');
-        appendToTerminal(`   sudo lxc-attach -n ${containerName}`, 'terminal-output');
-        appendToTerminal('', 'terminal-output');
-        appendToTerminal('═══════════════════════════════════════════════════════════════', 'terminal-output');
-        appendToTerminal('', 'terminal-output');
-        
-        // Update the prompt label instead of showing in terminal
-        updatePrompt();
-    }
-    
-    function getPrompt() {
-        const shortPath = currentWorkingDir.replace('/root', '~');
-        return `root@${containerName}:${shortPath}#`;
-    }
-    
-    function updatePrompt() {
-        promptLabel.textContent = getPrompt();
-    }
-    
-    function sendCommand() {
-        const command = commandInput.value.trim();
-        if (!command) return;
-        
-        // Show the command that was executed
-        appendToTerminal(getPrompt() + ' ' + command, 'terminal-prompt');
-        
-        // Check for interactive commands that won't work
+        // Check for interactive commands
         const interactiveCommands = ['top', 'htop', 'less', 'more', 'vi', 'vim', 'nano', 'emacs', 'tail -f', 'watch'];
         const isInteractive = interactiveCommands.some(cmd => command.startsWith(cmd));
         
         if (isInteractive) {
             const cmdName = command.split(' ')[0];
-            appendToTerminal(`❌ '${cmdName}' is an interactive command and won't work in this restricted shell.`, 'terminal-error');
+            appendOutput(`❌ '${cmdName}' is an interactive command and won't work in this restricted shell.`, 'terminal-error');
             
-            // Provide specific alternatives
             if (command.startsWith('top') || command.startsWith('htop')) {
-                appendToTerminal(`💡 Use: ps aux --sort=-%cpu`, 'terminal-success');
+                appendOutput(`💡 Use: ps aux --sort=-%cpu`, 'terminal-success');
             } else if (command.startsWith('tail -f')) {
                 const file = command.split(' ')[2] || '<file>';
-                appendToTerminal(`💡 Use: tail -n 20 ${file}`, 'terminal-success');
+                appendOutput(`💡 Use: tail -n 20 ${file}`, 'terminal-success');
             } else if (command.startsWith('less') || command.startsWith('more')) {
                 const file = command.split(' ')[1] || '<file>';
-                appendToTerminal(`💡 Use: cat ${file} | head -50`, 'terminal-success');
+                appendOutput(`💡 Use: cat ${file} | head -50`, 'terminal-success');
             } else if (command.startsWith('vi') || command.startsWith('vim') || command.startsWith('nano')) {
-                appendToTerminal(`💡 Edit files locally or use: cat > file.txt << EOF`, 'terminal-success');
+                appendOutput(`💡 Edit files locally or use: cat > file.txt << EOF`, 'terminal-success');
             }
             
-            commandInput.value = '';
-            commandInput.focus();
+            currentCommand = '';
+            showInputLine();
             return;
         }
         
-        // Execute command via API with session ID
+        // Execute command via API
         fetch('/api/command/execute', {
             method: 'POST',
             headers: {
@@ -346,54 +265,134 @@
             // Update working directory if it changed
             if (data.working_dir) {
                 currentWorkingDir = data.working_dir;
-                updatePrompt();
             }
             
             if (data.success) {
                 if (data.stdout) {
-                    appendToTerminal(data.stdout);
+                    appendOutput(data.stdout);
                 }
                 if (data.stderr && data.stderr.trim()) {
-                    // Only show stderr if it's not empty
-                    appendToTerminal(data.stderr, 'terminal-error');
+                    appendOutput(data.stderr, 'terminal-error');
                 }
             } else if (data.error) {
-                // Only show error if there's an actual error message
-                appendToTerminal(`Error: ${data.error}`, 'terminal-error');
+                appendOutput(`Error: ${data.error}`, 'terminal-error');
             } else if (data.stdout || data.stderr) {
-                // If we have output but success is false, still show the output
                 if (data.stdout) {
-                    appendToTerminal(data.stdout);
+                    appendOutput(data.stdout);
                 }
                 if (data.stderr) {
-                    appendToTerminal(data.stderr, 'terminal-error');
+                    appendOutput(data.stderr, 'terminal-error');
                 }
             }
+            
+            currentCommand = '';
+            showInputLine();
         })
         .catch(error => {
-            appendToTerminal(`Error: ${error.message}`, 'terminal-error');
+            appendOutput(`Error: ${error.message}`, 'terminal-error');
+            currentCommand = '';
+            showInputLine();
         });
+    }
+    
+    function connectShell() {
+        updateConnectionStatus('connecting');
         
-        commandInput.value = '';
-        commandInput.focus();
+        terminal.innerHTML = '';
+        appendOutput(`Connecting to container ${containerName}...`, 'terminal-success');
+        updateConnectionStatus('connected');
+        
+        // Show welcome message
+        appendOutput('═══════════════════════════════════════════════════════════════', 'terminal-output');
+        appendOutput('                    Web Shell - Restricted Mode', 'terminal-success');
+        appendOutput('═══════════════════════════════════════════════════════════════', 'terminal-output');
+        appendOutput('', 'terminal-output');
+        appendOutput('⚠️  This is a restricted, non-interactive shell with limitations:', 'terminal-output');
+        appendOutput('', 'terminal-output');
+        appendOutput('❌ Interactive commands will NOT work:', 'terminal-error');
+        appendOutput('   • top, htop (use: ps aux)', 'terminal-output');
+        appendOutput('   • vi, vim, nano (edit files locally instead)', 'terminal-output');
+        appendOutput('   • less, more (use: cat or head/tail)', 'terminal-output');
+        appendOutput('   • tail -f (use: tail -n 20)', 'terminal-output');
+        appendOutput('   • Interactive installers', 'terminal-output');
+        appendOutput('', 'terminal-output');
+        appendOutput('✅ Commands that WILL work:', 'terminal-success');
+        appendOutput('   • Navigation: ls, cd, pwd', 'terminal-output');
+        appendOutput('   • File viewing: cat, head, tail, grep', 'terminal-output');
+        appendOutput('   • Process info: ps, ps aux, kill', 'terminal-output');
+        appendOutput('   • Network: ping, curl, wget', 'terminal-output');
+        appendOutput('   • Package management: apt update, apt install -y', 'terminal-output');
+        appendOutput('   • Most other non-interactive commands', 'terminal-output');
+        appendOutput('', 'terminal-output');
+        appendOutput('💡 For full shell access, SSH to the host and use:', 'terminal-output');
+        appendOutput(`   sudo lxc-attach -n ${containerName}`, 'terminal-output');
+        appendOutput('', 'terminal-output');
+        appendOutput('═══════════════════════════════════════════════════════════════', 'terminal-output');
+        appendOutput('', 'terminal-output');
+        
+        currentCommand = '';
+        showInputLine();
     }
     
     function clearTerminal() {
         terminal.innerHTML = '';
-        appendToTerminal(`Terminal cleared`, 'terminal-success');
+        appendOutput(`Terminal cleared`, 'terminal-success');
+        currentCommand = '';
+        showInputLine();
     }
     
-    // Event listeners
-    sendButton.addEventListener('click', sendCommand);
-    commandInput.addEventListener('keypress', (e) => {
+    // Handle keyboard input
+    terminal.addEventListener('keydown', (e) => {
+        e.preventDefault();
+        
         if (e.key === 'Enter') {
-            sendCommand();
+            if (currentCommand.trim()) {
+                commandHistory.push(currentCommand);
+                historyIndex = commandHistory.length;
+                executeCommand(currentCommand);
+            }
+        } else if (e.key === 'Backspace') {
+            if (currentCommand.length > 0) {
+                currentCommand = currentCommand.slice(0, -1);
+                showInputLine();
+            }
+        } else if (e.key === 'ArrowUp') {
+            if (historyIndex > 0) {
+                historyIndex--;
+                currentCommand = commandHistory[historyIndex];
+                showInputLine();
+            }
+        } else if (e.key === 'ArrowDown') {
+            if (historyIndex < commandHistory.length - 1) {
+                historyIndex++;
+                currentCommand = commandHistory[historyIndex];
+                showInputLine();
+            } else if (historyIndex === commandHistory.length - 1) {
+                historyIndex = commandHistory.length;
+                currentCommand = '';
+                showInputLine();
+            }
+        } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+            currentCommand += e.key;
+            showInputLine();
+        } else if (e.ctrlKey && e.key === 'c') {
+            currentCommand = '';
+            appendOutput('^C', 'terminal-output');
+            showInputLine();
+        } else if (e.ctrlKey && e.key === 'l') {
+            clearTerminal();
         }
+    });
+    
+    // Focus terminal on click
+    terminal.addEventListener('click', () => {
+        terminal.focus();
     });
     
     // Connect on load
     window.addEventListener('load', () => {
         connectShell();
+        terminal.focus();
     });
 </script>
 {% endblock %}
