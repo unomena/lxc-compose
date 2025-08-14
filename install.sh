@@ -208,11 +208,11 @@ run_setup() {
     
     if [[ "$NEEDS_SETUP" == "true" ]]; then
         echo "╔══════════════════════════════════════════════════════════════╗"
-        echo "║           Initial Setup Required                              ║"
+        echo "║           Initial Setup Required                             ║"
         echo "╚══════════════════════════════════════════════════════════════╝"
     else
         echo "╔══════════════════════════════════════════════════════════════╗"
-        echo "║           LXC Compose Updated! ✓                              ║"
+        echo "║           LXC Compose Updated! ✓                             ║"
         echo "╚══════════════════════════════════════════════════════════════╝"
         info "System already configured"
     fi

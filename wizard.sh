@@ -85,10 +85,10 @@ select_option() {
     local options=("$@")
     local choice
     
-    echo -e "${CYAN}[?]${NC} $prompt"
+    echo -e "${CYAN}[?]${NC} $prompt" >&2  # Send prompt to stderr
     select opt in "${options[@]}"; do
         if [[ -n "$opt" ]]; then
-            echo "$opt"
+            echo "$opt"  # Only the clean value goes to stdout
             return
         fi
     done
@@ -127,11 +127,11 @@ create_datastore() {
         warning "Container '$container_name' already exists"
         
         # Ask user what to do
-        echo ""
-        echo "  Options:"
-        echo "    1) Skip this container"
-        echo "    2) Destroy and recreate"
-        echo "    3) Start existing container"
+        echo "" >&2
+        echo "  Options:" >&2
+        echo "    1) Skip this container" >&2
+        echo "    2) Destroy and recreate" >&2
+        echo "    3) Start existing container" >&2
         read -p "  Choice [1-3]: " choice
         
         case "$choice" in
@@ -342,11 +342,11 @@ create_app_container() {
         warning "Container '$container_name' already exists"
         
         # Ask user what to do
-        echo ""
-        echo "  Options:"
-        echo "    1) Skip this container"
-        echo "    2) Destroy and recreate"
-        echo "    3) Start existing container"
+        echo "" >&2
+        echo "  Options:" >&2
+        echo "    1) Skip this container" >&2
+        echo "    2) Destroy and recreate" >&2
+        echo "    3) Start existing container" >&2
         read -p "  Choice [1-3]: " choice
         
         case "$choice" in
