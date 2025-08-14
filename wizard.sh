@@ -136,7 +136,12 @@ create_datastore() {
         
         case "$choice" in
             1)
-                info "Skipping container '$container_name'"
+                info "Using existing container '$container_name'"
+                # Start it if not running
+                if ! sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
+                    sudo lxc-start -n "$container_name"
+                    sleep 5
+                fi
                 return 0
                 ;;
             2)
@@ -153,7 +158,12 @@ create_datastore() {
                 return 0
                 ;;
             *)
-                info "Invalid choice, skipping container"
+                info "Invalid choice, using existing container"
+                # Start it if not running
+                if ! sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
+                    sudo lxc-start -n "$container_name"
+                    sleep 5
+                fi
                 return 0
                 ;;
         esac
@@ -370,7 +380,12 @@ create_app_container() {
         
         case "$choice" in
             1)
-                info "Skipping container '$container_name'"
+                info "Using existing container '$container_name'"
+                # Start it if not running
+                if ! sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
+                    sudo lxc-start -n "$container_name"
+                    sleep 5
+                fi
                 return 0
                 ;;
             2)
@@ -387,7 +402,12 @@ create_app_container() {
                 return 0
                 ;;
             *)
-                info "Invalid choice, skipping container"
+                info "Invalid choice, using existing container"
+                # Start it if not running
+                if ! sudo lxc-info -n "$container_name" | grep -q "RUNNING"; then
+                    sudo lxc-start -n "$container_name"
+                    sleep 5
+                fi
                 return 0
                 ;;
         esac
@@ -447,16 +467,17 @@ main() {
     check_installation
     
     # Configuration variables
-    local setup_datastore
+    local setup_datastore=false
     local datastore_name="datastore"
     local datastore_ip="$DEFAULT_DATASTORE_IP"
-    local separate_db_cache
-    local install_postgres
-    local install_redis
+    local separate_db_cache=false
+    local install_postgres=false
+    local install_redis=false
     local postgres_version=""
     local redis_version=""
-    local setup_apps
-    local num_apps
+    local setup_apps=false
+    local num_apps=0
+    local deploy_django_sample=false
     
     # Ask about datastore
     if ask_yes_no "Do you want to set up a datastore container (database/cache)?"; then
