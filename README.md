@@ -13,17 +13,9 @@ Install with one command:
 curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
 ```
 
-After installation:
+Then run the wizard:
 ```bash
-# Source the new aliases
-source ~/.bashrc
-
-# Option 1: Use the interactive setup wizard (recommended)
-sudo /srv/lxc-compose/wizard.sh
-
-# Option 2: Create containers manually
-lxcc-create datastore 10.0.3.2 database
-lxcc-create app-1 10.0.3.11 app
+lxc-compose wizard
 ```
 
 ## Features
@@ -35,22 +27,16 @@ lxcc-create app-1 10.0.3.11 app
 - **Centralized logging** - Structured log management across all containers
 - **Template-based deployment** - Reusable container templates for different service types
 
-## Quick Usage Example
-
-After installation:
+## Quick Usage
 
 ```bash
-# Deploy database container
-lxc-compose up -f /srv/lxc-compose/configs/database.yaml
-
-# Deploy application
-lxc-compose up -f /srv/lxc-compose/configs/app-1.yaml
-
-# Check status
-lxc-compose ps
-
-# View logs
-lxc-compose logs -f /srv/lxc-compose/configs/app-1.yaml
+# Core commands
+lxc-compose wizard          # Interactive setup
+lxc-compose list            # List containers
+lxc-compose test db         # Test PostgreSQL
+lxc-compose test redis      # Test Redis
+lxc-compose attach app-1    # Enter container
+lxc-compose examples        # Show all examples
 ```
 
 ## Prerequisites
@@ -62,38 +48,21 @@ lxc-compose logs -f /srv/lxc-compose/configs/app-1.yaml
 
 ## Installation
 
-### Quick Install (Recommended)
-
-Install and configure LXC Compose with a single command:
-
 ```bash
-# Using curl (recommended)
 curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
-
-# Or using wget
-wget -qO- https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
 ```
 
-This will automatically:
-1. Clone the git repository to `/srv/lxc-compose/`
-2. Create additional directories in `/srv/`
-3. Create the `lxc-compose` command
-4. **Run the full LXC host setup** (install LXC, configure networking, etc.)
-5. Configure your system for container management
+This installs everything to `/srv/lxc-compose/` and sets up the `lxc-compose` command.
 
-The entire process takes about 2-3 minutes and your system will be ready to use.
+### Updating
 
-### Updating LXC Compose
-
-Since the installation creates a git repository, you can easily update to the latest version:
 ```bash
-cd /srv/lxc-compose
-sudo git pull
+lxc-compose update
 ```
 
 ### Manual Installation
 
-If you prefer more control over the installation process:
+For more control:
 
 #### 1. Clone Repository
 ```bash
