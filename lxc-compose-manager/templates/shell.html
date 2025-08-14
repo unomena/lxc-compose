@@ -361,46 +361,46 @@
         if (!terminal) return;
         
         terminal.addEventListener('keydown', (e) => {
-        e.preventDefault();
-        
-        if (e.key === 'Enter') {
-            if (currentCommand.trim()) {
-                commandHistory.push(currentCommand);
-                historyIndex = commandHistory.length;
-                executeCommand(currentCommand);
-            }
-        } else if (e.key === 'Backspace') {
-            if (currentCommand.length > 0) {
-                currentCommand = currentCommand.slice(0, -1);
+            e.preventDefault();
+            
+            if (e.key === 'Enter') {
+                if (currentCommand.trim()) {
+                    commandHistory.push(currentCommand);
+                    historyIndex = commandHistory.length;
+                    executeCommand(currentCommand);
+                }
+            } else if (e.key === 'Backspace') {
+                if (currentCommand.length > 0) {
+                    currentCommand = currentCommand.slice(0, -1);
+                    showInputLine();
+                }
+            } else if (e.key === 'ArrowUp') {
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    currentCommand = commandHistory[historyIndex];
+                    showInputLine();
+                }
+            } else if (e.key === 'ArrowDown') {
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    currentCommand = commandHistory[historyIndex];
+                    showInputLine();
+                } else if (historyIndex === commandHistory.length - 1) {
+                    historyIndex = commandHistory.length;
+                    currentCommand = '';
+                    showInputLine();
+                }
+            } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                currentCommand += e.key;
                 showInputLine();
-            }
-        } else if (e.key === 'ArrowUp') {
-            if (historyIndex > 0) {
-                historyIndex--;
-                currentCommand = commandHistory[historyIndex];
-                showInputLine();
-            }
-        } else if (e.key === 'ArrowDown') {
-            if (historyIndex < commandHistory.length - 1) {
-                historyIndex++;
-                currentCommand = commandHistory[historyIndex];
-                showInputLine();
-            } else if (historyIndex === commandHistory.length - 1) {
-                historyIndex = commandHistory.length;
+            } else if (e.ctrlKey && e.key === 'c') {
                 currentCommand = '';
+                appendOutput('^C', 'terminal-output');
                 showInputLine();
+            } else if (e.ctrlKey && e.key === 'l') {
+                clearTerminal();
             }
-        } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-            currentCommand += e.key;
-            showInputLine();
-        } else if (e.ctrlKey && e.key === 'c') {
-            currentCommand = '';
-            appendOutput('^C', 'terminal-output');
-            showInputLine();
-        } else if (e.ctrlKey && e.key === 'l') {
-            clearTerminal();
-        }
-    });
+        });
     }
     
     // Focus terminal on click (will be set up after DOM loads)
