@@ -65,7 +65,7 @@ display_menu() {
     echo -e "  ${CYAN}7)${NC} System Diagnostics (Doctor)"
     echo -e "  ${CYAN}8)${NC} Recovery Tools ${YELLOW}▶${NC}"
     echo ""
-    echo -e "  ${CYAN}9)${NC} Web Interface"
+    echo -e "  ${CYAN}9)${NC} Web Interface ${YELLOW}▶${NC}"
     echo -e "  ${CYAN}10)${NC} Documentation"
     echo ""
     echo -e "  ${CYAN}0)${NC} Exit"
@@ -556,26 +556,165 @@ destroy_container() {
     sleep 2
 }
 
-# Web interface
-open_web_interface() {
-    info "Starting web interface..."
+# Web interface management
+web_interface_menu() {
+    clear
+    display_header
+    echo -e "\n${BOLD}Web Interface Management${NC}\n"
     
-    # Check if Flask app is running
-    if ! pgrep -f "lxc-compose-manager" > /dev/null; then
-        info "Starting LXC Compose Manager..."
-        cd /srv/lxc-compose/lxc-compose-manager
-        nohup python3 app.py > /srv/logs/manager.log 2>&1 &
-        sleep 3
+    # Check status
+    if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
+        echo -e "  Status: ${GREEN}● Running${NC}"
+        PID=$(pgrep -f "app.py" || pgrep -f "lxc-compose-manager")
+        echo -e "  PID: $PID"
+    else
+        echo -e "  Status: ${RED}○ Stopped${NC}"
     fi
     
-    # Get IP address
+    # Get IP
     IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
+    echo -e "  URL: http://$IP:5000"
+    echo ""
     
-    log "Web interface available at:"
-    echo "  http://$IP:5000"
-    echo "  http://localhost:5000"
+    echo -e "  ${CYAN}1)${NC} Start Web Interface"
+    echo -e "  ${CYAN}2)${NC} Stop Web Interface"
+    echo -e "  ${CYAN}3)${NC} Restart Web Interface"
+    echo -e "  ${CYAN}4)${NC} View Logs"
+    echo -e "  ${CYAN}5)${NC} Install/Update Dependencies"
+    echo ""
+    echo -e "  ${CYAN}0)${NC} Back to Main Menu"
+    echo ""
     
+    read -p "Select option: " choice
+    
+    case $choice in
+        1) start_web_interface ;;
+        2) stop_web_interface ;;
+        3) restart_web_interface ;;
+        4) view_web_logs ;;
+        5) install_web_dependencies ;;
+        0) return ;;
+        *) warning "Invalid option"; sleep 2; web_interface_menu ;;
+    esac
+    
+    sleep 2
+    web_interface_menu  # Return to menu after action
+}
+
+# Start web interface
+start_web_interface() {
+    info "Starting web interface..."
+    
+    # Check if already running
+    if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
+        warning "Web interface is already running"
+        return
+    fi
+    
+    # Check if directory exists
+    if [[ ! -d /srv/lxc-compose/lxc-compose-manager ]]; then
+        error "Web interface not found at /srv/lxc-compose/lxc-compose-manager"
+        read -p "Install it now? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            install_web_dependencies
+        else
+            return
+        fi
+    fi
+    
+    # Start the Flask app
+    cd /srv/lxc-compose/lxc-compose-manager
+    nohup python3 app.py > /srv/logs/manager.log 2>&1 &
+    sleep 3
+    
+    # Check if started
+    if pgrep -f "app.py" > /dev/null; then
+        log "Web interface started successfully"
+        IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
+        echo -e "  Access at: ${GREEN}http://$IP:5000${NC}"
+    else
+        error "Failed to start web interface"
+        echo "Check logs at: /srv/logs/manager.log"
+    fi
+}
+
+# Stop web interface
+stop_web_interface() {
+    info "Stopping web interface..."
+    
+    if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
+        pkill -f "app.py" || pkill -f "lxc-compose-manager" || true
+        sleep 2
+        
+        if ! pgrep -f "app.py" > /dev/null && ! pgrep -f "lxc-compose-manager" > /dev/null; then
+            log "Web interface stopped"
+        else
+            error "Failed to stop web interface"
+        fi
+    else
+        warning "Web interface is not running"
+    fi
+}
+
+# Restart web interface
+restart_web_interface() {
+    info "Restarting web interface..."
+    stop_web_interface
+    sleep 1
+    start_web_interface
+}
+
+# View web logs
+view_web_logs() {
+    info "Showing last 50 lines of web interface logs..."
+    echo ""
+    
+    if [[ -f /srv/logs/manager.log ]]; then
+        tail -50 /srv/logs/manager.log
+    else
+        warning "No logs found at /srv/logs/manager.log"
+    fi
+    
+    echo ""
     read -p "Press Enter to continue..."
+}
+
+# Install web dependencies
+install_web_dependencies() {
+    info "Installing web interface dependencies..."
+    
+    # Ensure directory exists
+    mkdir -p /srv/lxc-compose/lxc-compose-manager
+    
+    # Check for requirements.txt
+    if [[ -f /srv/lxc-compose/lxc-compose-manager/requirements.txt ]]; then
+        cd /srv/lxc-compose/lxc-compose-manager
+        
+        # Detect Python version for pip flags
+        PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+        if [[ $(echo "$PYTHON_VERSION >= 3.11" | bc -l) -eq 1 ]]; then
+            PIP_FLAGS="--break-system-packages"
+        else
+            PIP_FLAGS=""
+        fi
+        
+        pip3 install $PIP_FLAGS -r requirements.txt
+        log "Dependencies installed"
+    else
+        warning "requirements.txt not found"
+        info "Installing basic Flask dependencies..."
+        
+        for package in flask flask-socketio flask-cors eventlet; do
+            pip3 install $PIP_FLAGS $package || true
+        done
+    fi
+    
+    # Ensure log directory exists
+    mkdir -p /srv/logs
+    touch /srv/logs/manager.log
+    
+    log "Web interface ready"
 }
 
 # Show documentation
@@ -632,8 +771,24 @@ handle_args() {
         clean-update)
             clean_update
             ;;
-        web|webui)
-            open_web_interface
+        web|webui|web-interface)
+            web_interface_menu
+            ;;
+        web-start)
+            check_sudo
+            start_web_interface
+            ;;
+        web-stop)
+            check_sudo
+            stop_web_interface
+            ;;
+        web-restart)
+            check_sudo
+            restart_web_interface
+            ;;
+        web-install)
+            check_sudo
+            install_web_dependencies
             ;;
         help|--help|-h)
             show_documentation
@@ -672,7 +827,7 @@ main() {
             6) system_update ;;
             7) system_diagnostics ;;
             8) recovery_menu ;;
-            9) open_web_interface ;;
+            9) web_interface_menu ;;
             10) show_documentation ;;
             0) 
                 echo -e "\n${GREEN}Thank you for using LXC Compose!${NC}\n"

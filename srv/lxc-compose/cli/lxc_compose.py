@@ -454,45 +454,78 @@ def test(service, container):
                 click.echo(f"  Output: {result.stdout.strip()}")
             click.echo("  Redis may not be properly configured")
 
-@cli.command()
-def web():
-    """Open web management interface
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def web(ctx):
+    """Manage the web interface
     
     \b
-    This command will:
-    - Check if the Flask manager is running
-    - Display the web interface URL
-    - Optionally restart the service if needed
+    Commands:
+      lxc-compose web           - Show web interface status
+      lxc-compose web status    - Check if running
+      lxc-compose web start     - Start the interface
+      lxc-compose web stop      - Stop the interface
+      lxc-compose web restart   - Restart the interface
+      lxc-compose web install   - Install dependencies
+      lxc-compose web logs      - View logs
     """
-    import socket
-    
-    # Get host IP
-    hostname = socket.gethostname()
-    try:
-        host_ip = subprocess.run(['hostname', '-I'], capture_output=True, text=True).stdout.split()[0]
-    except:
-        host_ip = "localhost"
-    
-    # Check if Flask manager is running
-    result = subprocess.run(['sudo', 'supervisorctl', 'status', 'lxc-compose-manager'], 
-                          capture_output=True, text=True)
-    
-    if result.returncode == 0 and 'RUNNING' in result.stdout:
-        click.echo("\n╔══════════════════════════════════════════════════════════════╗")
-        click.echo("║           🌐 Web Management Interface 🌐                      ║")
-        click.echo("╚══════════════════════════════════════════════════════════════╝\n")
-        click.echo(f"[✓] Web Interface: http://{host_ip}:5000\n")
-        click.echo("[i] Features available:")
-        click.echo("    • View all containers and their status")
-        click.echo("    • Create new containers with guided wizard")
-        click.echo("    • Manage port forwarding rules")
-        click.echo("    • Execute commands via web terminal")
-        click.echo("    • Monitor container resources\n")
+    # If no subcommand, show status
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(web_status)
+
+@web.command('status')
+def web_status():
+    """Check web interface status"""
+    result = subprocess.run(['pgrep', '-f', 'app.py'], capture_output=True)
+    if result.returncode == 0:
+        pid = result.stdout.decode().strip()
+        click.echo(f"✓ Web interface is running (PID: {pid})")
+        # Get IP
+        try:
+            result = subprocess.run(['ip', '-4', 'addr', 'show'], capture_output=True, text=True)
+            import re
+            ips = re.findall(r'inet (\d+\.\d+\.\d+\.\d+)', result.stdout)
+            ip = next((ip for ip in ips if not ip.startswith('127.')), 'localhost')
+        except:
+            ip = 'localhost'
+        click.echo(f"  Access at: http://{ip}:5000")
     else:
-        click.echo("[!] Web interface is not running")
-        if click.confirm("Would you like to start it?"):
-            subprocess.run(['sudo', 'supervisorctl', 'start', 'lxc-compose-manager'])
-            click.echo(f"\n[✓] Web interface started at http://{host_ip}:5000")
+        click.echo("○ Web interface is not running")
+        click.echo("  Start with: lxc-compose web start")
+
+@web.command('start')
+def web_start():
+    """Start the web interface"""
+    subprocess.run(['sudo', '/srv/lxc-compose/wizard.sh', 'web-start'])
+
+@web.command('stop')
+def web_stop():
+    """Stop the web interface"""
+    subprocess.run(['sudo', '/srv/lxc-compose/wizard.sh', 'web-stop'])
+
+@web.command('restart')
+def web_restart():
+    """Restart the web interface"""
+    subprocess.run(['sudo', '/srv/lxc-compose/wizard.sh', 'web-restart'])
+
+@web.command('install')
+def web_install():
+    """Install web interface dependencies"""
+    subprocess.run(['sudo', '/srv/lxc-compose/wizard.sh', 'web-install'])
+
+@web.command('logs')
+@click.option('-f', '--follow', is_flag=True, help='Follow log output')
+@click.option('-n', '--lines', default=50, help='Number of lines to show')
+def web_logs(follow, lines):
+    """View web interface logs"""
+    log_file = '/srv/logs/manager.log'
+    if os.path.exists(log_file):
+        if follow:
+            subprocess.run(['tail', '-f', log_file])
+        else:
+            subprocess.run(['tail', f'-{lines}', log_file])
+    else:
+        click.echo("No logs found at /srv/logs/manager.log")
 
 @cli.command()
 @click.argument('action', type=click.Choice(['status', 'start', 'stop', 'restart'], case_sensitive=False), required=False)
