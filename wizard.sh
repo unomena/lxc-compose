@@ -249,6 +249,15 @@ setup_postgresql() {
     # Install PostgreSQL in the container
     info "Installing PostgreSQL $PG_VERSION in container '$container_name'..."
     
+    # Ensure network connectivity
+    info "Checking network connectivity..."
+    if ! sudo lxc-attach -n "$container_name" -- ping -c 1 8.8.8.8 &>/dev/null; then
+        warning "Network connectivity issue detected, configuring DNS..."
+        sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
+        sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.4.4' >> /etc/resolv.conf"
+        sleep 2
+    fi
+    
     # Create and run setup script
     cat <<SCRIPT | sudo tee /var/lib/lxc/$container_name/rootfs/tmp/setup-postgresql.sh > /dev/null
 #!/bin/bash
@@ -377,6 +386,15 @@ setup_redis() {
     # Install Redis in the container
     info "Installing Redis in container '$container_name'..."
     
+    # Ensure network connectivity
+    info "Checking network connectivity..."
+    if ! sudo lxc-attach -n "$container_name" -- ping -c 1 8.8.8.8 &>/dev/null; then
+        warning "Network connectivity issue detected, configuring DNS..."
+        sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
+        sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.4.4' >> /etc/resolv.conf"
+        sleep 2
+    fi
+    
     # Create and run setup script
     cat <<SCRIPT | sudo tee /var/lib/lxc/$container_name/rootfs/tmp/setup-redis.sh > /dev/null
 #!/bin/bash
@@ -423,7 +441,12 @@ create_basic_container() {
     
     # Configure with next available IP
     LAST_IP=$(sudo lxc-ls -f | awk '/10.0.3/ {print $5}' | cut -d. -f4 | cut -d/ -f1 | sort -n | tail -1)
-    NEXT_IP=$((LAST_IP + 1))
+    # If no containers exist, start at .2 (since .1 is the gateway)
+    if [[ -z "$LAST_IP" ]] || [[ "$LAST_IP" -eq "1" ]]; then
+        NEXT_IP=2
+    else
+        NEXT_IP=$((LAST_IP + 1))
+    fi
     
     info "Assigning IP: 10.0.3.$NEXT_IP"
     
@@ -457,6 +480,25 @@ EOF
     info "Starting container..."
     sudo lxc-start -n "$container_name"
     sleep 5
+    
+    # Configure DNS in container
+    info "Configuring DNS..."
+    sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
+    sudo lxc-attach -n "$container_name" -- bash -c "echo 'nameserver 8.8.4.4' >> /etc/resolv.conf"
+    
+    # Wait for network to be ready
+    info "Waiting for network connectivity..."
+    for i in {1..10}; do
+        if sudo lxc-attach -n "$container_name" -- ping -c 1 8.8.8.8 &>/dev/null; then
+            break
+        fi
+        sleep 2
+    done
+    
+    # Test DNS resolution
+    if ! sudo lxc-attach -n "$container_name" -- ping -c 1 google.com &>/dev/null; then
+        warning "DNS resolution may not be working properly"
+    fi
     
     log "Container '$container_name' created with IP 10.0.3.$NEXT_IP"
 }
@@ -783,7 +825,12 @@ setup_application() {
     
     # Configure with next available IP
     LAST_IP=$(sudo lxc-ls -f | awk '/10.0.3/ {print $5}' | cut -d. -f4 | cut -d/ -f1 | sort -n | tail -1)
-    NEXT_IP=$((LAST_IP + 1))
+    # If no containers exist, start at .2 (since .1 is the gateway)
+    if [[ -z "$LAST_IP" ]] || [[ "$LAST_IP" -eq "1" ]]; then
+        NEXT_IP=2
+    else
+        NEXT_IP=$((LAST_IP + 1))
+    fi
     
     info "Assigning IP: 10.0.3.$NEXT_IP"
     
@@ -847,6 +894,20 @@ EOF
     fi
     
     sleep 2
+    
+    # Configure DNS in container
+    info "Configuring DNS..."
+    sudo lxc-attach -n "$app_name" -- bash -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
+    sudo lxc-attach -n "$app_name" -- bash -c "echo 'nameserver 8.8.4.4' >> /etc/resolv.conf"
+    
+    # Wait for network to be ready
+    info "Waiting for network connectivity..."
+    for i in {1..10}; do
+        if sudo lxc-attach -n "$app_name" -- ping -c 1 8.8.8.8 &>/dev/null; then
+            break
+        fi
+        sleep 2
+    done
     
     # Create setup script
     info "Creating application setup script..."
