@@ -349,9 +349,9 @@ def test(service, container):
     if service in ['db', 'database', 'postgres', 'postgresql']:
         click.echo(f"Testing PostgreSQL in container '{container}'...")
         
-        # Test connection as postgres user
+        # Test connection as postgres user (cd to /tmp to avoid permission issues)
         cmd = ['sudo', 'lxc-attach', '-n', container, '--', 
-               'sudo', '-u', 'postgres', 'psql', '-c', 'SELECT version();']
+               'sh', '-c', 'cd /tmp && sudo -u postgres psql -c "SELECT version();"']
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
@@ -364,7 +364,7 @@ def test(service, container):
             
             # Show databases
             cmd = ['sudo', 'lxc-attach', '-n', container, '--', 
-                   'sudo', '-u', 'postgres', 'psql', '-l', '-t']
+                   'sh', '-c', 'cd /tmp && sudo -u postgres psql -l -t']
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
                 databases = [db.split('|')[0].strip() for db in result.stdout.strip().split('\n') 

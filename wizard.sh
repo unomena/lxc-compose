@@ -287,6 +287,7 @@ sleep 5
 
 # Configure PostgreSQL
 echo "Configuring PostgreSQL..."
+cd /tmp
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
 sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
 echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf
@@ -766,6 +767,7 @@ sleep 5
 
 # Configure PostgreSQL
 echo "Configuring PostgreSQL..."
+cd /tmp
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
 sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
 echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf
