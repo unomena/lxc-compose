@@ -219,35 +219,58 @@ EOF
     sudo lxc-start -n datastore
     sleep 5
     
-    # Update package list
-    info "Updating package repositories..."
-    sudo lxc-attach -n datastore -- apt-get update
+    # Create setup script
+    info "Creating database setup script..."
+    cat <<SCRIPT | sudo tee /var/lib/lxc/datastore/rootfs/tmp/setup-database.sh > /dev/null
+#!/bin/bash
+set -e
+
+echo "Starting database container setup..."
+
+# Update package list
+echo "Updating package repositories..."
+apt-get update -qq
+
+# Add PostgreSQL APT repository if not using default version
+if [[ "$PG_VERSION" != "14" ]]; then
+    echo "Adding PostgreSQL APT repository for version $PG_VERSION..."
+    apt-get install -y -qq wget ca-certificates
+    echo 'deb http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' > /etc/apt/sources.list.d/pgdg.list
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+    apt-get update -qq
+fi
+
+# Install PostgreSQL and Redis
+echo "Installing PostgreSQL $PG_VERSION and Redis..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $PG_PACKAGE redis-server
+
+# Wait for PostgreSQL to start
+sleep 5
+
+# Configure PostgreSQL
+echo "Configuring PostgreSQL..."
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
+echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf
+
+# Configure Redis
+echo "Configuring Redis..."
+sed -i "s/bind 127.0.0.1/bind 0.0.0.0/" /etc/redis/redis.conf
+sed -i "s/^protected-mode yes/protected-mode no/" /etc/redis/redis.conf
+
+# Restart services
+echo "Restarting services..."
+systemctl restart postgresql redis-server
+
+echo "Database setup complete!"
+SCRIPT
+
+    # Make script executable
+    sudo chmod +x /var/lib/lxc/datastore/rootfs/tmp/setup-database.sh
     
-    # Add PostgreSQL APT repository if not using default version
-    if [[ "$PG_VERSION" != "14" ]]; then
-        info "Adding PostgreSQL APT repository for version $PG_VERSION..."
-        sudo lxc-attach -n datastore -- apt-get install -y wget ca-certificates
-        sudo lxc-attach -n datastore -- sh -c "echo 'deb http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' > /etc/apt/sources.list.d/pgdg.list"
-        sudo lxc-attach -n datastore -- wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo lxc-attach -n datastore -- apt-key add -
-        sudo lxc-attach -n datastore -- apt-get update
-    fi
-    
-    # Install PostgreSQL and Redis
-    info "Installing PostgreSQL $PG_VERSION and Redis..."
-    sudo lxc-attach -n datastore -- apt-get install -y $PG_PACKAGE redis-server
-    
-    # Configure PostgreSQL
-    info "Configuring PostgreSQL..."
-    sudo lxc-attach -n datastore -- sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
-    sudo lxc-attach -n datastore -- sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
-    sudo lxc-attach -n datastore -- sh -c "echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf"
-    
-    # Configure Redis
-    info "Configuring Redis..."
-    sudo lxc-attach -n datastore -- sed -i "s/bind 127.0.0.1/bind 0.0.0.0/" /etc/redis/redis.conf
-    
-    # Restart services
-    sudo lxc-attach -n datastore -- systemctl restart postgresql redis-server
+    # Execute the setup script inside the container
+    info "Running database setup script (this may take a few minutes)..."
+    sudo lxc-attach -n datastore -- /tmp/setup-database.sh
     
     log "Database container setup complete!"
     log "PostgreSQL $PG_VERSION: 10.0.3.2:5432 (user: postgres, pass: postgres)"
@@ -305,13 +328,62 @@ lxc.apparmor.profile = generated
 lxc.apparmor.allow_nesting = 1
 EOF
     
-    # Start and configure
+    # Start container
     sudo lxc-start -n "$app_name"
     sleep 5
     
-    info "Installing Python and dependencies..."
-    sudo lxc-attach -n "$app_name" -- apt-get update
-    sudo lxc-attach -n "$app_name" -- apt-get install -y python3 python3-pip python3-venv nginx supervisor
+    # Create setup script
+    info "Creating application setup script..."
+    cat <<SCRIPT | sudo tee /var/lib/lxc/$app_name/rootfs/tmp/setup-app.sh > /dev/null
+#!/bin/bash
+set -e
+
+echo "Starting application container setup..."
+
+# Update package list
+echo "Updating package repositories..."
+apt-get update -qq
+
+# Install development tools and runtime dependencies
+echo "Installing Python, Nginx, and other dependencies..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \\
+    python3 python3-pip python3-venv python3-dev \\
+    nginx supervisor \\
+    build-essential git curl wget \\
+    postgresql-client redis-tools \\
+    nodejs npm
+
+# Install commonly used Python packages globally
+echo "Installing common Python packages..."
+pip3 install --quiet \\
+    gunicorn uvicorn \\
+    django flask fastapi \\
+    celery redis \\
+    psycopg2-binary sqlalchemy \\
+    requests python-dotenv
+
+# Configure Nginx
+echo "Configuring Nginx..."
+rm -f /etc/nginx/sites-enabled/default
+systemctl enable nginx
+
+# Configure Supervisor
+echo "Configuring Supervisor..."
+systemctl enable supervisor
+
+# Create app directory structure
+mkdir -p /opt/app
+chown -R ubuntu:ubuntu /opt/app 2>/dev/null || true
+
+echo "Application container setup complete!"
+SCRIPT
+
+    # Make script executable
+    sudo chmod +x /var/lib/lxc/$app_name/rootfs/tmp/setup-app.sh
+    
+    # Execute the setup script inside the container
+    info "Running application setup script (this may take a few minutes)..."
+    sudo lxc-attach -n "$app_name" -- /tmp/setup-app.sh
     
     log "Application container '$app_name' created successfully!"
     log "IP Address: 10.0.3.$NEXT_IP"
