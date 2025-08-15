@@ -186,7 +186,11 @@
         border-radius: 10px;
         padding: 40px;
         text-align: center;
-        max-width: 500px;
+        width: 80%;
+        max-width: 900px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
     }
     
     .spinner {
@@ -229,6 +233,37 @@
     
     .progress-icon.error {
         color: #f56565;
+    }
+    
+    .log-output {
+        background: #1a1a1a;
+        color: #0f0;
+        padding: 15px;
+        border-radius: 5px;
+        text-align: left;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        overflow-y: auto;
+        flex: 1;
+        margin-top: 20px;
+        min-height: 200px;
+        max-height: 400px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        line-height: 1.4;
+    }
+    
+    .log-output .header {
+        color: #4af;
+        font-weight: bold;
+    }
+    
+    .log-output .stderr {
+        color: #f44;
+    }
+    
+    .log-output .stdout {
+        color: #0f0;
     }
 </style>
 {% endblock %}
@@ -361,11 +396,19 @@
         <div id="progressList" style="margin-top: 20px; text-align: left;">
             <!-- Progress items will be added here -->
         </div>
+        <div id="logOutput" class="log-output">
+            <div style="color: #888;">Waiting for container creation to start...</div>
+        </div>
+        <div style="margin-top: 15px;">
+            <button class="btn btn-secondary" onclick="cancelCreation()" id="cancelBtn">Cancel</button>
+            <button class="btn btn-primary" onclick="closeOverlay()" id="doneBtn" style="display: none;">Done</button>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
 function toggleDatastore(card) {
     const checkbox = card.querySelector('input[type="checkbox"]');
@@ -472,6 +515,9 @@ function updateSummary() {
     tbody.innerHTML = html;
 }
 
+let socket = null;
+let creationInProgress = false;
+
 function createContainers() {
     const data = {
         create_datastore: document.getElementById('create_datastore').checked,
@@ -487,8 +533,13 @@ function createContainers() {
     
     // Show progress overlay
     document.getElementById('creatingOverlay').style.display = 'block';
+    document.getElementById('cancelBtn').style.display = 'inline-block';
+    document.getElementById('doneBtn').style.display = 'none';
     const progressList = document.getElementById('progressList');
+    const logOutput = document.getElementById('logOutput');
     progressList.innerHTML = '';
+    logOutput.innerHTML = '';
+    creationInProgress = true;
     
     // Add progress items
     if (data.create_datastore) {
@@ -501,30 +552,57 @@ function createContainers() {
         addProgressItem('django', 'Deploying Django sample application...');
     }
     
-    // Send create request
-    fetch('/api/wizard/create', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(result => {
-        // Update progress items with results
-        if (result.results) {
-            result.results.forEach(r => {
-                updateProgressItem(r.container, r.success, r.message);
-            });
-        }
-        
-        // Redirect after a delay
-        setTimeout(() => {
-            window.location.href = '/';
-        }, 3000);
-    })
-    .catch(error => {
-        alert('Error creating containers: ' + error);
-        document.getElementById('creatingOverlay').style.display = 'none';
+    // Initialize WebSocket connection
+    socket = io();
+    
+    // Handle progress updates
+    socket.on('progress_update', function(data) {
+        updateProgressItem(data.container, data.status === 'success', data.message);
     });
+    
+    // Handle log output
+    socket.on('log_output', function(data) {
+        const logDiv = document.getElementById('logOutput');
+        const line = document.createElement('div');
+        line.className = data.type || 'stdout';
+        line.textContent = data.message;
+        logDiv.appendChild(line);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    });
+    
+    // Handle completion
+    socket.on('creation_complete', function(data) {
+        creationInProgress = false;
+        document.getElementById('cancelBtn').style.display = 'none';
+        document.getElementById('doneBtn').style.display = 'inline-block';
+        
+        const logDiv = document.getElementById('logOutput');
+        const line = document.createElement('div');
+        line.className = 'header';
+        line.textContent = '\n=== Container creation complete ===\n';
+        logDiv.appendChild(line);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    });
+    
+    // Start container creation via WebSocket
+    socket.emit('create_containers', data);
+}
+
+function cancelCreation() {
+    if (confirm('Are you sure you want to cancel container creation?')) {
+        if (socket) {
+            socket.disconnect();
+        }
+        document.getElementById('creatingOverlay').style.display = 'none';
+        creationInProgress = false;
+    }
+}
+
+function closeOverlay() {
+    if (socket) {
+        socket.disconnect();
+    }
+    window.location.href = '/';
 }
 
 function addProgressItem(id, text) {

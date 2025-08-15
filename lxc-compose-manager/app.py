@@ -266,50 +266,16 @@ def wizard():
 
 @app.route('/api/wizard/create', methods=['POST'])
 def api_wizard_create():
-    """Create containers using wizard settings"""
+    """Create containers using wizard settings - returns quickly, use WebSocket for progress"""
     data = request.json
-    results = []
     
-    # Create datastore if requested
-    if data.get('create_datastore'):
-        result = create_container('datastore', 'datastore', '10.0.3.2')
-        results.append({
-            'container': 'datastore',
-            'success': result['success'],
-            'message': 'Datastore created successfully' if result['success'] else result.get('error')
-        })
-        
-        # Setup PostgreSQL and Redis
-        if result['success']:
-            setup_commands = [
-                'sudo lxc-attach -n datastore -- bash -c "apt-get install -y postgresql redis-server"',
-                'sudo lxc-attach -n datastore -- bash -c "systemctl start postgresql redis-server"'
-            ]
-            for cmd in setup_commands:
-                run_command(cmd, timeout=120)
+    # Store the request data in session for WebSocket handler
+    session['wizard_create_data'] = data
     
-    # Create app containers
-    for i in range(1, data.get('app_count', 0) + 1):
-        container_name = f"app-{i}"
-        ip_address = f"10.0.3.{10 + i}"
-        result = create_container(container_name, 'app', ip_address)
-        results.append({
-            'container': container_name,
-            'success': result['success'],
-            'message': f'App container {i} created' if result['success'] else result.get('error')
-        })
-    
-    # Create Django sample if requested
-    if data.get('create_django_sample'):
-        # Run the Django sample creation script
-        result = run_command('sudo bash /srv/lxc-compose/create-django-sample.sh app-1', timeout=300)
-        results.append({
-            'container': 'django-sample',
-            'success': result['success'],
-            'message': 'Django sample deployed' if result['success'] else 'Failed to deploy Django sample'
-        })
-    
-    return jsonify({'success': True, 'results': results})
+    return jsonify({
+        'success': True,
+        'message': 'Container creation started. Use WebSocket for progress.'
+    })
 
 @app.route('/api/container/<name>/start', methods=['POST'])
 def api_container_start(name):
@@ -702,6 +668,93 @@ def handle_execute_command(data):
     
     process.wait()
     emit('command_complete', {'returncode': process.returncode})
+
+@socketio.on('create_containers')
+def handle_create_containers(data):
+    """Create containers with real-time log streaming"""
+    
+    def stream_command(cmd, description):
+        """Execute command and stream output"""
+        emit('log_output', {'message': f'\n=== {description} ===', 'type': 'header'})
+        process = subprocess.Popen(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        
+        # Stream stdout
+        for line in iter(process.stdout.readline, ''):
+            if line:
+                emit('log_output', {'message': line.rstrip(), 'type': 'stdout'})
+        
+        # Stream stderr
+        for line in iter(process.stderr.readline, ''):
+            if line:
+                emit('log_output', {'message': line.rstrip(), 'type': 'stderr'})
+        
+        process.wait()
+        return process.returncode
+    
+    results = []
+    
+    # Create datastore if requested
+    if data.get('create_datastore'):
+        emit('progress_update', {'container': 'datastore', 'status': 'in_progress', 'message': 'Creating datastore container...'})
+        
+        # Create container
+        returncode = stream_command(
+            'sudo /srv/lxc-compose/wizard.sh setup-db',
+            'Creating Datastore Container'
+        )
+        
+        success = returncode == 0
+        emit('progress_update', {
+            'container': 'datastore',
+            'status': 'success' if success else 'error',
+            'message': 'Datastore created successfully' if success else 'Failed to create datastore'
+        })
+        results.append({'container': 'datastore', 'success': success})
+    
+    # Create app containers
+    for i in range(1, data.get('app_count', 0) + 1):
+        container_name = f"app-{i}"
+        emit('progress_update', {'container': container_name, 'status': 'in_progress', 'message': f'Creating {container_name} container...'})
+        
+        # Use wizard to create app container
+        returncode = stream_command(
+            f'echo "{container_name}" | sudo /srv/lxc-compose/wizard.sh setup-app',
+            f'Creating Application Container: {container_name}'
+        )
+        
+        success = returncode == 0
+        emit('progress_update', {
+            'container': container_name,
+            'status': 'success' if success else 'error',
+            'message': f'{container_name} created successfully' if success else f'Failed to create {container_name}'
+        })
+        results.append({'container': container_name, 'success': success})
+    
+    # Deploy Django sample if requested
+    if data.get('create_django_sample') and data.get('app_count', 0) > 0:
+        emit('progress_update', {'container': 'django', 'status': 'in_progress', 'message': 'Deploying Django sample application...'})
+        
+        returncode = stream_command(
+            'sudo /srv/lxc-compose/create-django-sample.sh',
+            'Deploying Django Sample Application'
+        )
+        
+        success = returncode == 0
+        emit('progress_update', {
+            'container': 'django',
+            'status': 'success' if success else 'error',
+            'message': 'Django sample deployed successfully' if success else 'Failed to deploy Django sample'
+        })
+        results.append({'container': 'django', 'success': success})
+    
+    emit('creation_complete', {'results': results})
 
 if __name__ == '__main__':
     # Ensure directories exist
