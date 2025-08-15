@@ -74,13 +74,38 @@ def cli():
 
 
 @cli.command()
-def doctor():
-    """Check system health and diagnose issues"""
+@click.option('--fix', is_flag=True, help='Attempt to fix common issues automatically')
+def doctor(fix):
+    """Check system health and diagnose issues
+    
+    \b
+    This command will:
+    - Check OS compatibility
+    - Verify all dependencies are installed
+    - Check Python modules
+    - Verify LXD/LXC installation
+    - Check network configuration
+    - Verify directory structure
+    - Test services
+    
+    Use --fix to attempt automatic fixes for common issues.
+    """
+    doctor_script = '/srv/lxc-compose/cli/doctor.py'
+    
+    # First try the Python doctor script
+    if os.path.exists(doctor_script):
+        cmd = ['sudo', 'python3', doctor_script]
+        if fix:
+            cmd.append('--fix')
+        result = subprocess.run(cmd)
+        sys.exit(result.returncode)
+    
+    # Fallback to shell script if exists
     script_path = '/srv/lxc-compose/update.sh'
     if os.path.exists(script_path):
         subprocess.run(['sudo', script_path, 'doctor'])
     else:
-        click.echo(f"Error: Update script not found at {script_path}", err=True)
+        click.echo(f"Error: Doctor script not found", err=True)
 
 @cli.command()
 def update():

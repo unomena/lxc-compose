@@ -201,16 +201,33 @@ if command -v snap >/dev/null 2>&1; then
             warning "Removing existing LXD snap installation..."
             sudo snap remove --purge lxd || warning "Could not remove LXD snap"
         fi
-        # Install fresh
-        log "Installing LXD via snap..."
-        sudo snap install lxd || warning "Could not install LXD snap - continuing anyway"
+        # Install fresh with timeout
+        log "Installing LXD via snap (with 60s timeout)..."
+        if timeout 60 sudo snap install lxd --channel=5.21/stable; then
+            info "LXD snap installed successfully"
+        else
+            warning "LXD snap installation timed out or failed - continuing anyway"
+            # Try to kill any hanging snap processes
+            sudo pkill -f "snap install" 2>/dev/null || true
+            sudo pkill -f "snapd" 2>/dev/null || true
+            sleep 2
+            # Restart snapd service
+            sudo systemctl restart snapd 2>/dev/null || true
+        fi
     else
         # Check if LXD is already installed
         if snap list 2>/dev/null | grep -q "^lxd "; then
             info "LXD snap already installed"
         else
-            log "Installing LXD via snap (optional)..."
-            sudo snap install lxd || warning "Could not install LXD - this is optional"
+            log "Installing LXD via snap (optional, with 60s timeout)..."
+            if timeout 60 sudo snap install lxd --channel=5.21/stable; then
+                info "LXD snap installed successfully"
+            else
+                warning "LXD snap installation timed out or failed - this is optional"
+                warning "You can install LXD manually later with: sudo snap install lxd"
+                # Try to clean up any hanging processes
+                sudo pkill -f "snap install" 2>/dev/null || true
+            fi
         fi
     fi
 else
