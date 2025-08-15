@@ -229,55 +229,134 @@ lxc.apparmor.allow_nesting = 1
 lxc.rootfs.path = dir:/var/lib/lxc/datastore/rootfs
 EOF
     
-    # Start container
+    # Start container with comprehensive logging
     log "Starting container..."
-    if ! sudo lxc-start -n datastore; then
-        error "Failed to start container"
-        info "Checking container logs for errors..."
-        sudo lxc-info -n datastore
-        echo ""
-        warning "Attempting to start in foreground mode for debugging..."
-        sudo lxc-start -n datastore -F -l DEBUG -o /tmp/lxc-datastore.log &
-        local fg_pid=$!
-        sleep 3
-        
-        # Kill the foreground process
-        kill $fg_pid 2>/dev/null || true
-        
-        # Show debug output
-        if [[ -f /tmp/lxc-datastore.log ]]; then
-            error "Container startup log:"
-            tail -20 /tmp/lxc-datastore.log
-        fi
-        
-        # Common fixes
-        info "Common fixes:"
-        echo "  1. Check AppArmor: sudo aa-status"
-        echo "  2. Disable AppArmor for container: sudo aa-complain /usr/bin/lxc-start"
-        echo "  3. Check storage: df -h /var/lib/lxc"
-        echo "  4. Check network: ip link show lxcbr0"
-        
-        read -p "Try to continue anyway? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            return 1
-        fi
+    
+    # Create log directory
+    sudo mkdir -p /srv/logs/lxc
+    local log_file="/srv/logs/lxc/datastore-$(date +%Y%m%d-%H%M%S).log"
+    
+    # Try to start with debug logging
+    if ! sudo lxc-start -n datastore -l DEBUG -o "$log_file"; then
+        error "Failed to start container - Initial attempt"
     fi
     
     # Wait for container to be fully ready
     local count=0
+    local is_running=false
     while [[ $count -lt 10 ]]; do
-        if sudo lxc-info -n datastore | grep -q "RUNNING"; then
+        if sudo lxc-info -n datastore 2>/dev/null | grep -q "State:.*RUNNING"; then
             log "Container is running"
+            is_running=true
             break
         fi
         sleep 1
         count=$((count + 1))
     done
     
-    if [[ $count -eq 10 ]]; then
+    if [[ "$is_running" != "true" ]]; then
         error "Container failed to reach RUNNING state"
-        return 1
+        echo ""
+        warning "=== DIAGNOSTIC INFORMATION ==="
+        
+        # Show container info
+        info "Container Status:"
+        sudo lxc-info -n datastore 2>&1 || echo "  Unable to get container info"
+        echo ""
+        
+        # Check configuration
+        info "Container Configuration:"
+        if [[ -f /var/lib/lxc/datastore/config ]]; then
+            grep -E "^(lxc.net|lxc.rootfs|lxc.mount)" /var/lib/lxc/datastore/config | head -10
+        else
+            echo "  Config file not found!"
+        fi
+        echo ""
+        
+        # Check network
+        info "Network Status:"
+        if ip link show lxcbr0 &>/dev/null; then
+            echo "  ✓ Bridge lxcbr0 exists"
+            ip addr show lxcbr0 | grep inet | head -2
+        else
+            echo "  ✗ Bridge lxcbr0 not found!"
+        fi
+        echo ""
+        
+        # Check AppArmor
+        info "AppArmor Status:"
+        if command -v aa-status &>/dev/null; then
+            if sudo aa-status 2>/dev/null | grep -q "lxc-container-default"; then
+                echo "  AppArmor profile: lxc-container-default"
+                echo "  Try: sudo aa-complain /usr/bin/lxc-start"
+            else
+                echo "  No LXC AppArmor profile found"
+            fi
+        else
+            echo "  AppArmor not installed"
+        fi
+        echo ""
+        
+        # Check storage
+        info "Storage:"
+        df -h /var/lib/lxc | tail -1
+        echo ""
+        
+        # Check mount points
+        info "Mount Points:"
+        if [[ -d /srv/shared/database ]]; then
+            echo "  ✓ /srv/shared/database exists"
+        else
+            echo "  ✗ /srv/shared/database missing"
+        fi
+        if [[ -d /srv/shared/redis ]]; then
+            echo "  ✓ /srv/shared/redis exists"
+        else
+            echo "  ✗ /srv/shared/redis missing"
+        fi
+        echo ""
+        
+        # Show last lines of debug log
+        if [[ -f "$log_file" ]]; then
+            error "Last 30 lines of debug log ($log_file):"
+            echo "----------------------------------------"
+            tail -30 "$log_file"
+            echo "----------------------------------------"
+        fi
+        echo ""
+        
+        # Try to identify specific error
+        warning "Possible issues detected:"
+        if [[ -f "$log_file" ]]; then
+            if grep -q "Permission denied" "$log_file"; then
+                echo "  • Permission issues - check AppArmor or file permissions"
+            fi
+            if grep -q "No such file or directory" "$log_file"; then
+                echo "  • Missing files or directories - check mount points"
+            fi
+            if grep -q "Address already in use" "$log_file"; then
+                echo "  • Network conflict - IP address may be in use"
+            fi
+            if grep -q "No space left" "$log_file"; then
+                echo "  • Disk space issue - check available storage"
+            fi
+        fi
+        
+        # Offer solutions
+        echo ""
+        info "Suggested fixes:"
+        echo "  1. Disable AppArmor: sudo aa-complain /usr/bin/lxc-start"
+        echo "  2. Check logs: less $log_file"
+        echo "  3. Remove and recreate: sudo lxc-destroy -n datastore"
+        echo "  4. Check LXC service: sudo systemctl status lxc"
+        echo ""
+        
+        read -p "Try to continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            info "Container setup aborted. Log saved to: $log_file"
+            return 1
+        fi
     fi
     
     sleep 2
@@ -402,9 +481,38 @@ lxc.apparmor.allow_nesting = 1
 lxc.rootfs.path = dir:/var/lib/lxc/$app_name/rootfs
 EOF
     
-    # Start container
-    sudo lxc-start -n "$app_name"
-    sleep 5
+    # Start container with logging
+    log "Starting container..."
+    
+    # Create log directory
+    sudo mkdir -p /srv/logs/lxc
+    local log_file="/srv/logs/lxc/${app_name}-$(date +%Y%m%d-%H%M%S).log"
+    
+    # Try to start with debug logging
+    if ! sudo lxc-start -n "$app_name" -l DEBUG -o "$log_file"; then
+        error "Failed to start container - check $log_file for details"
+    fi
+    
+    # Wait for container to be ready
+    local count=0
+    local is_running=false
+    while [[ $count -lt 10 ]]; do
+        if sudo lxc-info -n "$app_name" 2>/dev/null | grep -q "State:.*RUNNING"; then
+            log "Container is running"
+            is_running=true
+            break
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+    
+    if [[ "$is_running" != "true" ]]; then
+        error "Container failed to start. Debug log: $log_file"
+        tail -20 "$log_file"
+        return 1
+    fi
+    
+    sleep 2
     
     # Create setup script
     info "Creating application setup script..."
