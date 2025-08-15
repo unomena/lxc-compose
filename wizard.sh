@@ -282,7 +282,7 @@ deploy_django_sample() {
         info "Please ensure LXC Compose is properly installed"
     fi
     
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # List containers
@@ -290,7 +290,7 @@ list_containers() {
     echo -e "\n${BOLD}LXC Containers${NC}\n"
     sudo lxc-ls --fancy
     echo ""
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # System update
@@ -333,8 +333,6 @@ system_update() {
         echo -e "\n${BOLD}Recent changes:${NC}"
         git log --oneline -5
     fi
-    
-    read -p "Press Enter to continue..."
 }
 
 # System diagnostics
@@ -376,7 +374,7 @@ system_diagnostics() {
         fi
     fi
     
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # Clean update (from recovery menu)
@@ -396,7 +394,7 @@ clean_update() {
     git pull origin main
     
     log "Clean update complete!"
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # Fix hanging installations
@@ -419,7 +417,7 @@ fix_hanging_install() {
     rm -f /var/lib/snapd/state.lock 2>/dev/null || true
     
     log "Fixed hanging installations"
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # Reset network configuration
@@ -437,7 +435,7 @@ reset_network() {
     systemctl restart lxc-net 2>/dev/null || true
     
     log "Network configuration reset"
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # Fix permissions
@@ -449,7 +447,7 @@ fix_permissions() {
     chown -R $OWNER_USER:$OWNER_USER /srv/
     
     log "Permissions fixed"
-    read -p "Press Enter to continue..."
+    sleep 1
 }
 
 # Reinstall Python dependencies
@@ -469,7 +467,7 @@ reinstall_python_deps() {
     done
     
     log "Python dependencies reinstalled"
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # Full recovery
@@ -492,7 +490,7 @@ full_recovery() {
     clean_update
     
     log "Full recovery complete!"
-    read -p "Press Enter to continue..."
+    sleep 3
 }
 
 # Container operations
@@ -527,7 +525,7 @@ exec_command() {
     read -p "Enter container name: " name
     read -p "Enter command: " cmd
     sudo lxc-attach -n "$name" -- $cmd
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 attach_shell() {
@@ -540,7 +538,7 @@ attach_shell() {
 container_info() {
     read -p "Enter container name: " name
     sudo lxc-info -n "$name"
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 destroy_container() {
@@ -677,7 +675,7 @@ view_web_logs() {
     fi
     
     echo ""
-    read -p "Press Enter to continue..."
+    sleep 2
 }
 
 # Install web dependencies
@@ -744,7 +742,7 @@ show_documentation() {
     echo ""
     echo "For more info: https://github.com/unomena/lxc-compose"
     
-    read -p "Press Enter to continue..."
+    sleep 3
 }
 
 # Handle command-line arguments
