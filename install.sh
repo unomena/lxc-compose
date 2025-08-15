@@ -1,62 +1,57 @@
 #!/bin/bash
 
 #############################################################################
-# LXC Compose Installation Script (install.sh)
+# LXC Compose Installation Script
 # 
-# Full installation script that:
-# 1. Downloads LXC Compose from GitHub repository
-# 2. Installs all files to /srv/lxc-compose/
-# 3. Creates the lxc-compose command
-# 4. Automatically runs the host setup (unless in interactive mode)
+# Complete installation script that:
+# 1. Sets up the host environment (packages, network, etc.)
+# 2. Clones/updates the LXC Compose repository
+# 3. Installs the lxc-compose command
+# 4. Prepares the system for container orchestration
+#
+# This consolidates install.sh and setup-lxc-host.sh into one script
 #
 # Compatible with Ubuntu 22.04 and 24.04 LTS
-# 
-# Usage:
-#   - Via curl one-liner: Use get.sh instead
-#   - Direct: ./install.sh
-#   - Skip setup: SKIP_SETUP=true ./install.sh
+# Usage: bash install.sh
 #############################################################################
 
 set -euo pipefail
 
 # Configuration
 REPO_URL="https://github.com/unomena/lxc-compose.git"
-INSTALL_DIR="/srv"
+INSTALL_DIR="/srv/lxc-compose"
 
-# Color codes for output
+# Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+BOLD='\033[1m'
+NC='\033[0m'
 
 # Logging functions
-log() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
-}
+log() { echo -e "${GREEN}✓${NC} $1"; }
+error() { echo -e "${RED}✗${NC} $1" >&2; exit 1; }
+warning() { echo -e "${YELLOW}⚠${NC} $1"; }
+info() { echo -e "${BLUE}ℹ${NC} $1"; }
 
-error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-    exit 1
+# Display banner
+display_banner() {
+    echo -e "${BOLD}"
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║              LXC Compose Installation Script                 ║"
+    echo "║                     Version 2.0                              ║"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
 }
-
-warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-# No cleanup needed since we clone directly to /srv/lxc-compose
 
 # Check prerequisites
 check_prerequisites() {
-    log "Checking prerequisites..."
+    info "Checking prerequisites..."
     
-    # Check if running as ubuntu user or with sudo
-    if [[ "$USER" != "ubuntu" ]] && [[ "$EUID" -ne 0 ]]; then
-        error "This script should be run as 'ubuntu' user or with sudo"
+    # Check if running with sudo
+    if [[ "$EUID" -ne 0 ]]; then
+        error "This script must be run with sudo"
     fi
     
     # Check Ubuntu version
@@ -76,315 +71,357 @@ check_prerequisites() {
         [[ $REPLY =~ ^[Yy]$ ]] || exit 1
     fi
     
-    # Check for git
-    if ! command -v git &> /dev/null; then
-        info "Git not found, installing..."
-        sudo apt-get update
-        sudo apt-get install -y git
-    fi
-    
-    # Check for curl
-    if ! command -v curl &> /dev/null; then
-        info "Curl not found, installing..."
-        sudo apt-get install -y curl
-    fi
+    log "Prerequisites check passed"
 }
 
-# Download repository
-download_repo() {
-    log "Setting up LXC Compose repository in /srv/lxc-compose..."
+# Update system
+update_system() {
+    info "Updating system packages..."
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+    log "System updated"
+}
+
+# Install base packages
+install_base_packages() {
+    info "Installing base packages..."
     
-    # Create /srv directory if it doesn't exist
-    sudo mkdir -p /srv
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        curl \
+        wget \
+        git \
+        vim \
+        htop \
+        net-tools \
+        software-properties-common \
+        apt-transport-https \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+        build-essential \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-dev \
+        jq \
+        tree \
+        zip \
+        unzip \
+        supervisor \
+        nginx \
+        ufw \
+        fail2ban \
+        unattended-upgrades
     
-    # Check if it's already a git repository
-    if [[ -d "/srv/lxc-compose/.git" ]]; then
-        log "Repository exists, updating to latest version..."
-        cd /srv/lxc-compose
-        
-        # Stash any local changes
-        if sudo git status --porcelain | grep -q .; then
-            warning "Stashing local changes..."
-            sudo git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)"
-        fi
-        
-        # Pull latest changes
-        if sudo git pull origin main; then
-            log "Successfully updated to latest version"
-            
-            # Check if there were stashed changes
-            if sudo git stash list | grep -q "Auto-stash before update"; then
-                info "Local changes were stashed. To restore: cd /srv/lxc-compose && sudo git stash pop"
+    log "Base packages installed"
+}
+
+# Install LXC/LXD
+install_lxc() {
+    info "Installing LXC and container tools..."
+    
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        lxc \
+        lxc-templates \
+        lxc-utils \
+        bridge-utils \
+        dnsmasq-base \
+        iptables \
+        debootstrap \
+        libvirt-clients \
+        libvirt-daemon-system
+    
+    # Install LXD via snap if available (with timeout to prevent hanging)
+    if command -v snap >/dev/null 2>&1; then
+        if ! snap list 2>/dev/null | grep -q "^lxd "; then
+            info "Installing LXD via snap (60s timeout)..."
+            if timeout 60 snap install lxd --channel=5.21/stable; then
+                log "LXD installed successfully"
+            else
+                warning "LXD installation timed out or failed (optional component)"
             fi
         else
-            warning "Could not pull latest changes - continuing with existing version"
+            log "LXD already installed"
         fi
-    else
-        # Remove old installation if it exists (non-git)
-        if [[ -d "/srv/lxc-compose" ]]; then
-            warning "Removing old non-git installation..."
-            sudo rm -rf /srv/lxc-compose
-        fi
-        
-        # Clone directly to /srv/lxc-compose
-        log "Cloning repository to /srv/lxc-compose..."
-        sudo git clone "$REPO_URL" /srv/lxc-compose || {
-            error "Failed to clone repository to /srv/lxc-compose"
-        }
     fi
     
-    # Ensure we have the repository
-    if [[ ! -d "/srv/lxc-compose" ]]; then
-        error "Failed to set up repository in /srv/lxc-compose"
-    fi
-    
-    log "Repository ready at /srv/lxc-compose"
+    log "Container tools installed"
 }
 
-# Install files
-install_files() {
-    log "Setting up LXC Compose structure..."
+# Configure network
+configure_network() {
+    info "Configuring LXC network bridge..."
     
-    # Create additional directories needed
-    sudo mkdir -p /srv/{apps,shared,logs}
-    sudo mkdir -p /etc/lxc-compose
-    sudo mkdir -p /srv/shared/{database,media,certificates}
-    sudo mkdir -p /srv/shared/database/{postgres,redis}
+    # Create directories
+    mkdir -p /etc/lxc /etc/default
     
-    # Ensure all scripts are executable
-    sudo chmod +x /srv/lxc-compose/*.sh 2>/dev/null || true
-    sudo chmod +x /srv/lxc-compose/cli/*.py 2>/dev/null || true
-    sudo chmod +x /srv/lxc-compose/scripts/*.sh 2>/dev/null || true
-    sudo chmod +x /srv/lxc-compose/scripts/*.py 2>/dev/null || true
+    # LXC default configuration
+    cat > /etc/lxc/default.conf <<EOF
+# Network configuration
+lxc.net.0.type = veth
+lxc.net.0.link = lxcbr0
+lxc.net.0.flags = up
+lxc.net.0.hwaddr = 00:16:3e:xx:xx:xx
+
+# AppArmor
+lxc.apparmor.profile = generated
+lxc.apparmor.allow_nesting = 1
+
+# Cgroup configuration
+lxc.init.cmd = /sbin/init
+lxc.mount.auto = proc:mixed sys:mixed cgroup:mixed
+EOF
+    
+    # Configure LXC bridge
+    cat > /etc/default/lxc-net <<EOF
+USE_LXC_BRIDGE="true"
+LXC_BRIDGE="lxcbr0"
+LXC_ADDR="10.0.3.1"
+LXC_NETMASK="255.255.255.0"
+LXC_NETWORK="10.0.3.0/24"
+LXC_DHCP_RANGE="10.0.3.200,10.0.3.254"
+LXC_DHCP_MAX="50"
+EOF
+    
+    # Enable and restart LXC networking
+    if systemctl list-unit-files | grep -q lxc-net; then
+        systemctl enable lxc-net
+        systemctl restart lxc-net
+    else
+        # Create bridge manually
+        ip link add name lxcbr0 type bridge 2>/dev/null || true
+        ip addr add 10.0.3.1/24 dev lxcbr0 2>/dev/null || true
+        ip link set lxcbr0 up 2>/dev/null || true
+    fi
+    
+    log "Network configured"
+}
+
+# Install Python dependencies
+install_python_deps() {
+    info "Installing Python dependencies..."
+    
+    # Detect Python version for pip flags
+    PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+    if [[ $(echo "$PYTHON_VERSION >= 3.11" | bc -l) -eq 1 ]]; then
+        PIP_FLAGS="--break-system-packages"
+    else
+        PIP_FLAGS=""
+    fi
+    
+    # Install Python packages
+    for package in click pyyaml jinja2 tabulate colorama requests; do
+        pip3 install $PIP_FLAGS $package 2>/dev/null || \
+        apt-get install -y python3-${package/pyyaml/yaml} 2>/dev/null || true
+    done
+    
+    log "Python dependencies installed"
+}
+
+# Clone or update repository
+setup_repository() {
+    info "Setting up LXC Compose repository..."
+    
+    # Create /srv directory
+    mkdir -p /srv
+    
+    if [[ -d "$INSTALL_DIR/.git" ]]; then
+        # Repository exists, update it
+        info "Updating existing repository..."
+        cd "$INSTALL_DIR"
+        
+        # Add to git safe directory
+        git config --global --add safe.directory "$INSTALL_DIR"
+        
+        # Stash any local changes
+        if git status --porcelain | grep -q .; then
+            warning "Stashing local changes..."
+            git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)"
+        fi
+        
+        # Pull latest
+        git pull origin main || warning "Could not pull latest changes"
+    else
+        # Fresh installation
+        if [[ -d "$INSTALL_DIR" ]]; then
+            warning "Removing old non-git installation..."
+            rm -rf "$INSTALL_DIR"
+        fi
+        
+        info "Cloning repository..."
+        git clone "$REPO_URL" "$INSTALL_DIR"
+    fi
+    
+    log "Repository ready"
+}
+
+# Create directory structure
+create_directories() {
+    info "Creating directory structure..."
+    
+    mkdir -p /srv/{apps,shared,logs}
+    mkdir -p /srv/shared/{database,redis,media,certificates}
+    mkdir -p /srv/shared/database/{postgres,mysql}
     
     # Set ownership
     OWNER_USER=${SUDO_USER:-ubuntu}
-    sudo chown -R $OWNER_USER:$OWNER_USER /srv/
+    chown -R $OWNER_USER:$OWNER_USER /srv/
     
     log "Directory structure created"
 }
 
-# Create lxc-compose command
-create_command() {
-    log "Creating lxc-compose command..."
+# Install lxc-compose command
+install_command() {
+    info "Installing lxc-compose command..."
     
-    # Create wrapper script
-    sudo tee /usr/local/bin/lxc-compose > /dev/null <<'EOF'
-#!/bin/bash
-# LXC Compose CLI wrapper
-# Check where the CLI actually is
-if [[ -f "/srv/lxc-compose/srv/lxc-compose/cli/lxc_compose.py" ]]; then
-    exec python3 /srv/lxc-compose/srv/lxc-compose/cli/lxc_compose.py "$@"
-elif [[ -f "/srv/lxc-compose/cli/lxc_compose.py" ]]; then
-    exec python3 /srv/lxc-compose/cli/lxc_compose.py "$@"
-else
-    echo "Error: lxc_compose.py not found"
-    echo "Checked:"
-    echo "  - /srv/lxc-compose/srv/lxc-compose/cli/lxc_compose.py"
-    echo "  - /srv/lxc-compose/cli/lxc_compose.py"
-    exit 1
-fi
+    # Make CLI executable
+    chmod +x "$INSTALL_DIR/srv/lxc-compose/cli/lxc_compose.py"
+    chmod +x "$INSTALL_DIR/wizard.sh"
+    
+    # Create symlink
+    ln -sf "$INSTALL_DIR/srv/lxc-compose/cli/lxc_compose.py" /usr/local/bin/lxc-compose
+    
+    # Install doctor script if present
+    if [[ -f "$INSTALL_DIR/srv/lxc-compose/cli/doctor.py" ]]; then
+        chmod +x "$INSTALL_DIR/srv/lxc-compose/cli/doctor.py"
+    fi
+    
+    log "Command installed"
+}
+
+# Configure firewall
+configure_firewall() {
+    info "Configuring firewall..."
+    
+    # Basic UFW rules
+    ufw --force enable
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw allow 22/tcp
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+    
+    # Allow LXC bridge
+    ufw allow in on lxcbr0
+    ufw route allow in on lxcbr0
+    ufw route allow out on lxcbr0
+    
+    log "Firewall configured"
+}
+
+# Configure SSH
+configure_ssh() {
+    info "Configuring SSH..."
+    
+    # Backup original config
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+    
+    # Apply secure settings
+    cat >> /etc/ssh/sshd_config <<EOF
+
+# LXC Compose Security Settings
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+ChallengeResponseAuthentication no
+X11Forwarding no
+PrintMotd no
+PrintLastLog yes
+TCPKeepAlive yes
+Compression delayed
+ClientAliveInterval 120
+ClientAliveCountMax 2
+UsePAM yes
+Protocol 2
 EOF
     
-    sudo chmod +x /usr/local/bin/lxc-compose
+    systemctl restart ssh
+    log "SSH configured"
 }
 
-# Setup Flask Manager
-setup_flask_manager() {
-    log "Setting up LXC Compose Manager web interface..."
+# Setup log rotation
+setup_log_rotation() {
+    info "Setting up log rotation..."
     
-    # Copy Flask app files
-    if [[ -d "/srv/lxc-compose/lxc-compose-manager" ]]; then
-        sudo cp -r /srv/lxc-compose/lxc-compose-manager /srv/
-        
-        # Install Python dependencies
-        log "Installing Python dependencies for web interface..."
-        sudo apt-get install -y python3-pip python3-venv supervisor nginx
-        
-        # Create virtual environment and install requirements
-        cd /srv/lxc-compose-manager
-        sudo python3 -m venv venv
-        sudo ./venv/bin/pip install --upgrade pip
-        sudo ./venv/bin/pip install -r requirements.txt
-        
-        # Setup supervisor configuration
-        if [[ -f "/srv/lxc-compose-manager/supervisor.conf" ]]; then
-            sudo cp /srv/lxc-compose-manager/supervisor.conf /etc/supervisor/conf.d/lxc-compose-manager.conf
-            
-            # Generate a secret key for Flask
-            FLASK_SECRET_KEY=$(openssl rand -hex 32)
-            sudo sed -i "s/%(ENV_FLASK_SECRET_KEY)s/$FLASK_SECRET_KEY/g" /etc/supervisor/conf.d/lxc-compose-manager.conf
-            
-            # Reload supervisor and start Flask app
-            sudo supervisorctl reread
-            sudo supervisorctl update
-            sudo supervisorctl restart lxc-compose-manager || sudo supervisorctl start lxc-compose-manager
-        fi
-        
-        # Create registry directory and file
-        sudo mkdir -p /etc/lxc-compose
-        if [[ ! -f "/etc/lxc-compose/registry.json" ]]; then
-            echo '[]' | sudo tee /etc/lxc-compose/registry.json > /dev/null
-        fi
-        sudo chmod 644 /etc/lxc-compose/registry.json
-        
-        # Open firewall port for Flask interface
-        if command -v ufw &> /dev/null; then
-            sudo ufw allow 5000/tcp comment 'LXC Compose Web Interface' 2>/dev/null || true
-        fi
-        
-        # Display Flask interface info
-        local HOST_IP=$(hostname -I | awk '{print $1}')
-        sleep 2
-        if sudo supervisorctl status lxc-compose-manager 2>/dev/null | grep -q "RUNNING"; then
-            echo ""
-            echo "╔══════════════════════════════════════════════════════════════╗"
-            echo "║         🌐 LXC Compose Web Interface Ready! 🌐               ║"
-            echo "╚══════════════════════════════════════════════════════════════╝"
-            echo ""
-            echo "[✓] Web Interface: http://${HOST_IP}:5000"
-            echo "[i] Access the web interface to:"
-            echo "    • View and manage all containers"
-            echo "    • Create new containers with wizard"
-            echo "    • Configure port forwarding"
-            echo "    • Execute commands via web terminal"
-            echo ""
-        else
-            log "Web interface installed at http://${HOST_IP}:5000"
-            info "Start with: sudo supervisorctl start lxc-compose-manager"
-        fi
-    else
-        warning "Flask manager directory not found, skipping web interface setup"
-    fi
+    cat > /etc/logrotate.d/lxc-compose <<EOF
+/srv/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    sharedscripts
+    postrotate
+        systemctl reload supervisor 2>/dev/null || true
+    endscript
+}
+EOF
+    
+    log "Log rotation configured"
 }
 
-# Run setup if requested
-run_setup() {
-    echo ""
+# Run post-installation checks
+post_install_checks() {
+    info "Running post-installation checks..."
     
-    # Check for force reinstall mode
-    FORCE_REINSTALL=${FORCE_REINSTALL:-false}
-    
-    # Check if LXC is already set up
-    local NEEDS_SETUP=false
-    
-    if ! command -v lxc >/dev/null 2>&1; then
-        NEEDS_SETUP=true
-        info "LXC not installed - setup required"
-    elif ! ip link show lxcbr0 >/dev/null 2>&1; then
-        NEEDS_SETUP=true
-        info "LXC bridge not configured - setup required"
-    elif [[ ! -d "/srv/apps" ]] || [[ ! -d "/srv/shared" ]] || [[ ! -d "/srv/logs" ]]; then
-        NEEDS_SETUP=true
-        info "Directory structure incomplete - setup required"
-    fi
-    
-    # Force setup if FORCE_REINSTALL is set
-    if [[ "$FORCE_REINSTALL" == "true" ]]; then
-        NEEDS_SETUP=true
-        warning "Force reinstall mode - will reconfigure everything"
-    fi
-    
-    if [[ "$NEEDS_SETUP" == "true" ]]; then
-        echo "╔══════════════════════════════════════════════════════════════╗"
-        echo "║           Initial Setup Required                             ║"
-        echo "╚══════════════════════════════════════════════════════════════╝"
+    # Check if lxc-compose command works
+    if command -v lxc-compose &> /dev/null; then
+        log "lxc-compose command available"
     else
-        echo "╔══════════════════════════════════════════════════════════════╗"
-        echo "║           LXC Compose Updated! ✓                             ║"
-        echo "╚══════════════════════════════════════════════════════════════╝"
-        info "System already configured"
+        warning "lxc-compose command not found in PATH"
     fi
     
-    echo ""
-    info "Repository: /srv/lxc-compose/"
-    info "Command: lxc-compose"
-    echo ""
-    
-    # Check if we should skip setup
-    SKIP_SETUP=${SKIP_SETUP:-false}
-    
-    # Override skip if force reinstall
-    if [[ "$FORCE_REINSTALL" == "true" ]]; then
-        SKIP_SETUP=false
-        RUN_SETUP=true
-        log "Force reinstall - running full setup..."
-    # If running interactively and setup is needed
-    elif [[ -t 0 ]] && [[ "$SKIP_SETUP" != "true" ]] && [[ "$NEEDS_SETUP" == "true" ]]; then
-        read -p "Would you like to run the full host setup now? (Y/n): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            RUN_SETUP=true
-        else
-            RUN_SETUP=false
-        fi
-    elif [[ "$SKIP_SETUP" == "true" ]]; then
-        RUN_SETUP=false
-        info "Skipping host setup (SKIP_SETUP=true)"
-    elif [[ "$NEEDS_SETUP" == "true" ]]; then
-        # Non-interactive mode and setup needed - run it
-        RUN_SETUP=true
-        log "Running host setup automatically..."
+    # Check network bridge
+    if ip link show lxcbr0 &> /dev/null; then
+        log "Network bridge configured"
     else
-        # Setup not needed
-        RUN_SETUP=false
-        log "System already configured - skipping setup"
+        warning "Network bridge not found"
     fi
     
-    if [[ "$RUN_SETUP" == "true" ]]; then
-        if [[ -f "/srv/lxc-compose/setup-lxc-host.sh" ]]; then
-            log "Setting up LXC host environment..."
-            echo ""
-            # Pass force reinstall flag to setup script
-            if [[ "$FORCE_REINSTALL" == "true" ]]; then
-                sudo FORCE_REINSTALL=true bash /srv/lxc-compose/setup-lxc-host.sh
-            else
-                sudo bash /srv/lxc-compose/setup-lxc-host.sh
-            fi
-        else
-            warning "Setup script not found at /srv/lxc-compose/setup-lxc-host.sh"
-            warning "You can run it manually later"
-        fi
+    # Check Python modules
+    if python3 -c "import click, yaml" 2>/dev/null; then
+        log "Python modules installed"
     else
-        echo ""
-        if [[ "$NEEDS_SETUP" == "true" ]]; then
-            echo "To complete the setup, run:"
-            echo "  sudo bash /srv/lxc-compose/setup-lxc-host.sh"
-        else
-            echo "To run the setup wizard:"
-            echo "  lxc-compose wizard"
-            echo ""
-            echo "To check system health:"
-            echo "  lxc-compose doctor"
-            echo ""
-            echo "To update the repository:"
-            echo "  lxc-compose update"
-            echo ""
-            echo "To see available commands:"
-            echo "  lxc-compose --help"
-            echo ""
-            echo "To see example usage:"
-            echo "  lxc-compose examples"
-        fi
-        echo ""
+        warning "Some Python modules missing"
     fi
 }
 
 # Main installation flow
 main() {
-    echo ""
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║              LXC Compose Installation Script                 ║"
-    echo "║         Docker Compose-like orchestration for LXC            ║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
-    echo ""
+    display_banner
     
     check_prerequisites
-    download_repo
-    install_files
-    create_command
-    setup_flask_manager
-    run_setup
+    update_system
+    install_base_packages
+    install_lxc
+    configure_network
+    install_python_deps
+    setup_repository
+    create_directories
+    install_command
+    configure_firewall
+    configure_ssh
+    setup_log_rotation
+    post_install_checks
+    
+    echo ""
+    echo -e "${BOLD}${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}${GREEN}     LXC Compose Installation Complete!${NC}"
+    echo -e "${BOLD}${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Run: ${BOLD}lxc-compose wizard${NC} to start the setup wizard"
+    echo "  2. Or use: ${BOLD}lxc-compose --help${NC} for CLI commands"
+    echo ""
+    echo "Quick start:"
+    echo "  - Setup database: ${BOLD}lxc-compose wizard setup-db${NC}"
+    echo "  - Setup app: ${BOLD}lxc-compose wizard setup-app${NC}"
+    echo "  - Web UI: ${BOLD}lxc-compose wizard web${NC}"
+    echo ""
+    echo "Documentation: https://github.com/unomena/lxc-compose"
+    echo ""
 }
 
 # Run main function

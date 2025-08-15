@@ -90,31 +90,19 @@ def doctor(fix):
     
     Use --fix to attempt automatic fixes for common issues.
     """
-    doctor_script = '/srv/lxc-compose/cli/doctor.py'
-    
-    # First try the Python doctor script
-    if os.path.exists(doctor_script):
-        cmd = ['sudo', 'python3', doctor_script]
-        if fix:
-            cmd.append('--fix')
-        result = subprocess.run(cmd)
-        sys.exit(result.returncode)
-    
-    # Fallback to shell script if exists
-    script_path = '/srv/lxc-compose/update.sh'
-    if os.path.exists(script_path):
-        subprocess.run(['sudo', script_path, 'doctor'])
-    else:
-        click.echo(f"Error: Doctor script not found", err=True)
+    # Use wizard for doctor functionality
+    cmd = ['sudo', '/srv/lxc-compose/wizard.sh', 'doctor']
+    if fix:
+        # The wizard will prompt for fix mode
+        click.echo("Running diagnostics with fix mode...")
+    result = subprocess.run(cmd)
+    sys.exit(result.returncode)
 
 @cli.command()
 def update():
     """Update LXC Compose to the latest version"""
-    script_path = '/srv/lxc-compose/update.sh'
-    if os.path.exists(script_path):
-        subprocess.run(['sudo', script_path, 'update'])
-    else:
-        click.echo(f"Error: Update script not found at {script_path}", err=True)
+    # Use wizard for update functionality
+    subprocess.run(['sudo', '/srv/lxc-compose/wizard.sh', 'update'])
 
 @cli.command()
 def wizard():
