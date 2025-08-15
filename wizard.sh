@@ -45,8 +45,8 @@ display_header() {
     clear
     echo -e "${BOLD}"
     echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║                    LXC Compose Wizard                        ║"
-    echo "║                 Container Orchestration System               ║"
+    echo "║                      LXC Compose Wizard                       ║"
+    echo "║                 Container Orchestration System                ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -153,6 +153,44 @@ setup_database() {
         fi
     fi
     
+    # Ask for PostgreSQL version
+    echo -e "\n${CYAN}Select PostgreSQL version:${NC}"
+    echo "  1) PostgreSQL 14 (Default, Ubuntu 22.04 standard)"
+    echo "  2) PostgreSQL 15 (Latest stable)"
+    echo "  3) PostgreSQL 16 (Cutting edge)"
+    echo "  4) PostgreSQL 13 (Legacy support)"
+    echo ""
+    read -p "Enter choice [1-4] (default: 1): " pg_choice
+    
+    # Set PostgreSQL version based on choice
+    case "${pg_choice:-1}" in
+        1)
+            PG_VERSION="14"
+            PG_PACKAGE="postgresql"
+            info "Using PostgreSQL 14 (Ubuntu default)"
+            ;;
+        2)
+            PG_VERSION="15"
+            PG_PACKAGE="postgresql-15"
+            info "Using PostgreSQL 15"
+            ;;
+        3)
+            PG_VERSION="16"
+            PG_PACKAGE="postgresql-16"
+            info "Using PostgreSQL 16"
+            ;;
+        4)
+            PG_VERSION="13"
+            PG_PACKAGE="postgresql-13"
+            info "Using PostgreSQL 13"
+            ;;
+        *)
+            PG_VERSION="14"
+            PG_PACKAGE="postgresql"
+            warning "Invalid choice, using PostgreSQL 14"
+            ;;
+    esac
+    
     # Create container
     log "Creating database container..."
     sudo lxc-create -n datastore -t ubuntu -- -r jammy
@@ -181,16 +219,28 @@ EOF
     sudo lxc-start -n datastore
     sleep 5
     
-    # Install PostgreSQL and Redis
-    info "Installing PostgreSQL and Redis..."
+    # Update package list
+    info "Updating package repositories..."
     sudo lxc-attach -n datastore -- apt-get update
-    sudo lxc-attach -n datastore -- apt-get install -y postgresql redis-server
+    
+    # Add PostgreSQL APT repository if not using default version
+    if [[ "$PG_VERSION" != "14" ]]; then
+        info "Adding PostgreSQL APT repository for version $PG_VERSION..."
+        sudo lxc-attach -n datastore -- apt-get install -y wget ca-certificates
+        sudo lxc-attach -n datastore -- sh -c "echo 'deb http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' > /etc/apt/sources.list.d/pgdg.list"
+        sudo lxc-attach -n datastore -- wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo lxc-attach -n datastore -- apt-key add -
+        sudo lxc-attach -n datastore -- apt-get update
+    fi
+    
+    # Install PostgreSQL and Redis
+    info "Installing PostgreSQL $PG_VERSION and Redis..."
+    sudo lxc-attach -n datastore -- apt-get install -y $PG_PACKAGE redis-server
     
     # Configure PostgreSQL
     info "Configuring PostgreSQL..."
     sudo lxc-attach -n datastore -- sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
-    sudo lxc-attach -n datastore -- sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/14/main/postgresql.conf
-    sudo lxc-attach -n datastore -- sh -c "echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/14/main/pg_hba.conf"
+    sudo lxc-attach -n datastore -- sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
+    sudo lxc-attach -n datastore -- sh -c "echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf"
     
     # Configure Redis
     info "Configuring Redis..."
@@ -200,7 +250,7 @@ EOF
     sudo lxc-attach -n datastore -- systemctl restart postgresql redis-server
     
     log "Database container setup complete!"
-    log "PostgreSQL: 10.0.3.2:5432 (user: postgres, pass: postgres)"
+    log "PostgreSQL $PG_VERSION: 10.0.3.2:5432 (user: postgres, pass: postgres)"
     log "Redis: 10.0.3.2:6379"
     
     read -p "Press Enter to continue..."
