@@ -102,9 +102,10 @@ container_management_menu() {
     echo -e "  ${CYAN}5)${NC} Execute Command in Container"
     echo -e "  ${CYAN}6)${NC} Attach to Container Shell"
     echo -e "  ${CYAN}7)${NC} Container Information"
-    echo -e "  ${CYAN}8)${NC} Destroy Container"
+    echo -e "  ${CYAN}8)${NC} Container Console (TTY)"
+    echo -e "  ${CYAN}9)${NC} Destroy Container"
     echo ""
-    echo -e "  ${CYAN}9)${NC} Refresh List"
+    echo -e "  ${CYAN}R)${NC} Refresh List"
     echo -e "  ${CYAN}0)${NC} Back to Main Menu"
     echo ""
     
@@ -118,8 +119,9 @@ container_management_menu() {
         5) exec_command; container_management_menu ;;
         6) attach_shell; container_management_menu ;;
         7) container_info; container_management_menu ;;
-        8) destroy_container; container_management_menu ;;
-        9) container_management_menu ;;  # Refresh
+        8) container_console; container_management_menu ;;
+        9) destroy_container; container_management_menu ;;
+        [Rr]) container_management_menu ;;  # Refresh
         0) return ;;
         *) warning "Invalid option"; sleep 2; container_management_menu ;;
     esac
@@ -1264,7 +1266,36 @@ view_logs() {
     if [[ -z "$name" ]]; then
         return
     fi
-    sudo lxc-console -n "$name" -t 0
+    
+    echo -e "\n${CYAN}Container Logs for '$name':${NC}"
+    echo "----------------------------------------"
+    
+    # Show system logs from the container
+    echo -e "\n${YELLOW}Recent System Logs:${NC}"
+    sudo lxc-attach -n "$name" -- journalctl -n 50 --no-pager 2>/dev/null || \
+        sudo lxc-attach -n "$name" -- tail -50 /var/log/syslog 2>/dev/null || \
+        echo "System logs not available"
+    
+    # Show application logs if they exist
+    if sudo lxc-attach -n "$name" -- test -d /var/log/supervisor; then
+        echo -e "\n${YELLOW}Supervisor Logs:${NC}"
+        sudo lxc-attach -n "$name" -- tail -20 /var/log/supervisor/supervisord.log 2>/dev/null || true
+    fi
+    
+    # For PostgreSQL containers
+    if sudo lxc-attach -n "$name" -- test -d /var/log/postgresql; then
+        echo -e "\n${YELLOW}PostgreSQL Logs:${NC}"
+        sudo lxc-attach -n "$name" -- tail -20 /var/log/postgresql/*.log 2>/dev/null || true
+    fi
+    
+    # For Redis containers
+    if sudo lxc-attach -n "$name" -- test -f /var/log/redis/redis-server.log; then
+        echo -e "\n${YELLOW}Redis Logs:${NC}"
+        sudo lxc-attach -n "$name" -- tail -20 /var/log/redis/redis-server.log 2>/dev/null || true
+    fi
+    
+    echo ""
+    read -p "Press Enter to continue..."
 }
 
 exec_command() {
@@ -1307,6 +1338,21 @@ container_info() {
     sudo lxc-info -n "$name"
     echo ""
     read -p "Press Enter to continue..."
+}
+
+container_console() {
+    echo -e "\n${CYAN}All containers:${NC}"
+    sudo lxc-ls -f | head -10 || echo "No containers"
+    echo ""
+    read -p "Enter container name for console access: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
+    info "Connecting to container console (TTY)..."
+    info "Default login: ubuntu / ubuntu"
+    info "Use Ctrl+A, Q to exit the console"
+    sleep 3
+    sudo lxc-console -n "$name" -t 0
 }
 
 destroy_container() {
