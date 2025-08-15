@@ -54,19 +54,20 @@ display_header() {
 # Display main menu
 display_menu() {
     echo -e "\n${BOLD}Main Menu${NC}\n"
-    echo -e "  ${CYAN}1)${NC} Setup Database Container (PostgreSQL + Redis)"
-    echo -e "  ${CYAN}2)${NC} Setup Application Container"
-    echo -e "  ${CYAN}3)${NC} Deploy Django Sample App"
+    echo -e "  ${CYAN}1)${NC} Setup Database (PostgreSQL)"
+    echo -e "  ${CYAN}2)${NC} Setup Cache (Redis)"
+    echo -e "  ${CYAN}3)${NC} Setup Application Container"
+    echo -e "  ${CYAN}4)${NC} Deploy Django Sample App"
     echo ""
-    echo -e "  ${CYAN}4)${NC} List Containers"
-    echo -e "  ${CYAN}5)${NC} Container Management ${YELLOW}▶${NC}"
+    echo -e "  ${CYAN}5)${NC} List Containers"
+    echo -e "  ${CYAN}6)${NC} Container Management ${YELLOW}▶${NC}"
     echo ""
-    echo -e "  ${CYAN}6)${NC} System Update"
-    echo -e "  ${CYAN}7)${NC} System Diagnostics (Doctor)"
-    echo -e "  ${CYAN}8)${NC} Recovery Tools ${YELLOW}▶${NC}"
+    echo -e "  ${CYAN}7)${NC} System Update"
+    echo -e "  ${CYAN}8)${NC} System Diagnostics (Doctor)"
+    echo -e "  ${CYAN}9)${NC} Recovery Tools ${YELLOW}▶${NC}"
     echo ""
-    echo -e "  ${CYAN}9)${NC} Web Interface ${YELLOW}▶${NC}"
-    echo -e "  ${CYAN}10)${NC} Documentation"
+    echo -e "  ${CYAN}10)${NC} Web Interface ${YELLOW}▶${NC}"
+    echo -e "  ${CYAN}11)${NC} Documentation"
     echo ""
     echo -e "  ${CYAN}0)${NC} Exit"
     echo ""
@@ -134,8 +135,308 @@ recovery_menu() {
     esac
 }
 
-# Setup database container
-setup_database() {
+# Setup PostgreSQL in new or existing container
+setup_postgresql() {
+    check_sudo
+    info "PostgreSQL Setup"
+    
+    # Ask for PostgreSQL version first
+    echo -e "\n${CYAN}Select PostgreSQL version:${NC}"
+    echo "  1) PostgreSQL 14 (Default, Ubuntu 22.04 standard)"
+    echo "  2) PostgreSQL 15 (Latest stable)"
+    echo "  3) PostgreSQL 16 (Cutting edge)"
+    echo "  4) PostgreSQL 13 (Legacy support)"
+    echo ""
+    read -p "Enter choice [1-4] (default: 1): " pg_choice
+    
+    # Set PostgreSQL version based on choice
+    case "${pg_choice:-1}" in
+        1)
+            PG_VERSION="14"
+            PG_PACKAGE="postgresql"
+            info "Using PostgreSQL 14 (Ubuntu default)"
+            ;;
+        2)
+            PG_VERSION="15"
+            PG_PACKAGE="postgresql-15"
+            info "Using PostgreSQL 15"
+            ;;
+        3)
+            PG_VERSION="16"
+            PG_PACKAGE="postgresql-16"
+            info "Using PostgreSQL 16"
+            ;;
+        4)
+            PG_VERSION="13"
+            PG_PACKAGE="postgresql-13"
+            info "Using PostgreSQL 13"
+            ;;
+        *)
+            PG_VERSION="14"
+            PG_PACKAGE="postgresql"
+            warning "Invalid choice, using PostgreSQL 14"
+            ;;
+    esac
+    
+    # Show existing containers
+    echo ""
+    info "Available containers:"
+    sudo lxc-ls -f | grep -E "NAME|RUNNING" || echo "No containers found"
+    
+    echo ""
+    echo -e "${CYAN}Installation target:${NC}"
+    echo "  1) Install in existing container"
+    echo "  2) Create new container"
+    echo ""
+    read -p "Enter choice [1-2]: " target_choice
+    
+    local container_name=""
+    
+    if [[ "$target_choice" == "1" ]]; then
+        # Install in existing container
+        read -p "Enter container name: " container_name
+        
+        # Check if container exists
+        if ! sudo lxc-info -n "$container_name" &>/dev/null; then
+            error "Container '$container_name' does not exist"
+            return 1
+        fi
+        
+        # Check if running
+        local state=$(sudo lxc-info -n "$container_name" 2>/dev/null | grep "State:" | awk '{print $2}')
+        if [[ "$state" != "RUNNING" ]]; then
+            info "Starting container '$container_name'..."
+            sudo lxc-start -n "$container_name"
+            sleep 3
+        fi
+        
+    else
+        # Create new container
+        read -p "Enter name for new container: " container_name
+        
+        if [[ -z "$container_name" ]]; then
+            error "Container name cannot be empty"
+            return 1
+        fi
+        
+        # Check if already exists
+        if sudo lxc-ls | grep -q "^$container_name$"; then
+            warning "Container '$container_name' already exists"
+            read -p "Use existing container? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                return 1
+            fi
+        else
+            # Create new container
+            create_basic_container "$container_name"
+        fi
+    fi
+    
+    # Install PostgreSQL in the container
+    info "Installing PostgreSQL $PG_VERSION in container '$container_name'..."
+    
+    # Create and run setup script
+    cat <<SCRIPT | sudo tee /var/lib/lxc/$container_name/rootfs/tmp/setup-postgresql.sh > /dev/null
+#!/bin/bash
+set -e
+
+echo "Installing PostgreSQL $PG_VERSION..."
+
+# Update package list
+apt-get update -qq
+
+# Add PostgreSQL APT repository if not using default version
+if [[ "$PG_VERSION" != "14" ]]; then
+    echo "Adding PostgreSQL APT repository..."
+    apt-get install -y -qq wget ca-certificates gnupg lsb-release
+    mkdir -p /etc/apt/keyrings
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+    chmod 644 /etc/apt/keyrings/postgresql.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+    apt-get update -qq
+fi
+
+# Install PostgreSQL
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $PG_PACKAGE postgresql-client-$PG_VERSION
+
+# Wait for PostgreSQL to start
+sleep 5
+
+# Configure PostgreSQL
+echo "Configuring PostgreSQL..."
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
+echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf
+
+# Restart PostgreSQL
+systemctl restart postgresql
+
+echo "PostgreSQL $PG_VERSION installation complete!"
+SCRIPT
+    
+    sudo chmod +x /var/lib/lxc/$container_name/rootfs/tmp/setup-postgresql.sh
+    sudo lxc-attach -n "$container_name" -- /tmp/setup-postgresql.sh
+    
+    # Get container IP
+    local container_ip=$(sudo lxc-info -n "$container_name" -iH | head -1)
+    
+    log "PostgreSQL $PG_VERSION installed successfully!"
+    log "Container: $container_name"
+    log "Connection: psql -h $container_ip -U postgres (password: postgres)"
+    
+    read -p "Press Enter to continue..."
+}
+
+# Setup Redis in new or existing container
+setup_redis() {
+    check_sudo
+    info "Redis Cache Setup"
+    
+    # Show existing containers
+    echo ""
+    info "Available containers:"
+    sudo lxc-ls -f | grep -E "NAME|RUNNING" || echo "No containers found"
+    
+    echo ""
+    echo -e "${CYAN}Installation target:${NC}"
+    echo "  1) Install in existing container"
+    echo "  2) Create new container"
+    echo ""
+    read -p "Enter choice [1-2]: " target_choice
+    
+    local container_name=""
+    
+    if [[ "$target_choice" == "1" ]]; then
+        # Install in existing container
+        read -p "Enter container name: " container_name
+        
+        # Check if container exists
+        if ! sudo lxc-info -n "$container_name" &>/dev/null; then
+            error "Container '$container_name' does not exist"
+            return 1
+        fi
+        
+        # Check if running
+        local state=$(sudo lxc-info -n "$container_name" 2>/dev/null | grep "State:" | awk '{print $2}')
+        if [[ "$state" != "RUNNING" ]]; then
+            info "Starting container '$container_name'..."
+            sudo lxc-start -n "$container_name"
+            sleep 3
+        fi
+        
+    else
+        # Create new container
+        read -p "Enter name for new container: " container_name
+        
+        if [[ -z "$container_name" ]]; then
+            error "Container name cannot be empty"
+            return 1
+        fi
+        
+        # Check if already exists
+        if sudo lxc-ls | grep -q "^$container_name$"; then
+            warning "Container '$container_name' already exists"
+            read -p "Use existing container? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                return 1
+            fi
+        else
+            # Create new container
+            create_basic_container "$container_name"
+        fi
+    fi
+    
+    # Install Redis in the container
+    info "Installing Redis in container '$container_name'..."
+    
+    # Create and run setup script
+    cat <<SCRIPT | sudo tee /var/lib/lxc/$container_name/rootfs/tmp/setup-redis.sh > /dev/null
+#!/bin/bash
+set -e
+
+echo "Installing Redis..."
+
+# Update package list
+apt-get update -qq
+
+# Install Redis
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq redis-server redis-tools
+
+# Configure Redis
+echo "Configuring Redis..."
+sed -i "s/bind 127.0.0.1/bind 0.0.0.0/" /etc/redis/redis.conf
+sed -i "s/^protected-mode yes/protected-mode no/" /etc/redis/redis.conf
+
+# Restart Redis
+systemctl restart redis-server
+
+echo "Redis installation complete!"
+SCRIPT
+    
+    sudo chmod +x /var/lib/lxc/$container_name/rootfs/tmp/setup-redis.sh
+    sudo lxc-attach -n "$container_name" -- /tmp/setup-redis.sh
+    
+    # Get container IP
+    local container_ip=$(sudo lxc-info -n "$container_name" -iH | head -1)
+    
+    log "Redis installed successfully!"
+    log "Container: $container_name"
+    log "Connection: redis-cli -h $container_ip"
+    
+    read -p "Press Enter to continue..."
+}
+
+# Helper function to create a basic container
+create_basic_container() {
+    local container_name="$1"
+    
+    log "Creating container '$container_name'..."
+    sudo lxc-create -n "$container_name" -t ubuntu -- -r jammy
+    
+    # Configure with next available IP
+    LAST_IP=$(sudo lxc-ls -f | awk '/10.0.3/ {print $5}' | cut -d. -f4 | cut -d/ -f1 | sort -n | tail -1)
+    NEXT_IP=$((LAST_IP + 1))
+    
+    info "Assigning IP: 10.0.3.$NEXT_IP"
+    
+    # Create mount directory
+    sudo mkdir -p "/srv/apps/$container_name"
+    
+    cat <<EOF | sudo tee /var/lib/lxc/$container_name/config > /dev/null
+# Container
+lxc.include = /usr/share/lxc/config/ubuntu.common.conf
+lxc.arch = linux64
+
+# Network
+lxc.net.0.type = veth
+lxc.net.0.link = lxcbr0
+lxc.net.0.flags = up
+lxc.net.0.ipv4.address = 10.0.3.$NEXT_IP/24
+lxc.net.0.ipv4.gateway = 10.0.3.1
+
+# Mounts
+lxc.mount.entry = /srv/apps/$container_name opt/app none bind,create=dir 0 0
+
+# System
+lxc.apparmor.profile = generated
+lxc.apparmor.allow_nesting = 1
+
+# Root filesystem
+lxc.rootfs.path = dir:/var/lib/lxc/$container_name/rootfs
+EOF
+    
+    # Start container
+    info "Starting container..."
+    sudo lxc-start -n "$container_name"
+    sleep 5
+    
+    log "Container '$container_name' created with IP 10.0.3.$NEXT_IP"
+}
+
+# Legacy function for combined database setup (kept for compatibility)
+setup_database_legacy() {
     check_sudo
     info "Setting up database container..."
     
@@ -1208,16 +1509,17 @@ main() {
         read -p "Select option: " choice
         
         case $choice in
-            1) setup_database ;;
-            2) setup_application ;;
-            3) deploy_django_sample ;;
-            4) list_containers ;;
-            5) container_management_menu ;;
-            6) system_update ;;
-            7) system_diagnostics ;;
-            8) recovery_menu ;;
-            9) web_interface_menu ;;
-            10) show_documentation ;;
+            1) setup_postgresql ;;
+            2) setup_redis ;;
+            3) setup_application ;;
+            4) deploy_django_sample ;;
+            5) list_containers ;;
+            6) container_management_menu ;;
+            7) system_update ;;
+            8) system_diagnostics ;;
+            9) recovery_menu ;;
+            10) web_interface_menu ;;
+            11) show_documentation ;;
             0) 
                 echo -e "\n${GREEN}Thank you for using LXC Compose!${NC}\n"
                 exit 0
