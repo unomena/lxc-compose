@@ -560,11 +560,18 @@ web_interface_menu() {
     display_header
     echo -e "\n${BOLD}Web Interface Management${NC}\n"
     
-    # Check status
-    if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
+    # Check status using same patterns as other functions
+    local pid=""
+    for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py" "flask.*app.py"; do
+        pid=$(pgrep -f "$pattern" | head -1)
+        if [[ -n "$pid" ]]; then
+            break
+        fi
+    done
+    
+    if [[ -n "$pid" ]]; then
         echo -e "  Status: ${GREEN}● Running${NC}"
-        PID=$(pgrep -f "app.py" || pgrep -f "lxc-compose-manager")
-        echo -e "  PID: $PID"
+        echo -e "  PID: $pid"
     else
         echo -e "  Status: ${RED}○ Stopped${NC}"
     fi
@@ -603,11 +610,18 @@ web_interface_menu() {
 start_web_interface() {
     info "Starting web interface..."
     
-    # Check if already running
-    if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
+    # Check if already running using same patterns as stop function
+    local pid=""
+    for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py" "flask.*app.py"; do
+        pid=$(pgrep -f "$pattern" | head -1)
+        if [[ -n "$pid" ]]; then
+            break
+        fi
+    done
+    
+    if [[ -n "$pid" ]]; then
         warning "Web interface is already running"
-        PID=$(pgrep -f "app.py" || pgrep -f "lxc-compose-manager")
-        info "PID: $PID"
+        info "PID: $pid"
         IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
         echo -e "  Access at: ${GREEN}http://$IP:5000${NC}"
         return 0
@@ -628,11 +642,13 @@ start_web_interface() {
     # Start the Flask app
     cd /srv/lxc-compose/lxc-compose-manager
     nohup python3 app.py > /srv/logs/manager.log 2>&1 &
+    local new_pid=$!
     sleep 3
     
-    # Check if started
-    if pgrep -f "app.py" > /dev/null; then
+    # Check if started (verify the process we just started is still running)
+    if kill -0 $new_pid 2>/dev/null; then
         log "Web interface started successfully"
+        info "PID: $new_pid"
         IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
         echo -e "  Access at: ${GREEN}http://$IP:5000${NC}"
     else
@@ -645,35 +661,45 @@ start_web_interface() {
 stop_web_interface() {
     info "Stopping web interface..."
     
-    # Check if running
-    local was_running=false
-    if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
-        was_running=true
+    # Find the PID of the web interface process
+    local pid=""
+    
+    # Check multiple patterns for the running process
+    for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py" "flask.*app.py"; do
+        pid=$(pgrep -f "$pattern" | head -1)
+        if [[ -n "$pid" ]]; then
+            break
+        fi
+    done
+    
+    if [[ -n "$pid" ]]; then
+        info "Found web interface process (PID: $pid)"
         
-        # Try to kill both patterns
-        pkill -f "app.py" 2>/dev/null || true
-        pkill -f "lxc-compose-manager" 2>/dev/null || true
+        # Try graceful termination first
+        kill $pid 2>/dev/null || true
         
-        # Give it time to stop
-        sleep 2
+        # Wait for process to stop
+        local count=0
+        while [[ $count -lt 5 ]]; do
+            if ! kill -0 $pid 2>/dev/null; then
+                log "Web interface stopped"
+                return 0
+            fi
+            sleep 1
+            count=$((count + 1))
+        done
         
-        # Check if stopped
-        if ! pgrep -f "app.py" > /dev/null && ! pgrep -f "lxc-compose-manager" > /dev/null; then
-            log "Web interface stopped"
+        # Force kill if still running
+        warning "Process didn't stop gracefully, forcing..."
+        kill -9 $pid 2>/dev/null || true
+        sleep 1
+        
+        if ! kill -0 $pid 2>/dev/null; then
+            log "Web interface stopped (forced)"
             return 0
         else
-            # Try harder with SIGKILL
-            pkill -9 -f "app.py" 2>/dev/null || true
-            pkill -9 -f "lxc-compose-manager" 2>/dev/null || true
-            sleep 1
-            
-            if ! pgrep -f "app.py" > /dev/null && ! pgrep -f "lxc-compose-manager" > /dev/null; then
-                log "Web interface stopped (forced)"
-                return 0
-            else
-                error "Failed to stop web interface"
-                return 1
-            fi
+            error "Failed to stop web interface (PID: $pid)"
+            return 1
         fi
     else
         warning "Web interface is not running"
