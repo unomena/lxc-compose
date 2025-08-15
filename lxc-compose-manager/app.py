@@ -260,9 +260,11 @@ def index():
 def wizard():
     """Container creation wizard"""
     registry = load_registry()
+    import time
     return render_template('wizard.html', 
                          registry=registry,
-                         templates=CONTAINER_TEMPLATES)
+                         templates=CONTAINER_TEMPLATES,
+                         version=int(time.time()))
 
 @app.route('/api/wizard/create', methods=['POST'])
 def api_wizard_create():

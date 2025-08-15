@@ -509,6 +509,7 @@
 {% block extra_js %}
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
+// Version: {{ version|default(0) }} - Force cache refresh
 function toggleDatastore(card) {
     const checkbox = card.querySelector('input[type="checkbox"]');
     const options = document.getElementById('datastoreOptions');
@@ -658,7 +659,31 @@ function createContainers() {
     socket.on('connect', function() {
         console.log('WebSocket connected');
         const logDiv = document.getElementById('logOutput');
-        logDiv.innerHTML = '<div style="color: #51cf66;">✓ WebSocket connected. Starting container creation...</div>';
+        if (logDiv) {
+            console.log('Found logOutput div:', logDiv);
+            logDiv.innerHTML = '<div style="color: #51cf66;">✓ WebSocket connected. Starting container creation...</div>';
+        } else {
+            console.error('ERROR: Could not find logOutput div!');
+            // Try to create it if it doesn't exist
+            const creatingContent = document.querySelector('.creating-content');
+            if (creatingContent) {
+                const logContainer = document.createElement('div');
+                logContainer.style.cssText = 'flex: 1; display: flex; flex-direction: column; min-height: 0;';
+                logContainer.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h4 style="margin: 0; color: #aaa; font-size: 14px;">Installation Log</h4>
+                        <span id="logStatus" style="color: #888; font-size: 12px;">Initializing...</span>
+                    </div>
+                    <div id="logOutput" class="log-output">
+                        <div style="color: #51cf66;">✓ WebSocket connected. Starting container creation...</div>
+                    </div>
+                `;
+                // Insert before the last div (buttons div)
+                const buttonsDiv = creatingContent.lastElementChild;
+                creatingContent.insertBefore(logContainer, buttonsDiv);
+                console.log('Created logOutput div dynamically');
+            }
+        }
     });
     
     socket.on('connect_error', function(error) {
