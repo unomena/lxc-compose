@@ -1064,13 +1064,13 @@ system_diagnostics() {
     check_sudo
     info "Running system diagnostics..."
     
-    if [[ -f /srv/lxc-compose/srv/lxc-compose/cli/doctor.py ]]; then
+    if [[ -f /srv/lxc-compose/cli/doctor.py ]]; then
         read -p "Attempt to fix issues automatically? (y/N): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            python3 /srv/lxc-compose/srv/lxc-compose/cli/doctor.py --fix
+            python3 /srv/lxc-compose/cli/doctor.py --fix
         else
-            python3 /srv/lxc-compose/srv/lxc-compose/cli/doctor.py
+            python3 /srv/lxc-compose/cli/doctor.py
         fi
     else
         # Fallback to basic diagnostics
