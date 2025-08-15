@@ -676,27 +676,35 @@ def handle_create_containers(data):
     def stream_command(cmd, description):
         """Execute command and stream output"""
         emit('log_output', {'message': f'\n=== {description} ===', 'type': 'header'})
+        emit('log_output', {'message': f'Running: {cmd}', 'type': 'command'})
+        
         process = subprocess.Popen(
             cmd,
             shell=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Combine stderr with stdout for real-time output
             text=True,
-            bufsize=1
+            bufsize=1,
+            universal_newlines=True
         )
         
-        # Stream stdout
-        for line in iter(process.stdout.readline, ''):
+        # Stream output line by line
+        while True:
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
             if line:
+                # Send each line to the client
                 emit('log_output', {'message': line.rstrip(), 'type': 'stdout'})
+                socketio.sleep(0.001)  # Small delay to prevent overwhelming the client
         
-        # Stream stderr
-        for line in iter(process.stderr.readline, ''):
-            if line:
-                emit('log_output', {'message': line.rstrip(), 'type': 'stderr'})
+        returncode = process.poll()
+        if returncode != 0:
+            emit('log_output', {'message': f'[ERROR] Command failed with exit code {returncode}', 'type': 'stderr'})
+        else:
+            emit('log_output', {'message': '[SUCCESS] Command completed successfully', 'type': 'success'})
         
-        process.wait()
-        return process.returncode
+        return returncode
     
     results = []
     
