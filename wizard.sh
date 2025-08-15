@@ -245,7 +245,8 @@ EOF
     local count=0
     local is_running=false
     while [[ $count -lt 10 ]]; do
-        if sudo lxc-info -n datastore 2>/dev/null | grep -q "State:.*RUNNING"; then
+        local state=$(sudo lxc-info -n datastore 2>/dev/null | grep "State:" | awk '{print $2}')
+        if [[ "$state" == "RUNNING" ]]; then
             log "Container is running"
             is_running=true
             break
@@ -376,9 +377,14 @@ apt-get update -qq
 # Add PostgreSQL APT repository if not using default version
 if [[ "$PG_VERSION" != "14" ]]; then
     echo "Adding PostgreSQL APT repository for version $PG_VERSION..."
-    apt-get install -y -qq wget ca-certificates
-    echo 'deb http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' > /etc/apt/sources.list.d/pgdg.list
-    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+    apt-get install -y -qq wget ca-certificates gnupg lsb-release
+    # Create keyrings directory
+    mkdir -p /etc/apt/keyrings
+    # Download and add PostgreSQL signing key
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+    chmod 644 /etc/apt/keyrings/postgresql.gpg
+    # Add repository
+    echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list
     apt-get update -qq
 fi
 
@@ -497,7 +503,8 @@ EOF
     local count=0
     local is_running=false
     while [[ $count -lt 10 ]]; do
-        if sudo lxc-info -n "$app_name" 2>/dev/null | grep -q "State:.*RUNNING"; then
+        local state=$(sudo lxc-info -n "$app_name" 2>/dev/null | grep "State:" | awk '{print $2}')
+        if [[ "$state" == "RUNNING" ]]; then
             log "Container is running"
             is_running=true
             break
