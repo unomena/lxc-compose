@@ -639,21 +639,43 @@ start_web_interface() {
         fi
     fi
     
+    # Ensure log directory exists
+    mkdir -p /srv/logs
+    
     # Start the Flask app
-    cd /srv/lxc-compose/lxc-compose-manager
+    info "Starting Flask application..."
+    pushd /srv/lxc-compose/lxc-compose-manager > /dev/null 2>&1
     nohup python3 app.py > /srv/logs/manager.log 2>&1 &
     local new_pid=$!
+    popd > /dev/null 2>&1
+    
+    # Give it time to start
     sleep 3
     
-    # Check if started (verify the process we just started is still running)
-    if kill -0 $new_pid 2>/dev/null; then
+    # Check if started by looking for the process
+    local pid=""
+    for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py"; do
+        pid=$(pgrep -f "$pattern" | head -1)
+        if [[ -n "$pid" ]]; then
+            break
+        fi
+    done
+    
+    if [[ -n "$pid" ]]; then
         log "Web interface started successfully"
-        info "PID: $new_pid"
+        info "PID: $pid"
         IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
         echo -e "  Access at: ${GREEN}http://$IP:5000${NC}"
+        return 0
     else
         error "Failed to start web interface"
         echo "Check logs at: /srv/logs/manager.log"
+        # Show last few lines of log for debugging
+        if [[ -f /srv/logs/manager.log ]]; then
+            echo "Recent log entries:"
+            tail -10 /srv/logs/manager.log
+        fi
+        return 1
     fi
 }
 
