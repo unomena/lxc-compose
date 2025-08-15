@@ -654,13 +654,28 @@ function createContainers() {
     // Initialize WebSocket connection
     socket = io();
     
+    // Add connection handlers for debugging
+    socket.on('connect', function() {
+        console.log('WebSocket connected');
+        const logDiv = document.getElementById('logOutput');
+        logDiv.innerHTML = '<div style="color: #51cf66;">✓ WebSocket connected. Starting container creation...</div>';
+    });
+    
+    socket.on('connect_error', function(error) {
+        console.error('WebSocket connection error:', error);
+        const logDiv = document.getElementById('logOutput');
+        logDiv.innerHTML = '<div style="color: #ff6b6b;">✗ WebSocket connection failed. Please refresh and try again.</div>';
+    });
+    
     // Handle progress updates
     socket.on('progress_update', function(data) {
+        console.log('Progress update:', data);
         updateProgressItem(data.container, data.status === 'success', data.message);
     });
     
     // Handle log output
     socket.on('log_output', function(data) {
+        console.log('Log output:', data);
         const logDiv = document.getElementById('logOutput');
         const line = document.createElement('div');
         line.className = data.type || 'stdout';
