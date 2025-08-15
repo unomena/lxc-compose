@@ -178,58 +178,71 @@ setup_postgresql() {
             ;;
     esac
     
-    # Show existing containers
+    # Check for existing containers
     echo ""
-    info "Available containers:"
-    sudo lxc-ls -f | grep -E "NAME|RUNNING" || echo "No containers found"
-    
-    echo ""
-    echo -e "${CYAN}Installation target:${NC}"
-    echo "  1) Install in existing container"
-    echo "  2) Create new container"
-    echo ""
-    read -p "Enter choice [1-2]: " target_choice
-    
+    local container_count=$(sudo lxc-ls | wc -w)
     local container_name=""
     
-    if [[ "$target_choice" == "1" ]]; then
-        # Install in existing container
-        read -p "Enter container name: " container_name
+    if [[ $container_count -eq 0 ]]; then
+        # No containers exist, must create new one
+        warning "No containers found on this system"
+        echo ""
+        read -p "Enter name for new container (default: datastore): " container_name
+        container_name="${container_name:-datastore}"
         
-        # Check if container exists
-        if ! sudo lxc-info -n "$container_name" &>/dev/null; then
-            error "Container '$container_name' does not exist"
+        # Create the container
+        create_basic_container "$container_name"
+        if [[ $? -ne 0 ]]; then
+            error "Failed to create container"
             return 1
         fi
-        
-        # Check if running
-        local state=$(sudo lxc-info -n "$container_name" 2>/dev/null | grep "State:" | awk '{print $2}')
-        if [[ "$state" != "RUNNING" ]]; then
-            info "Starting container '$container_name'..."
-            sudo lxc-start -n "$container_name"
-            sleep 3
-        fi
-        
     else
-        # Create new container
-        read -p "Enter name for new container: " container_name
+        # Containers exist, show them and ask what to do
+        info "Available containers:"
+        sudo lxc-ls -f | grep -E "NAME|RUNNING"
         
-        if [[ -z "$container_name" ]]; then
-            error "Container name cannot be empty"
-            return 1
-        fi
+        echo ""
+        echo -e "${CYAN}Installation target:${NC}"
+        echo "  1) Install in existing container"
+        echo "  2) Create new container"
+        echo ""
+        read -p "Enter choice [1-2]: " target_choice
         
-        # Check if already exists
-        if sudo lxc-ls | grep -q "^$container_name$"; then
-            warning "Container '$container_name' already exists"
-            read -p "Use existing container? (y/N): " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        if [[ "$target_choice" == "1" ]]; then
+            # Install in existing container
+            read -p "Enter container name: " container_name
+            
+            # Check if container exists
+            if ! sudo lxc-info -n "$container_name" &>/dev/null; then
+                error "Container '$container_name' does not exist"
                 return 1
             fi
+            
+            # Check if running
+            local state=$(sudo lxc-info -n "$container_name" 2>/dev/null | grep "State:" | awk '{print $2}')
+            if [[ "$state" != "RUNNING" ]]; then
+                info "Starting container '$container_name'..."
+                sudo lxc-start -n "$container_name"
+                sleep 3
+            fi
+            
         else
             # Create new container
-            create_basic_container "$container_name"
+            read -p "Enter name for new container (default: datastore): " container_name
+            container_name="${container_name:-datastore}"
+            
+            # Check if already exists
+            if sudo lxc-ls | grep -q "^$container_name$"; then
+                warning "Container '$container_name' already exists"
+                read -p "Use existing container? (y/N): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    return 1
+                fi
+            else
+                # Create new container
+                create_basic_container "$container_name"
+            fi
         fi
     fi
     
@@ -293,58 +306,71 @@ setup_redis() {
     check_sudo
     info "Redis Cache Setup"
     
-    # Show existing containers
+    # Check for existing containers
     echo ""
-    info "Available containers:"
-    sudo lxc-ls -f | grep -E "NAME|RUNNING" || echo "No containers found"
-    
-    echo ""
-    echo -e "${CYAN}Installation target:${NC}"
-    echo "  1) Install in existing container"
-    echo "  2) Create new container"
-    echo ""
-    read -p "Enter choice [1-2]: " target_choice
-    
+    local container_count=$(sudo lxc-ls | wc -w)
     local container_name=""
     
-    if [[ "$target_choice" == "1" ]]; then
-        # Install in existing container
-        read -p "Enter container name: " container_name
+    if [[ $container_count -eq 0 ]]; then
+        # No containers exist, must create new one
+        warning "No containers found on this system"
+        echo ""
+        read -p "Enter name for new Redis container (default: cache): " container_name
+        container_name="${container_name:-cache}"
         
-        # Check if container exists
-        if ! sudo lxc-info -n "$container_name" &>/dev/null; then
-            error "Container '$container_name' does not exist"
+        # Create the container
+        create_basic_container "$container_name"
+        if [[ $? -ne 0 ]]; then
+            error "Failed to create container"
             return 1
         fi
-        
-        # Check if running
-        local state=$(sudo lxc-info -n "$container_name" 2>/dev/null | grep "State:" | awk '{print $2}')
-        if [[ "$state" != "RUNNING" ]]; then
-            info "Starting container '$container_name'..."
-            sudo lxc-start -n "$container_name"
-            sleep 3
-        fi
-        
     else
-        # Create new container
-        read -p "Enter name for new container: " container_name
+        # Containers exist, show them and ask what to do
+        info "Available containers:"
+        sudo lxc-ls -f | grep -E "NAME|RUNNING"
         
-        if [[ -z "$container_name" ]]; then
-            error "Container name cannot be empty"
-            return 1
-        fi
+        echo ""
+        echo -e "${CYAN}Installation target:${NC}"
+        echo "  1) Install in existing container"
+        echo "  2) Create new container"
+        echo ""
+        read -p "Enter choice [1-2]: " target_choice
         
-        # Check if already exists
-        if sudo lxc-ls | grep -q "^$container_name$"; then
-            warning "Container '$container_name' already exists"
-            read -p "Use existing container? (y/N): " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        if [[ "$target_choice" == "1" ]]; then
+            # Install in existing container
+            read -p "Enter container name: " container_name
+            
+            # Check if container exists
+            if ! sudo lxc-info -n "$container_name" &>/dev/null; then
+                error "Container '$container_name' does not exist"
                 return 1
             fi
+            
+            # Check if running
+            local state=$(sudo lxc-info -n "$container_name" 2>/dev/null | grep "State:" | awk '{print $2}')
+            if [[ "$state" != "RUNNING" ]]; then
+                info "Starting container '$container_name'..."
+                sudo lxc-start -n "$container_name"
+                sleep 3
+            fi
+            
         else
             # Create new container
-            create_basic_container "$container_name"
+            read -p "Enter name for new container (default: cache): " container_name
+            container_name="${container_name:-cache}"
+            
+            # Check if already exists
+            if sudo lxc-ls | grep -q "^$container_name$"; then
+                warning "Container '$container_name' already exists"
+                read -p "Use existing container? (y/N): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    return 1
+                fi
+            else
+                # Create new container
+                create_basic_container "$container_name"
+            fi
         fi
     fi
     
