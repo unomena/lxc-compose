@@ -681,46 +681,41 @@ def handle_create_containers(data):
     emit('log_output', {'message': f'Request data: {data}', 'type': 'stdout'})
     
     def stream_command(cmd, description):
-        """Execute command and stream output"""
+        """Execute command and stream output in real-time"""
         emit('log_output', {'message': f'\n=== {description} ===', 'type': 'header'})
-        emit('log_output', {'message': f'Running: {cmd[:100]}...', 'type': 'command'})
+        emit('log_output', {'message': f'$ {cmd[:100]}...', 'type': 'command'})
         
-        # For testing, let's use a simpler approach
         try:
-            # Run command and capture output
-            result = subprocess.run(
+            # Use Popen for real-time streaming
+            process = subprocess.Popen(
                 cmd,
                 shell=True,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Combine stderr with stdout
                 text=True,
-                timeout=120
+                bufsize=1,  # Line buffered
+                universal_newlines=True
             )
             
-            # Send output
-            if result.stdout:
-                for line in result.stdout.split('\n'):
-                    if line.strip():
-                        emit('log_output', {'message': line, 'type': 'stdout'})
-                        time.sleep(0.01)  # Small delay for readability
+            # Stream output line by line in real-time
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    emit('log_output', {'message': line.rstrip(), 'type': 'stdout'})
+                    # Force flush to ensure real-time delivery
+                    socketio.sleep(0)  # This yields control back to socketio
             
-            if result.stderr:
-                for line in result.stderr.split('\n'):
-                    if line.strip():
-                        emit('log_output', {'message': line, 'type': 'stderr'})
-                        time.sleep(0.01)
+            # Wait for process to complete
+            process.wait()
             
-            if result.returncode != 0:
-                emit('log_output', {'message': f'[ERROR] Command failed with exit code {result.returncode}', 'type': 'stderr'})
+            if process.returncode != 0:
+                emit('log_output', {'message': f'✗ Command failed with exit code {process.returncode}', 'type': 'stderr'})
             else:
-                emit('log_output', {'message': '[SUCCESS] Command completed', 'type': 'success'})
+                emit('log_output', {'message': '✓ Command completed successfully', 'type': 'success'})
             
-            return result.returncode
+            return process.returncode
             
-        except subprocess.TimeoutExpired:
-            emit('log_output', {'message': '[ERROR] Command timed out after 120 seconds', 'type': 'stderr'})
-            return 1
         except Exception as e:
-            emit('log_output', {'message': f'[ERROR] Exception: {str(e)}', 'type': 'stderr'})
+            emit('log_output', {'message': f'✗ Exception: {str(e)}', 'type': 'stderr'})
             return 1
     
     results = []
@@ -734,20 +729,36 @@ def handle_create_containers(data):
         check_result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
         
         if 'exists' in check_result.stdout:
-            emit('log_output', {'message': 'Datastore container already exists, checking if PostgreSQL is installed...', 'type': 'stdout'})
-            # Setup PostgreSQL in existing container
+            emit('log_output', {'message': 'Datastore container already exists, checking status...', 'type': 'stdout'})
+            
+            # Check container status
+            returncode = stream_command(
+                'sudo lxc-info -n datastore',
+                'Container Info'
+            )
+            
+            # Make sure it's running
+            stream_command('sudo lxc-start -n datastore 2>&1 || true', 'Starting Container')
+            
+            # Test PostgreSQL
             returncode = stream_command(
                 '''sudo lxc-attach -n datastore -- bash -c "
-                    if ! command -v psql &> /dev/null; then
-                        echo 'Installing PostgreSQL...'
-                        apt-get update
-                        DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib
-                        systemctl start postgresql
-                        systemctl enable postgresql
+                    echo 'Testing PostgreSQL installation...'
+                    if command -v psql &> /dev/null; then
+                        echo '✓ PostgreSQL is installed'
+                        sudo -u postgres psql -c 'SELECT version();' 2>&1 | head -2
+                    else
+                        echo '✗ PostgreSQL not found, would need installation'
                     fi
-                    echo 'PostgreSQL is installed and running'
+                    echo 'Testing Redis installation...'
+                    if command -v redis-cli &> /dev/null; then
+                        echo '✓ Redis is installed'
+                        redis-cli ping 2>&1 || echo 'Redis not running'
+                    else
+                        echo '✗ Redis not found'
+                    fi
                 "''',
-                'Setting up PostgreSQL in Datastore'
+                'Testing Services'
             )
         else:
             # Create new datastore container
