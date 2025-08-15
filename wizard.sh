@@ -441,7 +441,8 @@ create_basic_container() {
     sudo lxc-create -n "$container_name" -t ubuntu -- -r jammy
     
     # Configure with next available IP
-    LAST_IP=$(sudo lxc-ls -f | awk '/10.0.3/ {print $5}' | cut -d. -f4 | cut -d/ -f1 | sort -n | tail -1)
+    # Extract all IPs, handle multiple IPs per container (separated by comma)
+    LAST_IP=$(sudo lxc-ls -f | awk '/10.0.3/ {print $5}' | tr ',' '\n' | grep '10.0.3' | cut -d. -f4 | cut -d/ -f1 | sort -n | tail -1)
     # If no containers exist, start at .2 (since .1 is the gateway)
     if [[ -z "$LAST_IP" ]] || [[ "$LAST_IP" -eq "1" ]]; then
         NEXT_IP=2
@@ -826,7 +827,8 @@ setup_application() {
     sudo lxc-create -n "$app_name" -t ubuntu -- -r jammy
     
     # Configure with next available IP
-    LAST_IP=$(sudo lxc-ls -f | awk '/10.0.3/ {print $5}' | cut -d. -f4 | cut -d/ -f1 | sort -n | tail -1)
+    # Extract all IPs, handle multiple IPs per container (separated by comma)
+    LAST_IP=$(sudo lxc-ls -f | awk '/10.0.3/ {print $5}' | tr ',' '\n' | grep '10.0.3' | cut -d. -f4 | cut -d/ -f1 | sort -n | tail -1)
     # If no containers exist, start at .2 (since .1 is the gateway)
     if [[ -z "$LAST_IP" ]] || [[ "$LAST_IP" -eq "1" ]]; then
         NEXT_IP=2
