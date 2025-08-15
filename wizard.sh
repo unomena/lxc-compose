@@ -195,9 +195,21 @@ setup_database() {
     log "Creating database container..."
     sudo lxc-create -n datastore -t ubuntu -- -r jammy
     
+    # Create mount directories on host
+    info "Creating mount directories..."
+    sudo mkdir -p /srv/shared/database
+    sudo mkdir -p /srv/shared/redis
+    sudo chmod 755 /srv/shared
+    sudo chmod 755 /srv/shared/database
+    sudo chmod 755 /srv/shared/redis
+    
     # Configure container
     info "Configuring container..."
     cat <<EOF | sudo tee /var/lib/lxc/datastore/config > /dev/null
+# Container
+lxc.include = /usr/share/lxc/config/ubuntu.common.conf
+lxc.arch = linux64
+
 # Network
 lxc.net.0.type = veth
 lxc.net.0.link = lxcbr0
@@ -212,12 +224,63 @@ lxc.mount.entry = /srv/shared/redis var/lib/redis none bind,create=dir 0 0
 # System
 lxc.apparmor.profile = generated
 lxc.apparmor.allow_nesting = 1
+
+# Root filesystem
+lxc.rootfs.path = dir:/var/lib/lxc/datastore/rootfs
 EOF
     
     # Start container
     log "Starting container..."
-    sudo lxc-start -n datastore
-    sleep 5
+    if ! sudo lxc-start -n datastore; then
+        error "Failed to start container"
+        info "Checking container logs for errors..."
+        sudo lxc-info -n datastore
+        echo ""
+        warning "Attempting to start in foreground mode for debugging..."
+        sudo lxc-start -n datastore -F -l DEBUG -o /tmp/lxc-datastore.log &
+        local fg_pid=$!
+        sleep 3
+        
+        # Kill the foreground process
+        kill $fg_pid 2>/dev/null || true
+        
+        # Show debug output
+        if [[ -f /tmp/lxc-datastore.log ]]; then
+            error "Container startup log:"
+            tail -20 /tmp/lxc-datastore.log
+        fi
+        
+        # Common fixes
+        info "Common fixes:"
+        echo "  1. Check AppArmor: sudo aa-status"
+        echo "  2. Disable AppArmor for container: sudo aa-complain /usr/bin/lxc-start"
+        echo "  3. Check storage: df -h /var/lib/lxc"
+        echo "  4. Check network: ip link show lxcbr0"
+        
+        read -p "Try to continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            return 1
+        fi
+    fi
+    
+    # Wait for container to be fully ready
+    local count=0
+    while [[ $count -lt 10 ]]; do
+        if sudo lxc-info -n datastore | grep -q "RUNNING"; then
+            log "Container is running"
+            break
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+    
+    if [[ $count -eq 10 ]]; then
+        error "Container failed to reach RUNNING state"
+        return 1
+    fi
+    
+    sleep 2
     
     # Create setup script
     info "Creating database setup script..."
@@ -312,7 +375,15 @@ setup_application() {
     
     info "Assigning IP: 10.0.3.$NEXT_IP"
     
+    # Create mount directory on host
+    sudo mkdir -p "/srv/apps/$app_name"
+    sudo chmod 755 "/srv/apps/$app_name"
+    
     cat <<EOF | sudo tee /var/lib/lxc/$app_name/config > /dev/null
+# Container
+lxc.include = /usr/share/lxc/config/ubuntu.common.conf
+lxc.arch = linux64
+
 # Network
 lxc.net.0.type = veth
 lxc.net.0.link = lxcbr0
@@ -326,6 +397,9 @@ lxc.mount.entry = /srv/apps/$app_name opt/app none bind,create=dir 0 0
 # System
 lxc.apparmor.profile = generated
 lxc.apparmor.allow_nesting = 1
+
+# Root filesystem
+lxc.rootfs.path = dir:/var/lib/lxc/$app_name/rootfs
 EOF
     
     # Start container
