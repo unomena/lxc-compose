@@ -200,10 +200,73 @@
         margin-bottom: 15px;
         opacity: 0.3;
     }
+    .nav-bar {
+        background: #f7fafc;
+        border-radius: 10px;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .nav-links {
+        display: flex;
+        gap: 20px;
+    }
+    
+    .nav-link {
+        color: #667eea;
+        text-decoration: none;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transition: color 0.3s;
+    }
+    
+    .nav-link:hover {
+        color: #764ba2;
+    }
+    
+    .nav-link.active {
+        font-weight: 600;
+        color: #333;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- Navigation Bar -->
+<div class="nav-bar">
+    <div class="nav-links">
+        <a href="{{ url_for('index') }}" class="nav-link active">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+            </svg>
+            Dashboard
+        </a>
+        <a href="{{ url_for('wizard') }}" class="nav-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                <path d="M2 17l10 5 10-5"></path>
+                <path d="M2 12l10 5 10-5"></path>
+            </svg>
+            Create Containers
+        </a>
+        <a href="{{ url_for('terminal') }}" class="nav-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            Terminal
+        </a>
+    </div>
+    <div style="color: #666; font-size: 12px;">
+        System: {{ containers|length }} containers
+    </div>
+</div>
+
 <div class="quick-actions">
     <button class="btn btn-primary" onclick="refreshContainers()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 5px;">
