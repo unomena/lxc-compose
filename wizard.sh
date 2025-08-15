@@ -606,7 +606,11 @@ start_web_interface() {
     # Check if already running
     if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
         warning "Web interface is already running"
-        return
+        PID=$(pgrep -f "app.py" || pgrep -f "lxc-compose-manager")
+        info "PID: $PID"
+        IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
+        echo -e "  Access at: ${GREEN}http://$IP:5000${NC}"
+        return 0
     fi
     
     # Check if directory exists
@@ -641,25 +645,53 @@ start_web_interface() {
 stop_web_interface() {
     info "Stopping web interface..."
     
+    # Check if running
+    local was_running=false
     if pgrep -f "app.py" > /dev/null || pgrep -f "lxc-compose-manager" > /dev/null; then
-        pkill -f "app.py" || pkill -f "lxc-compose-manager" || true
+        was_running=true
+        
+        # Try to kill both patterns
+        pkill -f "app.py" 2>/dev/null || true
+        pkill -f "lxc-compose-manager" 2>/dev/null || true
+        
+        # Give it time to stop
         sleep 2
         
+        # Check if stopped
         if ! pgrep -f "app.py" > /dev/null && ! pgrep -f "lxc-compose-manager" > /dev/null; then
             log "Web interface stopped"
+            return 0
         else
-            error "Failed to stop web interface"
+            # Try harder with SIGKILL
+            pkill -9 -f "app.py" 2>/dev/null || true
+            pkill -9 -f "lxc-compose-manager" 2>/dev/null || true
+            sleep 1
+            
+            if ! pgrep -f "app.py" > /dev/null && ! pgrep -f "lxc-compose-manager" > /dev/null; then
+                log "Web interface stopped (forced)"
+                return 0
+            else
+                error "Failed to stop web interface"
+                return 1
+            fi
         fi
     else
         warning "Web interface is not running"
+        return 0
     fi
 }
 
 # Restart web interface
 restart_web_interface() {
     info "Restarting web interface..."
-    stop_web_interface
-    sleep 1
+    
+    # Stop the interface (ignore errors as it might not be running)
+    stop_web_interface || true
+    
+    # Wait a moment
+    sleep 2
+    
+    # Start the interface
     start_web_interface
 }
 
