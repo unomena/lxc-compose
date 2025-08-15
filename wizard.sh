@@ -1383,7 +1383,7 @@ web_interface_menu() {
     # Check status using same patterns as other functions
     local pid=""
     for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py" "flask.*app.py"; do
-        pid=$(pgrep -f "$pattern" | head -1)
+        pid=$(pgrep -f "$pattern" 2>/dev/null | head -1 || true)
         if [[ -n "$pid" ]]; then
             break
         fi
@@ -1397,7 +1397,7 @@ web_interface_menu() {
     fi
     
     # Get IP
-    IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
+    IP=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || echo "localhost")
     echo -e "  URL: http://$IP:5000"
     echo ""
     
@@ -1430,7 +1430,7 @@ start_web_interface() {
     # Check if already running using same patterns as stop function
     local pid=""
     for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py" "flask.*app.py"; do
-        pid=$(pgrep -f "$pattern" | head -1)
+        pid=$(pgrep -f "$pattern" 2>/dev/null | head -1 || true)
         if [[ -n "$pid" ]]; then
             break
         fi
@@ -1473,7 +1473,7 @@ start_web_interface() {
     # Check if started by looking for the process
     local pid=""
     for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py"; do
-        pid=$(pgrep -f "$pattern" | head -1)
+        pid=$(pgrep -f "$pattern" 2>/dev/null | head -1 || true)
         if [[ -n "$pid" ]]; then
             break
         fi
@@ -1507,7 +1507,7 @@ stop_web_interface() {
     
     # Check multiple patterns for the running process
     for pattern in "python3.*app.py" "python.*app.py" "lxc-compose-manager/app.py" "flask.*app.py"; do
-        pid=$(pgrep -f "$pattern" | head -1)
+        pid=$(pgrep -f "$pattern" 2>/dev/null | head -1 || true)
         if [[ -n "$pid" ]]; then
             break
         fi
