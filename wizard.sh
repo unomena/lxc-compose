@@ -78,6 +78,23 @@ container_management_menu() {
     clear
     display_header
     echo -e "\n${BOLD}Container Management${NC}\n"
+    
+    # Show current containers first
+    echo -e "${CYAN}Current Containers:${NC}"
+    echo "----------------------------------------"
+    
+    # Check if any containers exist
+    local container_count=$(sudo lxc-ls | wc -w)
+    if [[ $container_count -eq 0 ]]; then
+        echo -e "${YELLOW}No containers found${NC}"
+    else
+        # Display containers with their status
+        sudo lxc-ls -f | grep -E "NAME|RUNNING|STOPPED" || echo "No containers found"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}Management Options:${NC}"
+    echo "----------------------------------------"
     echo -e "  ${CYAN}1)${NC} Start Container"
     echo -e "  ${CYAN}2)${NC} Stop Container"
     echo -e "  ${CYAN}3)${NC} Restart Container"
@@ -87,20 +104,22 @@ container_management_menu() {
     echo -e "  ${CYAN}7)${NC} Container Information"
     echo -e "  ${CYAN}8)${NC} Destroy Container"
     echo ""
+    echo -e "  ${CYAN}9)${NC} Refresh List"
     echo -e "  ${CYAN}0)${NC} Back to Main Menu"
     echo ""
     
     read -p "Select option: " choice
     
     case $choice in
-        1) start_container ;;
-        2) stop_container ;;
-        3) restart_container ;;
-        4) view_logs ;;
-        5) exec_command ;;
-        6) attach_shell ;;
-        7) container_info ;;
-        8) destroy_container ;;
+        1) start_container; container_management_menu ;;
+        2) stop_container; container_management_menu ;;
+        3) restart_container; container_management_menu ;;
+        4) view_logs; container_management_menu ;;
+        5) exec_command; container_management_menu ;;
+        6) attach_shell; container_management_menu ;;
+        7) container_info; container_management_menu ;;
+        8) destroy_container; container_management_menu ;;
+        9) container_management_menu ;;  # Refresh
         0) return ;;
         *) warning "Invalid option"; sleep 2; container_management_menu ;;
     esac
@@ -1198,21 +1217,39 @@ full_recovery() {
 
 # Container operations
 start_container() {
-    read -p "Enter container name: " name
+    echo -e "\n${CYAN}Stopped containers:${NC}"
+    sudo lxc-ls -f | grep "STOPPED" || echo "No stopped containers"
+    echo ""
+    read -p "Enter container name to start: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     sudo lxc-start -n "$name"
     log "Container '$name' started"
     sleep 2
 }
 
 stop_container() {
-    read -p "Enter container name: " name
+    echo -e "\n${CYAN}Running containers:${NC}"
+    sudo lxc-ls -f | grep "RUNNING" || echo "No running containers"
+    echo ""
+    read -p "Enter container name to stop: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     sudo lxc-stop -n "$name"
     log "Container '$name' stopped"
     sleep 2
 }
 
 restart_container() {
-    read -p "Enter container name: " name
+    echo -e "\n${CYAN}All containers:${NC}"
+    sudo lxc-ls -f | head -10 || echo "No containers"
+    echo ""
+    read -p "Enter container name to restart: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     sudo lxc-stop -n "$name"
     sudo lxc-start -n "$name"
     log "Container '$name' restarted"
@@ -1220,32 +1257,66 @@ restart_container() {
 }
 
 view_logs() {
-    read -p "Enter container name: " name
+    echo -e "\n${CYAN}All containers:${NC}"
+    sudo lxc-ls -f | head -10 || echo "No containers"
+    echo ""
+    read -p "Enter container name to view logs: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     sudo lxc-console -n "$name" -t 0
 }
 
 exec_command() {
+    echo -e "\n${CYAN}Running containers:${NC}"
+    sudo lxc-ls -f | grep "RUNNING" || echo "No running containers"
+    echo ""
     read -p "Enter container name: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     read -p "Enter command: " cmd
+    if [[ -z "$cmd" ]]; then
+        return
+    fi
     sudo lxc-attach -n "$name" -- $cmd
     sleep 2
 }
 
 attach_shell() {
-    read -p "Enter container name: " name
+    echo -e "\n${CYAN}Running containers:${NC}"
+    sudo lxc-ls -f | grep "RUNNING" || echo "No running containers"
+    echo ""
+    read -p "Enter container name to attach: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     info "Attaching to container '$name'. Use Ctrl+A, Q to detach."
     sleep 2
     sudo lxc-attach -n "$name"
 }
 
 container_info() {
-    read -p "Enter container name: " name
+    echo -e "\n${CYAN}All containers:${NC}"
+    sudo lxc-ls -f | head -10 || echo "No containers"
+    echo ""
+    read -p "Enter container name for info: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     sudo lxc-info -n "$name"
-    sleep 2
+    echo ""
+    read -p "Press Enter to continue..."
 }
 
 destroy_container() {
-    read -p "Enter container name: " name
+    echo -e "\n${CYAN}All containers:${NC}"
+    sudo lxc-ls -f | head -10 || echo "No containers"
+    echo ""
+    read -p "Enter container name to destroy: " name
+    if [[ -z "$name" ]]; then
+        return
+    fi
     warning "This will permanently destroy container '$name'"
     read -p "Are you sure? (y/N): " -n 1 -r
     echo
