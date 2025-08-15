@@ -1413,17 +1413,14 @@ web_interface_menu() {
     read -p "Select option: " choice
     
     case $choice in
-        1) start_web_interface ;;
-        2) stop_web_interface ;;
-        3) restart_web_interface ;;
-        4) view_web_logs ;;
-        5) install_web_dependencies ;;
+        1) start_web_interface; web_interface_menu ;;
+        2) stop_web_interface; web_interface_menu ;;
+        3) restart_web_interface; web_interface_menu ;;
+        4) view_web_logs; web_interface_menu ;;
+        5) install_web_dependencies; web_interface_menu ;;
         0) return ;;
         *) warning "Invalid option"; sleep 2; web_interface_menu ;;
     esac
-    
-    sleep 2
-    web_interface_menu  # Return to menu after action
 }
 
 # Start web interface
@@ -1444,6 +1441,7 @@ start_web_interface() {
         info "PID: $pid"
         IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
         echo -e "  Access at: ${GREEN}http://$IP:5000${NC}"
+        sleep 2
         return 0
     fi
     
@@ -1486,6 +1484,7 @@ start_web_interface() {
         info "PID: $pid"
         IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
         echo -e "  Access at: ${GREEN}http://$IP:5000${NC}"
+        sleep 2
         return 0
     else
         error "Failed to start web interface"
