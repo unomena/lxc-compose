@@ -1,5 +1,5 @@
-# Example LXC Compose configuration with simplified syntax
-# Container names are keys, mounts use Docker-like format
+# Example LXC Compose configuration with integrated syntax
+# Port forwards and dependencies are now part of container configuration
 
 version: '1.0'
 
@@ -12,6 +12,10 @@ containers:
       - database
       - postgres
       - postgresql
+    
+    # Port forwarding using Docker-like syntax
+    ports:
+      - 5432:5432  # PostgreSQL
     
     packages:
       - postgresql
@@ -30,11 +34,19 @@ containers:
       - web
       - frontend
     
+    # Simple dependency list
+    depends_on:
+      - db
+    
     # Simple Docker-like mount syntax
     mounts:
       - .:/app                    # Current directory to /app
       - ./data:/data              # Relative path
       - /var/log/host:/var/log    # Absolute path
+    
+    # Port forwarding with optional descriptions
+    ports:
+      - 8080:80    # Web application
     
     packages:
       - python3
@@ -52,22 +64,3 @@ containers:
         directory: /app
         autostart: true
         autorestart: true
-
-# Port forwarding
-port_forwards:
-  - host_port: 8080
-    container: app
-    container_port: 80
-    description: "Web application"
-  
-  - host_port: 5432
-    container: db
-    container_port: 5432
-    description: "PostgreSQL"
-
-# Dependencies
-dependencies:
-  app:
-    depends_on:
-      - db
-    start_delay: 5
