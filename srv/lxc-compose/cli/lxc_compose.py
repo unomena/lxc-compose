@@ -805,6 +805,16 @@ def up(config_file, detach, build, force_recreate):
         click.echo(f"Error reading config: {e}", err=True)
         sys.exit(1)
     
+    # Import hosts manager
+    try:
+        from hosts_manager import HostsManager, IPAllocator, get_container_aliases
+        hosts_manager = HostsManager()
+        ip_allocator = IPAllocator()
+    except ImportError:
+        click.echo("Warning: hosts_manager not available, using static IPs", err=True)
+        hosts_manager = None
+        ip_allocator = None
+    
     # Process containers
     if 'containers' in config:
         for name, container_config in config['containers'].items():
@@ -816,26 +826,120 @@ def up(config_file, detach, build, force_recreate):
                 capture_output=True, stderr=subprocess.DEVNULL
             )
             
-            if result.returncode == 0 and not force_recreate:
+            container_exists = result.returncode == 0
+            
+            if container_exists and not force_recreate:
                 click.echo(f"  Container '{name}' already exists")
                 # Start if not running
-                if not subprocess.run(['sudo', 'lxc-info', '-n', name], 
-                                    capture_output=True, text=True).stdout.find('RUNNING') != -1:
+                info_result = subprocess.run(['sudo', 'lxc-info', '-n', name], 
+                                           capture_output=True, text=True)
+                if 'RUNNING' not in info_result.stdout:
                     click.echo(f"  Starting container '{name}'...")
                     subprocess.run(['sudo', 'lxc-start', '-n', name])
+                    
+                # Update hosts entry even for existing container
+                if hosts_manager:
+                    # Get container IP
+                    ip_result = subprocess.run(['sudo', 'lxc-info', '-n', name, '-iH'],
+                                             capture_output=True, text=True)
+                    if ip_result.returncode == 0:
+                        container_ip = ip_result.stdout.strip().split()[0] if ip_result.stdout.strip() else None
+                        if container_ip:
+                            aliases = container_config.get('aliases', [])
+                            hosts_manager.add_container(name, container_ip, aliases)
             else:
                 # Create container
                 click.echo(f"  Creating container '{name}'...")
-                # Implementation would go here - for now just show what would be done
-                click.echo(f"  Would create with config: {container_config.get('container', {})}")
                 
-                # Set up mounts
+                # Get IP allocation
+                if hosts_manager and ip_allocator:
+                    container_ip = ip_allocator.allocate_ip(name)
+                    click.echo(f"  Allocated IP: {container_ip}")
+                else:
+                    # Fallback to config or auto
+                    container_conf = container_config.get('container', {})
+                    container_ip = container_conf.get('ip', '10.0.3.100/24')
+                
+                # Extract network parts
+                if '/' in str(container_ip):
+                    ip_only = container_ip.split('/')[0]
+                    cidr = container_ip.split('/')[1]
+                else:
+                    ip_only = container_ip
+                    cidr = '24'
+                
+                # Create container with LXC
+                template = container_config.get('container', {}).get('template', 'ubuntu')
+                release = container_config.get('container', {}).get('release', 'jammy')
+                
+                create_cmd = ['sudo', 'lxc-create', '-n', name, '-t', template, '--', '-r', release]
+                result = subprocess.run(create_cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    click.echo(f"  Failed to create container: {result.stderr}", err=True)
+                    continue
+                
+                # Configure container with IP and mounts
+                config_lines = [
+                    f"lxc.include = /usr/share/lxc/config/{template}.common.conf",
+                    "lxc.arch = linux64",
+                    "",
+                    "# Network",
+                    "lxc.net.0.type = veth",
+                    "lxc.net.0.link = lxcbr0",
+                    "lxc.net.0.flags = up",
+                    f"lxc.net.0.ipv4.address = {ip_only}/{cidr}",
+                    "lxc.net.0.ipv4.gateway = 10.0.3.1",
+                    "",
+                    "# Mount /etc/hosts from host",
+                    "lxc.mount.entry = /etc/hosts etc/hosts none bind,create=file 0 0",
+                ]
+                
+                # Add custom mounts
                 if 'mounts' in container_config:
+                    config_lines.append("")
+                    config_lines.append("# Custom mounts")
                     for mount in container_config['mounts']:
                         host_path = mount['host']
                         if host_path == '.':
                             host_path = str(Path.cwd())
-                        click.echo(f"  Would mount: {host_path} -> {mount['container']}")
+                        container_path = mount['container']
+                        config_lines.append(f"lxc.mount.entry = {host_path} {container_path.lstrip('/')} none bind,create=dir 0 0")
+                        click.echo(f"  Configured mount: {host_path} -> {container_path}")
+                
+                config_lines.extend([
+                    "",
+                    "# System",
+                    "lxc.apparmor.profile = generated",
+                    "lxc.apparmor.allow_nesting = 1",
+                    "",
+                    "# Root filesystem",
+                    f"lxc.rootfs.path = dir:/var/lib/lxc/{name}/rootfs"
+                ])
+                
+                # Write container config
+                config_file = f"/var/lib/lxc/{name}/config"
+                config_content = '\n'.join(config_lines)
+                
+                write_result = subprocess.run(
+                    ['sudo', 'bash', '-c', f'cat > {config_file}'],
+                    input=config_content,
+                    text=True,
+                    capture_output=True
+                )
+                
+                if write_result.returncode != 0:
+                    click.echo(f"  Failed to write config: {write_result.stderr}", err=True)
+                
+                # Start container
+                click.echo(f"  Starting container '{name}'...")
+                subprocess.run(['sudo', 'lxc-start', '-n', name])
+                
+                # Add to hosts file
+                if hosts_manager:
+                    aliases = container_config.get('aliases', [])
+                    hosts_manager.add_container(name, ip_only, aliases)
+                    click.echo(f"  Added to /etc/hosts: {name} -> {ip_only} (aliases: {', '.join(aliases)})")
     
     # Apply port forwards if configured
     if 'port_forwards' in config:
@@ -891,11 +995,22 @@ def down(config_file, volumes, remove_orphans):
         click.echo(f"Error reading config: {e}", err=True)
         sys.exit(1)
     
+    # Import hosts manager
+    try:
+        from hosts_manager import HostsManager
+        hosts_manager = HostsManager()
+    except ImportError:
+        hosts_manager = None
+    
     # Stop containers
     if 'containers' in config:
         for name in config['containers']:
             click.echo(f"Stopping container: {name}")
             subprocess.run(['sudo', 'lxc-stop', '-n', name], stderr=subprocess.DEVNULL)
+            
+            # Remove from hosts file
+            if hosts_manager:
+                hosts_manager.remove_container(name)
             
             if volumes:
                 click.echo(f"  Removing container: {name}")

@@ -1,0 +1,322 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import re
+import subprocess
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple
+import fcntl
+import click
+
+class IPAllocator:
+    """Manages IP address allocation for containers"""
+    
+    def __init__(self, subnet="10.0.3.0/24", start_from=11):
+        self.subnet_base = ".".join(subnet.split("/")[0].split(".")[:-1])  # "10.0.3"
+        self.start_from = start_from
+        self.allocations_file = Path("/srv/lxc-compose/ip-allocations.json")
+        self.ensure_allocations_file()
+    
+    def ensure_allocations_file(self):
+        """Ensure the IP allocations file exists"""
+        if not self.allocations_file.exists():
+            self.allocations_file.parent.mkdir(parents=True, exist_ok=True)
+            self.allocations_file.write_text(json.dumps({
+                "subnet": f"{self.subnet_base}.0/24",
+                "next_ip": self.start_from,
+                "allocations": {},
+                "reserved": list(range(1, self.start_from))  # Reserve .1 to .10
+            }, indent=2))
+    
+    def load_allocations(self) -> Dict:
+        """Load IP allocations from file"""
+        try:
+            return json.loads(self.allocations_file.read_text())
+        except (json.JSONDecodeError, FileNotFoundError):
+            self.ensure_allocations_file()
+            return json.loads(self.allocations_file.read_text())
+    
+    def save_allocations(self, data: Dict):
+        """Save IP allocations to file"""
+        self.allocations_file.write_text(json.dumps(data, indent=2))
+    
+    def allocate_ip(self, container_name: str) -> str:
+        """Allocate an IP address for a container"""
+        data = self.load_allocations()
+        
+        # Check if container already has an allocation
+        if container_name in data["allocations"]:
+            return f"{self.subnet_base}.{data['allocations'][container_name]}"
+        
+        # Find next available IP
+        next_ip = data.get("next_ip", self.start_from)
+        while next_ip in data.get("reserved", []) or next_ip in data["allocations"].values():
+            next_ip += 1
+            if next_ip > 254:
+                raise ValueError("No more IP addresses available in subnet")
+        
+        # Allocate the IP
+        data["allocations"][container_name] = next_ip
+        data["next_ip"] = next_ip + 1
+        self.save_allocations(data)
+        
+        return f"{self.subnet_base}.{next_ip}"
+    
+    def release_ip(self, container_name: str) -> bool:
+        """Release an IP allocation for a container"""
+        data = self.load_allocations()
+        
+        if container_name in data["allocations"]:
+            del data["allocations"][container_name]
+            self.save_allocations(data)
+            return True
+        return False
+    
+    def get_ip(self, container_name: str) -> Optional[str]:
+        """Get the allocated IP for a container"""
+        data = self.load_allocations()
+        if container_name in data["allocations"]:
+            return f"{self.subnet_base}.{data['allocations'][container_name]}"
+        return None
+
+
+class HostsManager:
+    """Manages /etc/hosts entries for LXC containers"""
+    
+    def __init__(self):
+        self.hosts_file = Path("/etc/hosts")
+        self.backup_file = Path("/etc/hosts.lxc-backup")
+        self.marker_start = "# BEGIN LXC Compose managed section - DO NOT EDIT"
+        self.marker_end = "# END LXC Compose managed section"
+        self.ip_allocator = IPAllocator()
+        
+        # Create backup if it doesn't exist
+        if not self.backup_file.exists() and self.hosts_file.exists():
+            self.backup_file.write_text(self.hosts_file.read_text())
+    
+    def _lock_file(self, file_handle):
+        """Lock file for exclusive access"""
+        fcntl.flock(file_handle.fileno(), fcntl.LOCK_EX)
+    
+    def _unlock_file(self, file_handle):
+        """Unlock file"""
+        fcntl.flock(file_handle.fileno(), fcntl.LOCK_UN)
+    
+    def read_hosts(self) -> Tuple[List[str], List[str], List[str]]:
+        """Read hosts file and split into before, managed, and after sections"""
+        with open(self.hosts_file, 'r') as f:
+            self._lock_file(f)
+            content = f.read()
+            self._unlock_file(f)
+        
+        lines = content.split('\n')
+        before = []
+        managed = []
+        after = []
+        
+        in_managed = False
+        after_managed = False
+        
+        for line in lines:
+            if line.strip() == self.marker_start:
+                in_managed = True
+                continue
+            elif line.strip() == self.marker_end:
+                in_managed = False
+                after_managed = True
+                continue
+            
+            if not in_managed and not after_managed:
+                before.append(line)
+            elif in_managed:
+                managed.append(line)
+            else:
+                after.append(line)
+        
+        return before, managed, after
+    
+    def write_hosts(self, before: List[str], managed: List[str], after: List[str]):
+        """Write hosts file with before, managed, and after sections"""
+        content = []
+        
+        # Add before section
+        content.extend(before)
+        
+        # Remove trailing empty lines from before section
+        while content and content[-1].strip() == '':
+            content.pop()
+        
+        # Add managed section with markers
+        if managed:
+            content.append('')  # Empty line before marker
+            content.append(self.marker_start)
+            content.extend(managed)
+            content.append(self.marker_end)
+        
+        # Add after section
+        if after and any(line.strip() for line in after):
+            content.append('')  # Empty line after managed section
+            content.extend(after)
+        
+        # Ensure file ends with newline
+        if content and content[-1] != '':
+            content.append('')
+        
+        with open(self.hosts_file, 'w') as f:
+            self._lock_file(f)
+            f.write('\n'.join(content))
+            self._unlock_file(f)
+    
+    def add_container(self, container_name: str, ip: Optional[str] = None, 
+                     aliases: List[str] = None) -> str:
+        """Add or update a container entry in /etc/hosts"""
+        # Allocate IP if not provided
+        if not ip:
+            ip = self.ip_allocator.allocate_ip(container_name)
+        
+        # Read current hosts file
+        before, managed, after = self.read_hosts()
+        
+        # Create new entry
+        entry = f"{ip}\t{container_name}"
+        if aliases:
+            entry += " " + " ".join(aliases)
+        
+        # Remove existing entry for this container if it exists
+        managed = [line for line in managed 
+                  if not (line.strip() and container_name in line.split())]
+        
+        # Add new entry
+        managed.append(entry)
+        
+        # Sort managed entries by IP for readability
+        managed.sort(key=lambda x: [int(i) for i in x.split()[0].split('.')] if x.strip() else [999,999,999,999])
+        
+        # Write back
+        self.write_hosts(before, managed, after)
+        
+        click.echo(f"✓ Added hosts entry: {entry}")
+        return ip
+    
+    def remove_container(self, container_name: str) -> bool:
+        """Remove a container entry from /etc/hosts"""
+        # Read current hosts file
+        before, managed, after = self.read_hosts()
+        
+        # Filter out lines containing this container
+        original_count = len(managed)
+        managed = [line for line in managed 
+                  if not (line.strip() and container_name in line.split())]
+        
+        if len(managed) < original_count:
+            # Write back
+            self.write_hosts(before, managed, after)
+            
+            # Release IP allocation
+            self.ip_allocator.release_ip(container_name)
+            
+            click.echo(f"✓ Removed hosts entry for: {container_name}")
+            return True
+        
+        return False
+    
+    def update_container(self, container_name: str, new_ip: str = None, 
+                        aliases: List[str] = None) -> bool:
+        """Update a container's hosts entry"""
+        # Simply re-add with new info (it will replace existing)
+        ip = new_ip or self.ip_allocator.get_ip(container_name)
+        if ip:
+            self.add_container(container_name, ip, aliases)
+            return True
+        return False
+    
+    def list_entries(self) -> List[Dict[str, any]]:
+        """List all managed container entries"""
+        _, managed, _ = self.read_hosts()
+        entries = []
+        
+        for line in managed:
+            if line.strip() and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    entries.append({
+                        'ip': parts[0],
+                        'container': parts[1],
+                        'aliases': parts[2:] if len(parts) > 2 else []
+                    })
+        
+        return entries
+    
+    def get_container_ip(self, container_name: str) -> Optional[str]:
+        """Get IP address for a container from hosts file"""
+        entries = self.list_entries()
+        for entry in entries:
+            if entry['container'] == container_name or container_name in entry['aliases']:
+                return entry['ip']
+        return None
+    
+    def cleanup_orphaned_entries(self) -> int:
+        """Remove entries for containers that no longer exist"""
+        # Get list of running containers
+        result = subprocess.run(['sudo', 'lxc-ls'], capture_output=True, text=True)
+        if result.returncode != 0:
+            return 0
+        
+        existing_containers = set(result.stdout.strip().split())
+        entries = self.list_entries()
+        removed = 0
+        
+        for entry in entries:
+            if entry['container'] not in existing_containers:
+                if self.remove_container(entry['container']):
+                    removed += 1
+        
+        return removed
+    
+    def restore_backup(self):
+        """Restore the original hosts file from backup"""
+        if self.backup_file.exists():
+            self.hosts_file.write_text(self.backup_file.read_text())
+            click.echo("✓ Restored /etc/hosts from backup")
+        else:
+            click.echo("✗ No backup file found", err=True)
+
+
+def get_container_aliases(container_config: Dict) -> List[str]:
+    """Extract aliases from container configuration"""
+    aliases = []
+    
+    # Direct aliases field
+    if 'aliases' in container_config:
+        aliases.extend(container_config['aliases'])
+    
+    # Auto-generate common aliases based on services
+    if 'services' in container_config:
+        services = container_config['services']
+        if 'postgresql' in services:
+            aliases.extend(['postgres', 'db', 'database'])
+        if 'redis' in services:
+            aliases.extend(['redis', 'cache'])
+        if 'nginx' in services:
+            aliases.extend(['web'])
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_aliases = []
+    for alias in aliases:
+        if alias not in seen:
+            seen.add(alias)
+            unique_aliases.append(alias)
+    
+    return unique_aliases
+
+
+if __name__ == "__main__":
+    # Test the module
+    manager = HostsManager()
+    
+    # Example operations
+    print("Current managed entries:")
+    for entry in manager.list_entries():
+        print(f"  {entry['ip']} -> {entry['container']} {entry['aliases']}")

@@ -25,11 +25,11 @@ info() { echo -e "${BLUE}[i]${NC} $1"; }
 
 # Parameters with better defaults for dedicated containers
 APP_CONTAINER="${1:-sample-django-app}"
-DB_HOST="${2:-10.0.3.30}"  # Using sample-datastore IP
+DB_HOST="${2:-sample-datastore}"  # Using hostname instead of IP
 DB_NAME="${3:-djangosample}"
 DB_USER="${4:-djangouser}"
 DB_PASSWORD="${5:-djangopass123}"
-REDIS_HOST="${6:-10.0.3.30}"  # Using sample-datastore IP
+REDIS_HOST="${6:-sample-datastore}"  # Using hostname instead of IP
 
 # Application settings
 GITHUB_REPO="https://github.com/euan/Sample-Django-Celery-App.git"
@@ -116,7 +116,7 @@ if ! sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null; then
         fi
     fi
     
-    # Configure with static IP
+    # Configure with auto-assigned IP and mount hosts file
     sudo bash -c "cat > /var/lib/lxc/$DATASTORE_CONTAINER/config" <<EOF
 # Container
 lxc.include = /usr/share/lxc/config/ubuntu.common.conf
@@ -126,8 +126,11 @@ lxc.arch = linux64
 lxc.net.0.type = veth
 lxc.net.0.link = lxcbr0
 lxc.net.0.flags = up
-lxc.net.0.ipv4.address = 10.0.3.30/24
+lxc.net.0.ipv4.address = auto
 lxc.net.0.ipv4.gateway = 10.0.3.1
+
+# Mount /etc/hosts from host
+lxc.mount.entry = /etc/hosts etc/hosts none bind,create=file 0 0
 
 # System
 lxc.apparmor.profile = generated
@@ -174,7 +177,7 @@ if ! sudo lxc-info -n "$APP_CONTAINER" &>/dev/null; then
         fi
     fi
     
-    # Configure with static IP and mount point
+    # Configure with auto-assigned IP and mount points
     sudo bash -c "cat > /var/lib/lxc/$APP_CONTAINER/config" <<EOF
 # Container
 lxc.include = /usr/share/lxc/config/ubuntu.common.conf
@@ -184,11 +187,14 @@ lxc.arch = linux64
 lxc.net.0.type = veth
 lxc.net.0.link = lxcbr0
 lxc.net.0.flags = up
-lxc.net.0.ipv4.address = 10.0.3.31/24
+lxc.net.0.ipv4.address = auto
 lxc.net.0.ipv4.gateway = 10.0.3.1
 
 # Mount the application directory from host
 lxc.mount.entry = $APP_DIR app none bind,create=dir 0 0
+
+# Mount /etc/hosts from host
+lxc.mount.entry = /etc/hosts etc/hosts none bind,create=file 0 0
 
 # System
 lxc.apparmor.profile = generated
