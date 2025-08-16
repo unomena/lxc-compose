@@ -986,8 +986,13 @@ def up(config_file, detach, build, force_recreate):
                 template = container_config.get('template', 'ubuntu')
                 release = container_config.get('release', 'jammy')
             
+            # Check if template cache exists
+            cache_path = f"/var/cache/lxc/{release}/rootfs-amd64"
+            if not os.path.exists(cache_path):
+                click.echo(f"  (First time using {release} template - downloading, this may take a few minutes...)")
+            
             create_cmd = ['sudo', 'lxc-create', '-n', name, '-t', template, '--', '-r', release]
-            result = subprocess.run(create_cmd, capture_output=True, text=True)
+            result = subprocess.run(create_cmd, stderr=subprocess.PIPE, text=True)
             
             if result.returncode != 0:
                 click.echo(f"  Failed to create container: {result.stderr}", err=True)
