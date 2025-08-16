@@ -1244,11 +1244,12 @@ deploy_django_sample() {
     fi
     
     # Step 1: Handle sample-datastore container
-    if sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
+    # Check if container exists using lxc-info which is more reliable
+    if sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null; then
         info "Sample datastore container '$DATASTORE_CONTAINER' already exists"
         
         # Check if it's running
-        if ! sudo lxc-ls --running | grep -q "^${DATASTORE_CONTAINER}$"; then
+        if ! sudo lxc-info -n "$DATASTORE_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
             log "Starting $DATASTORE_CONTAINER container..."
             sudo lxc-start -n "$DATASTORE_CONTAINER"
             sleep 5
@@ -1261,8 +1262,15 @@ deploy_django_sample() {
         # Create sample-datastore only if it doesn't exist
         log "Creating sample datastore container..."
         
-        # Use lxc-create (classic LXC)
-        sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy || error "Failed to create datastore container"
+        # Use lxc-create (classic LXC) - don't error if it fails
+        if ! sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy 2>/dev/null; then
+            # Check if it exists now (might have been created by another process)
+            if sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
+                warning "Container was created by another process"
+            else
+                error "Failed to create datastore container"
+            fi
+        fi
         
         # Configure container with static IP
         sudo bash -c "cat > /var/lib/lxc/$DATASTORE_CONTAINER/config" <<EOF
@@ -1329,8 +1337,9 @@ EOF
         log "Sample datastore container created and configured"
     fi
     
-    # Step 2: Handle sample-django-app container
-    if sudo lxc-ls | grep -q "^${DJANGO_CONTAINER}$"; then
+    # Step 2: Handle sample-django-app container  
+    # Check if container exists using lxc-info which is more reliable
+    if sudo lxc-info -n "$DJANGO_CONTAINER" &>/dev/null; then
         warning "Django sample container '$DJANGO_CONTAINER' already exists"
         read -p "Remove and recreate it? (y/N): " -n 1 -r
         echo
@@ -1341,7 +1350,7 @@ EOF
         else
             info "Using existing container"
             # Ensure it's running
-            if ! sudo lxc-ls --running | grep -q "^${DJANGO_CONTAINER}$"; then
+            if ! sudo lxc-info -n "$DJANGO_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
                 log "Starting $DJANGO_CONTAINER container..."
                 sudo lxc-start -n "$DJANGO_CONTAINER"
                 sleep 5
@@ -1350,7 +1359,7 @@ EOF
     fi
     
     # Create sample-django-app if it doesn't exist
-    if ! sudo lxc-ls | grep -q "^${DJANGO_CONTAINER}$"; then
+    if ! sudo lxc-info -n "$DJANGO_CONTAINER" &>/dev/null; then
         log "Creating Django application container..."
         
         # Use lxc-create (classic LXC)

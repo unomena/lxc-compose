@@ -53,7 +53,7 @@ echo ""
 
 # Check if both containers already exist and are running
 DATASTORE_CONTAINER="sample-datastore"
-if sudo lxc-ls --running | grep -q "^${DATASTORE_CONTAINER}$" && sudo lxc-ls --running | grep -q "^${APP_CONTAINER}$"; then
+if sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null && sudo lxc-info -n "$APP_CONTAINER" &>/dev/null; then
     log "Both containers are already running"
     
     # Just ensure database exists
@@ -77,8 +77,8 @@ EOF
     fi
 fi
 
-# Check if sample-datastore container exists and is running
-if ! sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
+# Check if sample-datastore container exists
+if ! sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null; then
     info "Sample datastore container not found. Creating it..."
     
     # Use lxc-create for classic LXC (will fail if already exists, but that's OK)
@@ -128,7 +128,7 @@ EOF
     "
 else
     # Ensure datastore is running
-    if ! sudo lxc-ls --running | grep -q "^${DATASTORE_CONTAINER}$"; then
+    if ! sudo lxc-info -n "$DATASTORE_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
         log "Starting datastore container..."
         sudo lxc-start -n "$DATASTORE_CONTAINER"
         sleep 5
@@ -136,7 +136,7 @@ else
 fi
 
 # Check if app container exists
-if ! sudo lxc-ls | grep -q "^${APP_CONTAINER}$"; then
+if ! sudo lxc-info -n "$APP_CONTAINER" &>/dev/null; then
     warning "App container '$APP_CONTAINER' not found. Creating it..."
     
     # Use lxc-create for classic LXC (will fail if already exists, but that's OK)
@@ -173,7 +173,7 @@ EOF
     sleep 10
 else
     # Ensure app container is running
-    if ! sudo lxc-ls --running | grep -q "^${APP_CONTAINER}$"; then
+    if ! sudo lxc-info -n "$APP_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
         log "Starting app container..."
         sudo lxc-start -n "$APP_CONTAINER"
         sleep 5
