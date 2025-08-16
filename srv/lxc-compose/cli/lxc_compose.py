@@ -1066,11 +1066,115 @@ def up(config_file, detach, build, force_recreate):
             click.echo(f"  Starting container '{name}'...")
             subprocess.run(['sudo', 'lxc-start', '-n', name])
             
+            # Wait for container to be ready
+            import time
+            time.sleep(5)
+            
             # Add to hosts file
             if hosts_manager:
                 # No aliases - only exact container name
                 hosts_manager.add_container(name, ip_only)
                 click.echo(f"  Added to /etc/hosts: {name} -> {ip_only}")
+            
+            # Install packages if specified
+            if 'packages' in container_config and container_config['packages']:
+                click.echo(f"  Installing packages...")
+                packages = ' '.join(container_config['packages'])
+                install_cmd = f"apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y {packages}"
+                result = subprocess.run(
+                    ['sudo', 'lxc-attach', '-n', name, '--', 'bash', '-c', install_cmd],
+                    capture_output=True, text=True
+                )
+                if result.returncode != 0:
+                    click.echo(f"    Warning: Some packages failed to install", err=True)
+                else:
+                    click.echo(f"    Installed: {len(container_config['packages'])} packages")
+            
+            # Set environment variables
+            if 'environment' in container_config:
+                env_file_content = ""
+                for key, value in container_config['environment'].items():
+                    env_file_content += f"export {key}=\"{value}\"\n"
+                
+                # Write to /etc/environment in container
+                write_env_cmd = f"cat >> /etc/environment << 'EOF'\n{env_file_content}EOF"
+                subprocess.run(
+                    ['sudo', 'lxc-attach', '-n', name, '--', 'bash', '-c', write_env_cmd],
+                    capture_output=True
+                )
+            
+            # Configure services
+            if 'services' in container_config:
+                click.echo(f"  Configuring services...")
+                for service_name, service_config in container_config['services'].items():
+                    if isinstance(service_config, dict):
+                        if service_config.get('type') == 'system':
+                            # System service with config script
+                            if 'config' in service_config:
+                                subprocess.run(
+                                    ['sudo', 'lxc-attach', '-n', name, '--', 'bash', '-c', service_config['config']],
+                                    capture_output=True
+                                )
+                        else:
+                            # Supervisor service - generate config
+                            supervisor_conf = f"""[program:{service_name}]
+command={service_config.get('command', '')}
+directory={service_config.get('directory', '/app')}
+user={service_config.get('user', 'root')}
+autostart={str(service_config.get('autostart', True)).lower()}
+autorestart={str(service_config.get('autorestart', True)).lower()}
+redirect_stderr=true
+stdout_logfile=/var/log/{service_name}.log
+stderr_logfile=/var/log/{service_name}.error.log
+stopasgroup=true
+killasgroup=true
+"""
+                            # Add environment if specified
+                            if 'environment' in service_config:
+                                env_vars = ','.join([f'{k}="{v}"' for k, v in service_config['environment'].items()])
+                                supervisor_conf += f"environment={env_vars}\n"
+                            
+                            # Write supervisor config to container
+                            write_supervisor_cmd = f"""
+mkdir -p /etc/supervisor/conf.d
+cat > /etc/supervisor/conf.d/{service_name}.conf << 'EOF'
+{supervisor_conf}
+EOF
+"""
+                            result = subprocess.run(
+                                ['sudo', 'lxc-attach', '-n', name, '--', 'bash', '-c', write_supervisor_cmd],
+                                capture_output=True, text=True
+                            )
+                            
+                            if result.returncode == 0:
+                                # Install supervisor if not present
+                                install_supervisor_cmd = """
+if ! command -v supervisord &> /dev/null; then
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y supervisor
+fi
+# Restart supervisor to load new config
+supervisorctl reread && supervisorctl update
+"""
+                                subprocess.run(
+                                    ['sudo', 'lxc-attach', '-n', name, '--', 'bash', '-c', install_supervisor_cmd],
+                                    capture_output=True
+                                )
+                                click.echo(f"    Configured service: {service_name}")
+            
+            # Run post_install commands
+            if 'post_install' in container_config:
+                click.echo(f"  Running post-install commands...")
+                for cmd_config in container_config['post_install']:
+                    if isinstance(cmd_config, dict):
+                        cmd_name = cmd_config.get('name', 'Command')
+                        cmd = cmd_config.get('command', '')
+                        click.echo(f"    Running: {cmd_name}")
+                        result = subprocess.run(
+                            ['sudo', 'lxc-attach', '-n', name, '--', 'bash', '-c', cmd],
+                            capture_output=True, text=True
+                        )
+                        if result.returncode != 0:
+                            click.echo(f"      Warning: Command failed", err=True)
     
     # Collect all port forwards from containers (new integrated format)
     all_port_forwards = []
@@ -1101,7 +1205,45 @@ def up(config_file, detach, build, force_recreate):
     if all_port_forwards:
         click.echo("\nSetting up port forwarding...")
         for forward in all_port_forwards:
-            click.echo(f"  {forward['host_port']} -> {forward['container']}:{forward['container_port']}")
+            host_port = forward['host_port']
+            container_name = forward['container']
+            container_port = forward['container_port']
+            
+            # Get container IP from hosts manager
+            container_ip = hosts_manager.get_container_ip(container_name) if hosts_manager else None
+            
+            if container_ip:
+                click.echo(f"  {host_port} -> {container_name}:{container_port} ({container_ip})")
+                
+                # Apply iptables rules for port forwarding
+                # First, delete any existing rules for this port
+                subprocess.run(
+                    ['sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING', 
+                     '-p', 'tcp', '--dport', str(host_port), 
+                     '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                
+                # Add the new rule
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING', 
+                     '-p', 'tcp', '--dport', str(host_port), 
+                     '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'],
+                    capture_output=True, text=True
+                )
+                
+                if result.returncode != 0:
+                    click.echo(f"    Warning: Failed to setup port forwarding: {result.stderr}", err=True)
+                
+                # Also add FORWARD rule to allow the traffic
+                subprocess.run(
+                    ['sudo', 'iptables', '-A', 'FORWARD', 
+                     '-p', 'tcp', '-d', container_ip, '--dport', str(container_port), 
+                     '-m', 'state', '--state', 'NEW,ESTABLISHED,RELATED', '-j', 'ACCEPT'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+            else:
+                click.echo(f"    Warning: Cannot setup port forwarding for {container_name} (IP not found)", err=True)
     
     if not detach:
         click.echo("\nContainers started. Press Ctrl+C to stop.")
