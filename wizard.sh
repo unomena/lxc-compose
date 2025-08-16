@@ -1217,6 +1217,126 @@ SCRIPT
 }
 
 # Deploy Django sample
+# Helper function to create datastore container
+create_datastore_container() {
+    local container_name="$1"
+    
+    log "Creating datastore container..."
+    
+    # Use lxc-create (classic LXC)
+    if ! sudo lxc-create -n "$container_name" -t ubuntu -- -r jammy 2>/dev/null; then
+        if sudo lxc-info -n "$container_name" &>/dev/null; then
+            warning "Container already exists"
+            return 0
+        else
+            error "Failed to create datastore container"
+        fi
+    fi
+    
+    # Configure container with static IP
+    sudo bash -c "cat > /var/lib/lxc/$container_name/config" <<EOF
+# Container
+lxc.include = /usr/share/lxc/config/ubuntu.common.conf
+lxc.arch = linux64
+
+# Network
+lxc.net.0.type = veth
+lxc.net.0.link = lxcbr0
+lxc.net.0.flags = up
+lxc.net.0.ipv4.address = 10.0.3.30/24
+lxc.net.0.ipv4.gateway = 10.0.3.1
+
+# System
+lxc.apparmor.profile = generated
+lxc.apparmor.allow_nesting = 1
+
+# Root filesystem
+lxc.rootfs.path = dir:/var/lib/lxc/$container_name/rootfs
+EOF
+    
+    # Start container
+    log "Starting container..."
+    sudo lxc-start -n "$container_name"
+    sleep 10
+    
+    # Install services
+    install_datastore_services "$container_name"
+}
+
+# Helper function to install datastore services
+install_datastore_services() {
+    local container_name="$1"
+    
+    log "Installing PostgreSQL and Redis..."
+    sudo lxc-attach -n "$container_name" -- bash -c "
+        # Wait for apt to be ready
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+            echo 'Waiting for apt lock...'
+            sleep 2
+        done
+        
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib redis-server
+        
+        # Configure PostgreSQL to listen on all interfaces
+        sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" /etc/postgresql/14/main/postgresql.conf
+        echo 'host    all             all             10.0.3.0/24            md5' >> /etc/postgresql/14/main/pg_hba.conf
+        
+        # Configure Redis to listen on all interfaces
+        sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/g' /etc/redis/redis.conf
+        sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
+        
+        # Restart services
+        systemctl restart postgresql
+        systemctl restart redis-server
+    " || warning "Some packages might already be installed"
+    
+    log "Services installed and configured"
+}
+
+# Helper function to create Django app container
+create_django_container() {
+    local container_name="$1"
+    
+    log "Creating Django application container..."
+    
+    # Use lxc-create (classic LXC)
+    if ! sudo lxc-create -n "$container_name" -t ubuntu -- -r jammy 2>/dev/null; then
+        if sudo lxc-info -n "$container_name" &>/dev/null; then
+            warning "Container already exists"
+            return 0
+        else
+            error "Failed to create Django container"
+        fi
+    fi
+    
+    # Configure container with static IP
+    sudo bash -c "cat > /var/lib/lxc/$container_name/config" <<EOF
+# Container
+lxc.include = /usr/share/lxc/config/ubuntu.common.conf
+lxc.arch = linux64
+
+# Network
+lxc.net.0.type = veth
+lxc.net.0.link = lxcbr0
+lxc.net.0.flags = up
+lxc.net.0.ipv4.address = 10.0.3.31/24
+lxc.net.0.ipv4.gateway = 10.0.3.1
+
+# System
+lxc.apparmor.profile = generated
+lxc.apparmor.allow_nesting = 1
+
+# Root filesystem
+lxc.rootfs.path = dir:/var/lib/lxc/$container_name/rootfs
+EOF
+    
+    # Start container
+    log "Starting container..."
+    sudo lxc-start -n "$container_name"
+    sleep 10
+}
+
 deploy_django_sample() {
     check_sudo
     
@@ -1248,159 +1368,194 @@ deploy_django_sample() {
     if sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null; then
         info "Sample datastore container '$DATASTORE_CONTAINER' already exists"
         
-        # Check if it's running
+        # Check what's inside the container
+        log "Checking container contents..."
+        local has_postgres=false
+        local has_redis=false
+        
+        # Start container if not running
         if ! sudo lxc-info -n "$DATASTORE_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
-            log "Starting $DATASTORE_CONTAINER container..."
+            log "Starting container to check contents..."
             sudo lxc-start -n "$DATASTORE_CONTAINER"
             sleep 5
-        else
-            log "Container $DATASTORE_CONTAINER is already running"
         fi
         
-        # Skip creation and configuration since it exists
+        # Check for PostgreSQL
+        if sudo lxc-attach -n "$DATASTORE_CONTAINER" -- which psql &>/dev/null; then
+            has_postgres=true
+            info "  ✓ PostgreSQL is installed"
+        else
+            warning "  ✗ PostgreSQL is not installed"
+        fi
+        
+        # Check for Redis
+        if sudo lxc-attach -n "$DATASTORE_CONTAINER" -- which redis-cli &>/dev/null; then
+            has_redis=true
+            info "  ✓ Redis is installed"
+        else
+            warning "  ✗ Redis is not installed"
+        fi
+        
+        # If both services are installed, offer options
+        if [[ "$has_postgres" == "true" ]] && [[ "$has_redis" == "true" ]]; then
+            echo ""
+            info "Container has all required services. What would you like to do?"
+            echo "  1) Use as-is (keep existing data and configuration)"
+            echo "  2) Reinstall services (keeps container, reinstalls software)"
+            echo "  3) Recreate from scratch (delete container and start fresh)"
+            echo "  4) Cancel"
+            echo ""
+            read -p "Select option [1-4]: " -n 1 -r
+            echo
+            
+            case $REPLY in
+                1)
+                    log "Using existing container as-is"
+                    ;;
+                2)
+                    log "Reinstalling services in existing container"
+                    install_datastore_services "$DATASTORE_CONTAINER"
+                    ;;
+                3)
+                    log "Recreating container from scratch"
+                    sudo lxc-stop -n "$DATASTORE_CONTAINER" 2>/dev/null || true
+                    sudo lxc-destroy -n "$DATASTORE_CONTAINER"
+                    create_datastore_container "$DATASTORE_CONTAINER"
+                    ;;
+                4)
+                    info "Deployment cancelled"
+                    return
+                    ;;
+                *)
+                    warning "Invalid option. Using existing container as-is"
+                    ;;
+            esac
+        else
+            # Services are missing, offer to install or recreate
+            echo ""
+            warning "Container is missing required services."
+            echo "  1) Install missing services"
+            echo "  2) Recreate container from scratch"
+            echo "  3) Cancel"
+            echo ""
+            read -p "Select option [1-3]: " -n 1 -r
+            echo
+            
+            case $REPLY in
+                1)
+                    log "Installing missing services"
+                    install_datastore_services "$DATASTORE_CONTAINER"
+                    ;;
+                2)
+                    log "Recreating container from scratch"
+                    sudo lxc-stop -n "$DATASTORE_CONTAINER" 2>/dev/null || true
+                    sudo lxc-destroy -n "$DATASTORE_CONTAINER"
+                    create_datastore_container "$DATASTORE_CONTAINER"
+                    ;;
+                3)
+                    info "Deployment cancelled"
+                    return
+                    ;;
+                *)
+                    warning "Invalid option. Cancelling"
+                    return
+                    ;;
+            esac
+        fi
     else
-        # Create sample-datastore only if it doesn't exist
-        log "Creating sample datastore container..."
-        
-        # Use lxc-create (classic LXC) - don't error if it fails
-        if ! sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy 2>/dev/null; then
-            # Check if it exists now (might have been created by another process)
-            if sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
-                warning "Container was created by another process"
-            else
-                error "Failed to create datastore container"
-            fi
-        fi
-        
-        # Configure container with static IP
-        sudo bash -c "cat > /var/lib/lxc/$DATASTORE_CONTAINER/config" <<EOF
-# Container
-lxc.include = /usr/share/lxc/config/ubuntu.common.conf
-lxc.arch = linux64
-
-# Network
-lxc.net.0.type = veth
-lxc.net.0.link = lxcbr0
-lxc.net.0.flags = up
-lxc.net.0.ipv4.address = 10.0.3.30/24
-lxc.net.0.ipv4.gateway = 10.0.3.1
-
-# System
-lxc.apparmor.profile = generated
-lxc.apparmor.allow_nesting = 1
-
-# Root filesystem
-lxc.rootfs.path = dir:/var/lib/lxc/$DATASTORE_CONTAINER/rootfs
-EOF
-        
-        # Start container
-        log "Starting sample datastore container..."
-        sudo lxc-start -n "$DATASTORE_CONTAINER"
-        sleep 10  # Give it time to fully start
-        
-        # Wait for network to be ready
-        local count=0
-        while [[ $count -lt 10 ]]; do
-            if sudo lxc-attach -n "$DATASTORE_CONTAINER" -- ip addr show 2>/dev/null | grep -q "10.0.3.30"; then
-                log "Container network is ready"
-                break
-            fi
-            sleep 2
-            count=$((count + 1))
-        done
-        
-        # Install PostgreSQL and Redis
-        log "Installing PostgreSQL and Redis..."
-        sudo lxc-attach -n "$DATASTORE_CONTAINER" -- bash -c "
-            # Wait for apt to be ready
-            while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-                echo 'Waiting for apt lock...'
-                sleep 2
-            done
-            
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib redis-server
-            
-            # Configure PostgreSQL to listen on all interfaces
-            sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" /etc/postgresql/14/main/postgresql.conf
-            echo 'host    all             all             10.0.3.0/24            md5' >> /etc/postgresql/14/main/pg_hba.conf
-            
-            # Configure Redis to listen on all interfaces
-            sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/g' /etc/redis/redis.conf
-            sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
-            
-            # Restart services
-            systemctl restart postgresql
-            systemctl restart redis-server
-        " || warning "Some packages might already be installed"
-        
-        log "Sample datastore container created and configured"
+        # Container doesn't exist, create it
+        create_datastore_container "$DATASTORE_CONTAINER"
     fi
     
-    # Step 2: Handle sample-django-app container  
-    # Check if container exists using lxc-info which is more reliable
+    # Step 2: Handle sample-django-app container
     if sudo lxc-info -n "$DJANGO_CONTAINER" &>/dev/null; then
-        warning "Django sample container '$DJANGO_CONTAINER' already exists"
-        read -p "Remove and recreate it? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            info "Removing existing container..."
-            sudo lxc-stop -n "$DJANGO_CONTAINER" 2>/dev/null || true
-            sudo lxc-destroy -n "$DJANGO_CONTAINER"
-        else
-            info "Using existing container"
-            # Ensure it's running
-            if ! sudo lxc-info -n "$DJANGO_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
-                log "Starting $DJANGO_CONTAINER container..."
-                sudo lxc-start -n "$DJANGO_CONTAINER"
-                sleep 5
-            fi
+        info "Django sample container '$DJANGO_CONTAINER' already exists"
+        
+        # Check what's inside the container
+        log "Checking container contents..."
+        local has_django=false
+        
+        # Start container if not running
+        if ! sudo lxc-info -n "$DJANGO_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
+            log "Starting container to check contents..."
+            sudo lxc-start -n "$DJANGO_CONTAINER"
+            sleep 5
         fi
-    fi
-    
-    # Create sample-django-app if it doesn't exist
-    if ! sudo lxc-info -n "$DJANGO_CONTAINER" &>/dev/null; then
-        log "Creating Django application container..."
         
-        # Use lxc-create (classic LXC)
-        sudo lxc-create -n "$DJANGO_CONTAINER" -t ubuntu -- -r jammy || error "Failed to create Django container"
+        # Check for Django app
+        if sudo lxc-attach -n "$DJANGO_CONTAINER" -- test -d /app/src 2>/dev/null; then
+            has_django=true
+            info "  ✓ Django application is installed"
+        else
+            warning "  ✗ Django application is not installed"
+        fi
         
-        # Configure container with static IP
-        sudo bash -c "cat > /var/lib/lxc/$DJANGO_CONTAINER/config" <<EOF
-# Container
-lxc.include = /usr/share/lxc/config/ubuntu.common.conf
-lxc.arch = linux64
-
-# Network
-lxc.net.0.type = veth
-lxc.net.0.link = lxcbr0
-lxc.net.0.flags = up
-lxc.net.0.ipv4.address = 10.0.3.31/24
-lxc.net.0.ipv4.gateway = 10.0.3.1
-
-# System
-lxc.apparmor.profile = generated
-lxc.apparmor.allow_nesting = 1
-
-# Root filesystem
-lxc.rootfs.path = dir:/var/lib/lxc/$DJANGO_CONTAINER/rootfs
-EOF
+        # Offer options based on what we found
+        echo ""
+        if [[ "$has_django" == "true" ]]; then
+            info "Container has Django app installed. What would you like to do?"
+            echo "  1) Use as-is (keep existing application and data)"
+            echo "  2) Redeploy application (reinstall Django app)"
+            echo "  3) Recreate from scratch (delete container and start fresh)"
+            echo "  4) Cancel"
+        else
+            warning "Container doesn't have Django app. What would you like to do?"
+            echo "  1) Deploy Django application to existing container"
+            echo "  2) Recreate container from scratch"
+            echo "  3) Cancel"
+        fi
+        echo ""
+        read -p "Select option: " -n 1 -r
+        echo
         
-        # Start container
-        log "Starting Django application container..."
-        sudo lxc-start -n "$DJANGO_CONTAINER"
-        sleep 10  # Give it time to fully start
-        
-        # Wait for network to be ready
-        local count=0
-        while [[ $count -lt 10 ]]; do
-            if sudo lxc-attach -n "$DJANGO_CONTAINER" -- ip addr show 2>/dev/null | grep -q "10.0.3.31"; then
-                log "Container network is ready"
-                break
-            fi
-            sleep 2
-            count=$((count + 1))
-        done
+        if [[ "$has_django" == "true" ]]; then
+            case $REPLY in
+                1)
+                    log "Using existing container as-is"
+                    ;;
+                2)
+                    log "Redeploying Django application"
+                    # The create-django-sample.sh script will handle the redeployment
+                    ;;
+                3)
+                    log "Recreating container from scratch"
+                    sudo lxc-stop -n "$DJANGO_CONTAINER" 2>/dev/null || true
+                    sudo lxc-destroy -n "$DJANGO_CONTAINER"
+                    create_django_container "$DJANGO_CONTAINER"
+                    ;;
+                4)
+                    info "Deployment cancelled"
+                    return
+                    ;;
+                *)
+                    warning "Invalid option. Using existing container as-is"
+                    ;;
+            esac
+        else
+            case $REPLY in
+                1)
+                    log "Deploying Django application to existing container"
+                    # Continue with deployment
+                    ;;
+                2)
+                    log "Recreating container from scratch"
+                    sudo lxc-stop -n "$DJANGO_CONTAINER" 2>/dev/null || true
+                    sudo lxc-destroy -n "$DJANGO_CONTAINER"
+                    create_django_container "$DJANGO_CONTAINER"
+                    ;;
+                3)
+                    info "Deployment cancelled"
+                    return
+                    ;;
+                *)
+                    warning "Invalid option. Cancelling"
+                    return
+                    ;;
+            esac
+        fi
+    else
+        # Container doesn't exist, create it
+        create_django_container "$DJANGO_CONTAINER"
     fi
     
     # Step 3: Setup database and user in datastore
