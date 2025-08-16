@@ -1,16 +1,15 @@
 #!/bin/bash
 
 #############################################################################
-# Deploy Django+Celery Sample Application
-# Copies the pre-built Django application from sample-apps directory
-# Enhanced to handle missing containers and auto-create as needed
+# Deploy Django+Celery Sample Application - Production-like Setup
+# Clones the Django application from GitHub and mounts it into the container
+# This mimics production deployment where code is on host and mounted
 #############################################################################
 
 set -euo pipefail
 
 # Get script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SAMPLE_APP_DIR="${SCRIPT_DIR}/sample-apps/django-celery-app"
 
 # Color codes
 RED='\033[0;31m'
@@ -26,11 +25,16 @@ info() { echo -e "${BLUE}[i]${NC} $1"; }
 
 # Parameters with better defaults for dedicated containers
 APP_CONTAINER="${1:-sample-django-app}"
-DB_HOST="${2:-10.0.3.2}"
+DB_HOST="${2:-10.0.3.30}"  # Using sample-datastore IP
 DB_NAME="${3:-djangosample}"
 DB_USER="${4:-djangouser}"
 DB_PASSWORD="${5:-djangopass123}"
-REDIS_HOST="${6:-10.0.3.2}"
+REDIS_HOST="${6:-10.0.3.30}"  # Using sample-datastore IP
+
+# Application settings
+GITHUB_REPO="https://github.com/euan/Sample-Django-Celery-App.git"
+APP_DIR="/srv/apps/sample-django-app"
+CONTAINER_APP_DIR="/app"
 
 # Generate a Django secret key once for the entire deployment
 DJANGO_SECRET_KEY=$(openssl rand -hex 32)
@@ -38,23 +42,20 @@ DJANGO_SECRET_KEY=$(openssl rand -hex 32)
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║        Deploying Django+Celery Sample Application            ║"
+echo "║                  (Production-like Setup)                      ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-
-# Check if sample app directory exists
-if [ ! -d "$SAMPLE_APP_DIR" ]; then
-    error "Sample application directory not found at: $SAMPLE_APP_DIR"
-fi
 
 info "Container: $APP_CONTAINER"
 info "Database: $DB_HOST:5432/$DB_NAME"
 info "Redis: $REDIS_HOST:6379"
+info "Host mount: $APP_DIR -> $CONTAINER_APP_DIR"
 echo ""
 
 # Check if both containers already exist and are running
 DATASTORE_CONTAINER="sample-datastore"
 if sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null && sudo lxc-info -n "$APP_CONTAINER" &>/dev/null; then
-    log "Both containers are already running"
+    log "Both containers exist"
     
     # Just ensure database exists
     log "Ensuring database exists..."
@@ -67,17 +68,42 @@ GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 EOF
     " || true
     
-    # Check if Django is already installed
-    if sudo lxc-attach -n "$APP_CONTAINER" -- test -d /app/src; then
+    # Check if Django is already deployed
+    if [ -d "$APP_DIR" ] && [ -d "$APP_DIR/src" ]; then
         log "Django application already deployed"
-        info "Run 'sudo lxc-attach -n $APP_CONTAINER' to access the container"
-        exit 0
+        info "Repository location: $APP_DIR"
+        
+        # Ask if user wants to update
+        read -p "Update application from GitHub? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log "Updating application from GitHub..."
+            cd "$APP_DIR"
+            git pull origin main
+        fi
     else
         info "Containers exist but Django not deployed. Continuing with deployment..."
     fi
 fi
 
-# Check if sample-datastore container exists
+# Step 1: Clone or update the application repository on the host
+if [ -d "$APP_DIR" ]; then
+    info "Application directory exists at $APP_DIR"
+    read -p "Pull latest changes from GitHub? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log "Updating application from GitHub..."
+        cd "$APP_DIR"
+        git pull origin main
+    fi
+else
+    log "Cloning application from GitHub..."
+    sudo mkdir -p "$(dirname "$APP_DIR")"
+    sudo git clone "$GITHUB_REPO" "$APP_DIR"
+    sudo chown -R $USER:$USER "$APP_DIR"
+fi
+
+# Step 2: Check if sample-datastore container exists
 if ! sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null; then
     info "Sample datastore container not found. Creating it..."
     
@@ -85,7 +111,7 @@ if ! sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null; then
     if ! sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy 2>/dev/null; then
         warning "Container creation failed (may already exist)"
         # Check again if it exists now
-        if ! sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
+        if ! sudo lxc-info -n "$DATASTORE_CONTAINER" &>/dev/null; then
             error "Failed to create datastore container"
         fi
     fi
@@ -135,7 +161,7 @@ else
     fi
 fi
 
-# Check if app container exists
+# Step 3: Check if app container exists
 if ! sudo lxc-info -n "$APP_CONTAINER" &>/dev/null; then
     warning "App container '$APP_CONTAINER' not found. Creating it..."
     
@@ -143,12 +169,12 @@ if ! sudo lxc-info -n "$APP_CONTAINER" &>/dev/null; then
     if ! sudo lxc-create -n "$APP_CONTAINER" -t ubuntu -- -r jammy 2>/dev/null; then
         warning "Container creation failed (may already exist)"
         # Check again if it exists now
-        if ! sudo lxc-ls | grep -q "^${APP_CONTAINER}$"; then
+        if ! sudo lxc-info -n "$APP_CONTAINER" &>/dev/null; then
             error "Failed to create app container"
         fi
     fi
     
-    # Configure with static IP
+    # Configure with static IP and mount point
     sudo bash -c "cat > /var/lib/lxc/$APP_CONTAINER/config" <<EOF
 # Container
 lxc.include = /usr/share/lxc/config/ubuntu.common.conf
@@ -160,6 +186,9 @@ lxc.net.0.link = lxcbr0
 lxc.net.0.flags = up
 lxc.net.0.ipv4.address = 10.0.3.31/24
 lxc.net.0.ipv4.gateway = 10.0.3.1
+
+# Mount the application directory from host
+lxc.mount.entry = $APP_DIR app none bind,create=dir 0 0
 
 # System
 lxc.apparmor.profile = generated
@@ -175,6 +204,17 @@ else
     # Ensure app container is running
     if ! sudo lxc-info -n "$APP_CONTAINER" 2>/dev/null | grep -q "State.*RUNNING"; then
         log "Starting app container..."
+        sudo lxc-start -n "$APP_CONTAINER"
+        sleep 5
+    fi
+    
+    # Check if mount is configured
+    if ! grep -q "lxc.mount.entry = $APP_DIR" "/var/lib/lxc/$APP_CONTAINER/config"; then
+        log "Adding mount configuration..."
+        sudo bash -c "echo 'lxc.mount.entry = $APP_DIR app none bind,create=dir 0 0' >> /var/lib/lxc/$APP_CONTAINER/config"
+        
+        log "Restarting container to apply mount..."
+        sudo lxc-stop -n "$APP_CONTAINER"
         sudo lxc-start -n "$APP_CONTAINER"
         sleep 5
     fi
@@ -200,62 +240,16 @@ sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
         build-essential libpq-dev nginx supervisor git redis-tools postgresql-client
 "
 
-# Create application directory
-log "Creating application directory..."
+# Create directories in container
+log "Setting up container directories..."
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
-    rm -rf /app
-    mkdir -p /app/{static,media,logs}
+    mkdir -p /var/log/django /var/log/celery /run/django
+    mkdir -p /app/static /app/media
 "
 
-# Copy application files to container
-log "Copying application files..."
-# Copy requirements.txt
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/requirements.txt" < "$SAMPLE_APP_DIR/requirements.txt"
-
-# Copy source code
-log "Copying source code..."
-# We need to copy directory structure piece by piece due to LXC limitations
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/config"
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/api"
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/tasks"
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "mkdir -p /app/src/templates"
-
-# Copy Django project files
-for file in settings.py urls.py wsgi.py celery.py __init__.py; do
-    if [ -f "$SAMPLE_APP_DIR/src/config/$file" ]; then
-        log "  Copying config/$file..."
-        sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/config/$file" < "$SAMPLE_APP_DIR/src/config/$file"
-    fi
-done
-
-# Copy manage.py
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/manage.py" < "$SAMPLE_APP_DIR/src/manage.py"
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "chmod +x /app/src/manage.py"
-
-# Copy API app files
-for file in views.py __init__.py; do
-    if [ -f "$SAMPLE_APP_DIR/src/api/$file" ]; then
-        log "  Copying api/$file..."
-        sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/api/$file" < "$SAMPLE_APP_DIR/src/api/$file"
-    fi
-done
-
-# Copy tasks app files
-for file in tasks.py models.py __init__.py; do
-    if [ -f "$SAMPLE_APP_DIR/src/tasks/$file" ]; then
-        log "  Copying tasks/$file..."
-        sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/tasks/$file" < "$SAMPLE_APP_DIR/src/tasks/$file"
-    fi
-done
-
-# Copy templates
-log "  Copying templates..."
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/src/templates/index.html" < "$SAMPLE_APP_DIR/src/templates/index.html"
-
-# Create .env file with deployment-specific configuration
+# Create .env file in the mounted directory
 log "Creating environment configuration..."
-# Note: DJANGO_SECRET_KEY is generated when creating supervisor config
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /app/.env" <<EOF
+cat > "$APP_DIR/.env" <<EOF
 DEBUG=True
 DJANGO_SECRET_KEY=$DJANGO_SECRET_KEY
 DB_NAME=$DB_NAME
@@ -270,63 +264,7 @@ CELERY_RESULT_BACKEND=redis://$REDIS_HOST:6379/0
 ALLOWED_HOSTS=*
 EOF
 
-# Generate supervisor configuration with environment variables
-log "Generating supervisor configuration..."
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /etc/supervisor/conf.d/django-app.conf" <<EOF
-[supervisord]
-nodaemon=true
-logfile=/var/log/supervisor/supervisord.log
-pidfile=/var/run/supervisord.pid
-
-[program:django]
-command=/app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
-directory=/app/src
-autostart=true
-autorestart=true
-stdout_logfile=/app/logs/django.log
-stderr_logfile=/app/logs/django_err.log
-environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
-user=www-data
-
-[program:celery]
-command=/app/venv/bin/celery -A config worker -l info
-directory=/app/src
-autostart=true
-autorestart=true
-stdout_logfile=/app/logs/celery.log
-stderr_logfile=/app/logs/celery_err.log
-environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
-user=www-data
-
-[program:celery-beat]
-command=/app/venv/bin/celery -A config beat -l info
-directory=/app/src
-autostart=true
-autorestart=true
-stdout_logfile=/app/logs/celery-beat.log
-stderr_logfile=/app/logs/celery-beat_err.log
-environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
-user=www-data
-
-[program:nginx]
-command=/usr/sbin/nginx -g "daemon off;"
-autostart=true
-autorestart=true
-stdout_logfile=/app/logs/nginx.log
-stderr_logfile=/app/logs/nginx_err.log
-EOF
-
-# Copy nginx configuration
-log "Copying nginx configuration..."
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /etc/nginx/sites-available/django-app" < "$SAMPLE_APP_DIR/config/nginx.conf"
-
-# Enable nginx site
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
-    ln -sf /etc/nginx/sites-available/django-app /etc/nginx/sites-enabled/
-    rm -f /etc/nginx/sites-enabled/default
-"
-
-# Install Python dependencies
+# Install Python dependencies in container
 log "Installing Python dependencies..."
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
     cd /app
@@ -356,18 +294,88 @@ sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
     echo \"from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.create_superuser('admin', 'admin@example.com', 'admin123') if not User.objects.filter(username='admin').exists() else None\" | python manage.py shell
 "
 
+# Copy nginx configuration
+log "Configuring nginx..."
+sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
+    cat > /etc/nginx/sites-available/django-app <<'NGINX_EOF'
+server {
+    listen 80;
+    server_name _;
+
+    location /static/ {
+        alias /app/static/;
+    }
+
+    location /media/ {
+        alias /app/media/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINX_EOF
+    
+    ln -sf /etc/nginx/sites-available/django-app /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default
+    nginx -t && systemctl restart nginx
+"
+
+# Generate supervisor configuration with environment variables
+log "Configuring supervisor..."
+sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "cat > /etc/supervisor/conf.d/django-app.conf" <<EOF
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:django]
+command=/app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
+directory=/app/src
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/django/django.log
+stderr_logfile=/var/log/django/django_err.log
+environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
+user=www-data
+
+[program:celery]
+command=/app/venv/bin/celery -A config worker -l info
+directory=/app/src
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/celery/celery.log
+stderr_logfile=/var/log/celery/celery_err.log
+environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
+user=www-data
+
+[program:celery-beat]
+command=/app/venv/bin/celery -A config beat -l info
+directory=/app/src
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/celery/celery-beat.log
+stderr_logfile=/var/log/celery/celery-beat_err.log
+environment=PATH="/app/venv/bin:/usr/bin",PYTHONPATH="/app/src",DJANGO_SETTINGS_MODULE="config.settings",DEBUG="True",DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY",DB_NAME="$DB_NAME",DB_USER="$DB_USER",DB_PASSWORD="$DB_PASSWORD",DB_HOST="$DB_HOST",DB_PORT="5432",REDIS_HOST="$REDIS_HOST",REDIS_PORT="6379",ALLOWED_HOSTS="*"
+user=www-data
+EOF
+
 # Set permissions
 log "Setting permissions..."
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
     chown -R www-data:www-data /app
+    chown -R www-data:www-data /var/log/django /var/log/celery
     chmod -R 755 /app
-    chmod -R 775 /app/logs /app/media /app/static
+    chmod -R 775 /var/log/django /var/log/celery /app/media /app/static
 "
 
 # Restart services
 log "Starting services..."
 sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
-    nginx -t && systemctl restart nginx
     supervisorctl reread
     supervisorctl update
     supervisorctl restart all
@@ -390,16 +398,22 @@ echo "╚═══════════════════════�
 echo ""
 info "Application: http://$APP_IP/"
 info "Admin Panel: http://$APP_IP/admin/ (admin/admin123)"
+info "Host mount: $APP_DIR -> /app (in container)"
 echo ""
 info "Submit a task from the web interface or via API:"
 echo '  curl -X POST http://'$APP_IP'/api/task/submit/ \'
 echo '    -H "Content-Type: application/json" \'
 echo '    -d '\''{"type":"sample","name":"test"}'\'''
 echo ""
+info "To make code changes:"
+echo "  1. Edit files in: $APP_DIR"
+echo "  2. Changes are immediately visible in container"
+echo "  3. Restart Django: sudo lxc-attach -n $APP_CONTAINER -- supervisorctl restart django"
+echo ""
 info "Monitor services:"
 echo "  sudo lxc-attach -n $APP_CONTAINER -- supervisorctl status"
 echo ""
 info "View logs:"
-echo "  sudo lxc-attach -n $APP_CONTAINER -- tail -f /app/logs/django.log"
-echo "  sudo lxc-attach -n $APP_CONTAINER -- tail -f /app/logs/celery.log"
+echo "  sudo lxc-attach -n $APP_CONTAINER -- tail -f /var/log/django/django.log"
+echo "  sudo lxc-attach -n $APP_CONTAINER -- tail -f /var/log/celery/celery.log"
 echo ""
