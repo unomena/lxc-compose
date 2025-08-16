@@ -2,8 +2,9 @@
 
 # LXC Compose wrapper script that handles sudo authentication upfront
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the real directory where this script is located (resolving symlinks)
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 
 # Commands that require sudo privileges
 SUDO_COMMANDS="up down ps exec restart start stop rm"
