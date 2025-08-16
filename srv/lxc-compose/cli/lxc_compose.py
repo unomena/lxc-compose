@@ -778,12 +778,6 @@ def up(config_file, detach, build, force_recreate):
       lxc-compose up -d                 # Run in background
       lxc-compose up --build            # Rebuild containers
     """
-    # Check if running with sudo (required for LXC operations)
-    if os.geteuid() != 0:
-        click.echo("Error: This command requires sudo privileges", err=True)
-        click.echo("Please run: sudo lxc-compose up", err=True)
-        sys.exit(1)
-    
     # Check if config file exists in current directory
     config_path = Path(config_file)
     if not config_path.is_absolute():
@@ -1077,12 +1071,6 @@ def down(config_file, volumes, remove_orphans):
       lxc-compose down -v               # Stop and remove volumes
       lxc-compose down --remove-orphans # Remove undefined containers
     """
-    # Check if running with sudo (required for LXC operations)
-    if os.geteuid() != 0:
-        click.echo("Error: This command requires sudo privileges", err=True)
-        click.echo("Please run: sudo lxc-compose down", err=True)
-        sys.exit(1)
-    
     # Check if config file exists
     config_path = Path(config_file)
     if not config_path.is_absolute():
@@ -1138,12 +1126,6 @@ def ps(config_file):
       lxc-compose ps                    # Show containers from lxc-compose.yml
       lxc-compose ps -f custom.yml      # Use custom config file
     """
-    # Check if running with sudo (required for LXC operations)
-    if os.geteuid() != 0:
-        click.echo("Error: This command requires sudo privileges", err=True)
-        click.echo("Please run: sudo lxc-compose ps", err=True)
-        sys.exit(1)
-    
     # Check if config file exists
     config_path = Path(config_file)
     if not config_path.is_absolute():
@@ -1205,12 +1187,6 @@ def exec_compose(config_file, container, command):
       lxc-compose exec db psql          # Open psql in db container
       lxc-compose exec web python manage.py shell
     """
-    # Check if running with sudo (required for LXC operations)
-    if os.geteuid() != 0:
-        click.echo("Error: This command requires sudo privileges", err=True)
-        click.echo("Please run: sudo lxc-compose exec ...", err=True)
-        sys.exit(1)
-    
     if not container:
         # Try to read config and use first container
         config_path = Path(config_file)
