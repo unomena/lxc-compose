@@ -91,9 +91,14 @@ class HostsManager:
         self.marker_end = "# END LXC Compose managed section"
         self.ip_allocator = IPAllocator()
         
-        # Create backup if it doesn't exist
+        # Create backup if it doesn't exist (only if we have permissions)
         if not self.backup_file.exists() and self.hosts_file.exists():
-            self.backup_file.write_text(self.hosts_file.read_text())
+            try:
+                self.backup_file.write_text(self.hosts_file.read_text())
+            except PermissionError:
+                # Silently skip backup creation if no permissions
+                # The actual write operations will fail with proper error messages
+                pass
     
     def _lock_file(self, file_handle):
         """Lock file for exclusive access"""
