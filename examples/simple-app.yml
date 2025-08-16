@@ -1,0 +1,73 @@
+# Example LXC Compose configuration with simplified syntax
+# Container names are keys, mounts use Docker-like format
+
+version: '1.0'
+
+containers:
+  db:
+    template: ubuntu
+    release: jammy
+    
+    aliases:
+      - database
+      - postgres
+      - postgresql
+    
+    packages:
+      - postgresql
+      - postgresql-contrib
+    
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass123
+      POSTGRES_DB: appdb
+
+  app:
+    template: ubuntu  
+    release: jammy
+    
+    aliases:
+      - web
+      - frontend
+    
+    # Simple Docker-like mount syntax
+    mounts:
+      - .:/app                    # Current directory to /app
+      - ./data:/data              # Relative path
+      - /var/log/host:/var/log    # Absolute path
+    
+    packages:
+      - python3
+      - python3-pip
+      - nginx
+    
+    environment:
+      DATABASE_URL: postgresql://appuser:apppass123@db:5432/appdb
+      DEBUG: "False"
+      SECRET_KEY: "change-me-in-production"
+    
+    services:
+      web:
+        command: python3 /app/server.py
+        directory: /app
+        autostart: true
+        autorestart: true
+
+# Port forwarding
+port_forwards:
+  - host_port: 8080
+    container: app
+    container_port: 80
+    description: "Web application"
+  
+  - host_port: 5432
+    container: db
+    container_port: 5432
+    description: "PostgreSQL"
+
+# Dependencies
+dependencies:
+  app:
+    depends_on:
+      - db
+    start_delay: 5

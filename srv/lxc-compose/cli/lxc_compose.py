@@ -857,8 +857,11 @@ def up(config_file, detach, build, force_recreate):
                     click.echo(f"  Allocated IP: {container_ip}")
                 else:
                     # Fallback to config or auto
-                    container_conf = container_config.get('container', {})
-                    container_ip = container_conf.get('ip', '10.0.3.100/24')
+                    # Support both old format (container.ip) and new format (direct ip)
+                    if 'container' in container_config:
+                        container_ip = container_config.get('container', {}).get('ip', '10.0.3.100/24')
+                    else:
+                        container_ip = container_config.get('ip', '10.0.3.100/24')
                 
                 # Extract network parts
                 if '/' in str(container_ip):
@@ -869,8 +872,15 @@ def up(config_file, detach, build, force_recreate):
                     cidr = '24'
                 
                 # Create container with LXC
-                template = container_config.get('container', {}).get('template', 'ubuntu')
-                release = container_config.get('container', {}).get('release', 'jammy')
+                # Support both old format (container.template) and new format (direct template)
+                if 'container' in container_config:
+                    # Old format for backward compatibility
+                    template = container_config.get('container', {}).get('template', 'ubuntu')
+                    release = container_config.get('container', {}).get('release', 'jammy')
+                else:
+                    # New simplified format
+                    template = container_config.get('template', 'ubuntu')
+                    release = container_config.get('release', 'jammy')
                 
                 create_cmd = ['sudo', 'lxc-create', '-n', name, '-t', template, '--', '-r', release]
                 result = subprocess.run(create_cmd, capture_output=True, text=True)
@@ -900,10 +910,27 @@ def up(config_file, detach, build, force_recreate):
                     config_lines.append("")
                     config_lines.append("# Custom mounts")
                     for mount in container_config['mounts']:
-                        host_path = mount['host']
+                        # Support both old format (dict) and new format (string)
+                        if isinstance(mount, str):
+                            # New Docker-like format: "host:container"
+                            if ':' in mount:
+                                host_path, container_path = mount.split(':', 1)
+                            else:
+                                # If no colon, mount to same path in container
+                                host_path = mount
+                                container_path = mount
+                        else:
+                            # Old format for backward compatibility
+                            host_path = mount.get('host', '.')
+                            container_path = mount.get('container', '/mnt')
+                        
+                        # Convert relative paths
                         if host_path == '.':
                             host_path = str(Path.cwd())
-                        container_path = mount['container']
+                        elif not host_path.startswith('/'):
+                            # Relative path
+                            host_path = str(Path.cwd() / host_path)
+                        
                         config_lines.append(f"lxc.mount.entry = {host_path} {container_path.lstrip('/')} none bind,create=dir 0 0")
                         click.echo(f"  Configured mount: {host_path} -> {container_path}")
                 
