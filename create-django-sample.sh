@@ -3,6 +3,7 @@
 #############################################################################
 # Deploy Django+Celery Sample Application
 # Copies the pre-built Django application from sample-apps directory
+# Enhanced to handle missing containers and auto-create as needed
 #############################################################################
 
 set -euo pipefail
@@ -23,12 +24,12 @@ error() { echo -e "${RED}[✗]${NC} $1" >&2; exit 1; }
 warning() { echo -e "${YELLOW}[!]${NC} $1"; }
 info() { echo -e "${BLUE}[i]${NC} $1"; }
 
-# Parameters
-APP_CONTAINER="${1:-app-1}"
+# Parameters with better defaults for dedicated containers
+APP_CONTAINER="${1:-sample-django-app}"
 DB_HOST="${2:-10.0.3.2}"
-DB_NAME="${3:-sampleapp}"
-DB_USER="${4:-appuser}"
-DB_PASSWORD="${5:-apppass123}"
+DB_NAME="${3:-djangosample}"
+DB_USER="${4:-djangouser}"
+DB_PASSWORD="${5:-djangopass123}"
 REDIS_HOST="${6:-10.0.3.2}"
 
 # Generate a Django secret key once for the entire deployment
@@ -50,25 +51,129 @@ info "Database: $DB_HOST:5432/$DB_NAME"
 info "Redis: $REDIS_HOST:6379"
 echo ""
 
+# Check if datastore container exists and is running
+DATASTORE_CONTAINER="datastore"
+if ! sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
+    warning "Datastore container not found. Creating it..."
+    
+    # Use lxc or lxc-launch based on what's available
+    if command -v lxc >/dev/null 2>&1; then
+        sudo lxc launch ubuntu:22.04 "$DATASTORE_CONTAINER"
+        sudo lxc config device add "$DATASTORE_CONTAINER" eth0 nic \
+            nictype=bridged parent=lxcbr0 ipv4.address=10.0.3.2 || true
+    else
+        sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy
+        sudo lxc-start -n "$DATASTORE_CONTAINER"
+    fi
+    
+    sleep 5
+    
+    # Install PostgreSQL and Redis
+    log "Installing PostgreSQL and Redis..."
+    if command -v lxc >/dev/null 2>&1; then
+        sudo lxc exec "$DATASTORE_CONTAINER" -- bash -c "
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql redis-server
+            sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" /etc/postgresql/14/main/postgresql.conf
+            echo 'host    all             all             10.0.3.0/24            md5' >> /etc/postgresql/14/main/pg_hba.conf
+            sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/g' /etc/redis/redis.conf
+            systemctl restart postgresql redis-server
+        "
+    else
+        sudo lxc-attach -n "$DATASTORE_CONTAINER" -- bash -c "
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql redis-server
+            sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" /etc/postgresql/14/main/postgresql.conf
+            echo 'host    all             all             10.0.3.0/24            md5' >> /etc/postgresql/14/main/pg_hba.conf
+            sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/g' /etc/redis/redis.conf
+            systemctl restart postgresql redis-server
+        "
+    fi
+else
+    # Ensure datastore is running
+    if command -v lxc >/dev/null 2>&1; then
+        if ! sudo lxc list "$DATASTORE_CONTAINER" --format=json | grep -q '"status":"Running"'; then
+            log "Starting datastore container..."
+            sudo lxc start "$DATASTORE_CONTAINER"
+            sleep 5
+        fi
+    else
+        if ! sudo lxc-ls --running | grep -q "^${DATASTORE_CONTAINER}$"; then
+            log "Starting datastore container..."
+            sudo lxc-start -n "$DATASTORE_CONTAINER"
+            sleep 5
+        fi
+    fi
+fi
+
+# Check if app container exists
+if ! sudo lxc-ls | grep -q "^${APP_CONTAINER}$"; then
+    warning "App container '$APP_CONTAINER' not found. Creating it..."
+    
+    if command -v lxc >/dev/null 2>&1; then
+        sudo lxc launch ubuntu:22.04 "$APP_CONTAINER"
+        sudo lxc config device add "$APP_CONTAINER" eth0 nic \
+            nictype=bridged parent=lxcbr0 ipv4.address=10.0.3.20 || true
+    else
+        sudo lxc-create -n "$APP_CONTAINER" -t ubuntu -- -r jammy
+        sudo lxc-start -n "$APP_CONTAINER"
+    fi
+    
+    sleep 5
+else
+    # Ensure app container is running
+    if command -v lxc >/dev/null 2>&1; then
+        if ! sudo lxc list "$APP_CONTAINER" --format=json | grep -q '"status":"Running"'; then
+            log "Starting app container..."
+            sudo lxc start "$APP_CONTAINER"
+            sleep 5
+        fi
+    else
+        if ! sudo lxc-ls --running | grep -q "^${APP_CONTAINER}$"; then
+            log "Starting app container..."
+            sudo lxc-start -n "$APP_CONTAINER"
+            sleep 5
+        fi
+    fi
+fi
+
 # Create database if needed
 log "Setting up database..."
-sudo lxc-attach -n datastore -- bash -c "
-    sudo -u postgres psql <<EOF 2>/dev/null || true
+if command -v lxc >/dev/null 2>&1; then
+    sudo lxc exec "$DATASTORE_CONTAINER" -- sudo -u postgres psql <<EOF 2>/dev/null || true
 CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
 CREATE DATABASE $DB_NAME OWNER $DB_USER;
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 \\q
 EOF
-" || warning "Database might already exist"
+else
+    sudo lxc-attach -n "$DATASTORE_CONTAINER" -- bash -c "
+        sudo -u postgres psql <<EOF 2>/dev/null || true
+CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
+CREATE DATABASE $DB_NAME OWNER $DB_USER;
+GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
+\\q
+EOF
+    " || warning "Database might already exist"
+fi
 
 # Install system packages in container
 log "Installing system packages..."
-sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
+if command -v lxc >/dev/null 2>&1; then
+    sudo lxc exec "$APP_CONTAINER" -- bash -c "
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         python3 python3-pip python3-venv python3-dev \
         build-essential libpq-dev nginx supervisor git redis-tools postgresql-client
 "
+else
+    sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        python3 python3-pip python3-venv python3-dev \
+        build-essential libpq-dev nginx supervisor git redis-tools postgresql-client
+"
+fi
 
 # Create application directory
 log "Creating application directory..."
