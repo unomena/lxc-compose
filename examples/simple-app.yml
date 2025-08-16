@@ -1,17 +1,17 @@
 # Example LXC Compose configuration with integrated syntax
 # Port forwards and dependencies are now part of container configuration
+#
+# IMPORTANT: Container names must be globally unique across the system.
+# Use project namespaces to avoid conflicts:
+#   - myapp-db, myapp-cache, myapp-web
+#   - com-example-db, com-example-app (reverse domain notation)
 
 version: '1.0'
 
 containers:
-  db:
+  myapp-db:
     template: ubuntu
     release: jammy
-    
-    aliases:
-      - database
-      - postgres
-      - postgresql
     
     # Port forwarding using Docker-like syntax
     ports:
@@ -26,17 +26,13 @@ containers:
       POSTGRES_PASSWORD: apppass123
       POSTGRES_DB: appdb
 
-  app:
+  myapp-web:
     template: ubuntu  
     release: jammy
     
-    aliases:
-      - web
-      - frontend
-    
     # Simple dependency list
     depends_on:
-      - db
+      - myapp-db
     
     # Simple Docker-like mount syntax
     mounts:
@@ -54,7 +50,7 @@ containers:
       - nginx
     
     environment:
-      DATABASE_URL: postgresql://appuser:apppass123@db:5432/appdb
+      DATABASE_URL: postgresql://appuser:apppass123@myapp-db:5432/appdb
       DEBUG: "False"
       SECRET_KEY: "change-me-in-production"
     

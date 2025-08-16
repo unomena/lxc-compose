@@ -168,9 +168,26 @@ class HostsManager:
             f.write('\n'.join(content))
             self._unlock_file(f)
     
-    def add_container(self, container_name: str, ip: Optional[str] = None, 
-                     aliases: List[str] = None) -> str:
-        """Add or update a container entry in /etc/hosts"""
+    def add_container(self, container_name: str, ip: Optional[str] = None) -> str:
+        """Add or update a container entry in /etc/hosts
+        
+        NO ALIASES ALLOWED - only exact container names for clarity
+        """
+        # Check for container name conflicts first
+        if self.check_name_conflict(container_name):
+            click.echo(f"\n✗ ERROR: Container name conflict detected!", err=True)
+            click.echo(f"  The name '{container_name}' is already in use on this system.", err=True)
+            click.echo(f"\n  This is a problem because container names must be globally unique.", err=True)
+            click.echo(f"  Each container name maps to exactly one IP address in /etc/hosts.", err=True)
+            click.echo(f"\n  Solution: Use project namespaces to ensure unique names:", err=True)
+            click.echo(f"    - {container_name.split('-')[0]}-db", err=True)
+            click.echo(f"    - {container_name.split('-')[0]}-cache", err=True)
+            click.echo(f"    - {container_name.split('-')[0]}-web", err=True)
+            click.echo(f"  Or use reverse domain notation:", err=True)
+            click.echo(f"    - com-example-db", err=True)
+            click.echo(f"    - org-myproject-app", err=True)
+            raise click.ClickException(f"Container name '{container_name}' already exists")
+        
         # Allocate IP if not provided
         if not ip:
             ip = self.ip_allocator.allocate_ip(container_name)
@@ -178,10 +195,8 @@ class HostsManager:
         # Read current hosts file
         before, managed, after = self.read_hosts()
         
-        # Create new entry
+        # Create new entry - NO ALIASES
         entry = f"{ip}\t{container_name}"
-        if aliases:
-            entry += " " + " ".join(aliases)
         
         # Remove existing entry for this container if it exists
         managed = [line for line in managed 
@@ -198,6 +213,23 @@ class HostsManager:
         
         click.echo(f"✓ Added hosts entry: {entry}")
         return ip
+    
+    def check_name_conflict(self, container_name: str) -> bool:
+        """Check if a container name already exists in /etc/hosts or as an LXC container"""
+        # Check /etc/hosts
+        entries = self.list_entries()
+        for entry in entries:
+            if entry['container'] == container_name:
+                return True
+        
+        # Check existing LXC containers
+        result = subprocess.run(['sudo', 'lxc-ls'], capture_output=True, text=True)
+        if result.returncode == 0:
+            existing_containers = result.stdout.strip().split()
+            if container_name in existing_containers:
+                return True
+        
+        return False
     
     def remove_container(self, container_name: str) -> bool:
         """Remove a container entry from /etc/hosts"""
@@ -221,13 +253,32 @@ class HostsManager:
         
         return False
     
-    def update_container(self, container_name: str, new_ip: str = None, 
-                        aliases: List[str] = None) -> bool:
+    def update_container(self, container_name: str, new_ip: str = None) -> bool:
         """Update a container's hosts entry"""
         # Simply re-add with new info (it will replace existing)
         ip = new_ip or self.ip_allocator.get_ip(container_name)
         if ip:
-            self.add_container(container_name, ip, aliases)
+            # Temporarily allow updates by removing conflict check for existing name
+            # Read current hosts file
+            before, managed, after = self.read_hosts()
+            
+            # Create new entry - NO ALIASES
+            entry = f"{ip}\t{container_name}"
+            
+            # Remove existing entry for this container if it exists
+            managed = [line for line in managed 
+                      if not (line.strip() and container_name in line.split())]
+            
+            # Add new entry
+            managed.append(entry)
+            
+            # Sort managed entries by IP for readability
+            managed.sort(key=lambda x: [int(i) for i in x.split()[0].split('.')] if x.strip() else [999,999,999,999])
+            
+            # Write back
+            self.write_hosts(before, managed, after)
+            
+            click.echo(f"✓ Updated hosts entry: {entry}")
             return True
         return False
     
@@ -242,8 +293,7 @@ class HostsManager:
                 if len(parts) >= 2:
                     entries.append({
                         'ip': parts[0],
-                        'container': parts[1],
-                        'aliases': parts[2:] if len(parts) > 2 else []
+                        'container': parts[1]
                     })
         
         return entries
@@ -252,7 +302,7 @@ class HostsManager:
         """Get IP address for a container from hosts file"""
         entries = self.list_entries()
         for entry in entries:
-            if entry['container'] == container_name or container_name in entry['aliases']:
+            if entry['container'] == container_name:
                 return entry['ip']
         return None
     
@@ -283,35 +333,6 @@ class HostsManager:
             click.echo("✗ No backup file found", err=True)
 
 
-def get_container_aliases(container_config: Dict) -> List[str]:
-    """Extract aliases from container configuration"""
-    aliases = []
-    
-    # Direct aliases field
-    if 'aliases' in container_config:
-        aliases.extend(container_config['aliases'])
-    
-    # Auto-generate common aliases based on services
-    if 'services' in container_config:
-        services = container_config['services']
-        if 'postgresql' in services:
-            aliases.extend(['postgres', 'db', 'database'])
-        if 'redis' in services:
-            aliases.extend(['redis', 'cache'])
-        if 'nginx' in services:
-            aliases.extend(['web'])
-    
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_aliases = []
-    for alias in aliases:
-        if alias not in seen:
-            seen.add(alias)
-            unique_aliases.append(alias)
-    
-    return unique_aliases
-
-
 if __name__ == "__main__":
     # Test the module
     manager = HostsManager()
@@ -319,4 +340,4 @@ if __name__ == "__main__":
     # Example operations
     print("Current managed entries:")
     for entry in manager.list_entries():
-        print(f"  {entry['ip']} -> {entry['container']} {entry['aliases']}")
+        print(f"  {entry['ip']} -> {entry['container']}")

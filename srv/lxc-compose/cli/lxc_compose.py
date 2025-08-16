@@ -487,9 +487,9 @@ def test(service, container):
       lxc-compose test cache datastore    # 'cache' for Redis
     
     \b
-    Service aliases:
-      PostgreSQL: db, database, postgres, postgresql
-      Redis: redis, cache
+    Service naming:
+      Use exact container names - no aliases allowed
+      Example: myapp-db, myapp-cache, myapp-web
     """
     service = service.lower()
     
@@ -807,7 +807,7 @@ def up(config_file, detach, build, force_recreate):
     
     # Import hosts manager
     try:
-        from hosts_manager import HostsManager, IPAllocator, get_container_aliases
+        from hosts_manager import HostsManager, IPAllocator
         hosts_manager = HostsManager()
         ip_allocator = IPAllocator()
     except ImportError:
@@ -853,6 +853,24 @@ def up(config_file, detach, build, force_recreate):
         
         container_exists = result.returncode == 0
         
+        # For new containers, check for name conflicts first
+        if not container_exists and hosts_manager:
+            # Check if name exists in hosts file (from another project)
+            existing_ip = hosts_manager.get_container_ip(name)
+            if existing_ip:
+                click.echo(f"\n✗ ERROR: Container name conflict detected!", err=True)
+                click.echo(f"  The name '{name}' is already in use on this system.", err=True)
+                click.echo(f"\n  This is a problem because container names must be globally unique.", err=True)
+                click.echo(f"  Each container name maps to exactly one IP address in /etc/hosts.", err=True)
+                click.echo(f"\n  Solution: Use project namespaces to ensure unique names:", err=True)
+                click.echo(f"    - projectname-db", err=True)
+                click.echo(f"    - projectname-cache", err=True)
+                click.echo(f"    - projectname-web", err=True)
+                click.echo(f"  Or use reverse domain notation:", err=True)
+                click.echo(f"    - com-example-db", err=True)
+                click.echo(f"    - org-myproject-app", err=True)
+                sys.exit(1)
+        
         if container_exists and not force_recreate:
             click.echo(f"  Container '{name}' already exists")
             # Start if not running
@@ -870,8 +888,8 @@ def up(config_file, detach, build, force_recreate):
                 if ip_result.returncode == 0:
                     container_ip = ip_result.stdout.strip().split()[0] if ip_result.stdout.strip() else None
                     if container_ip:
-                        aliases = container_config.get('aliases', [])
-                        hosts_manager.add_container(name, container_ip, aliases)
+                        # No aliases - only exact container name
+                        hosts_manager.add_container(name, container_ip)
         else:
             # Create container
             click.echo(f"  Creating container '{name}'...")
@@ -989,9 +1007,9 @@ def up(config_file, detach, build, force_recreate):
             
             # Add to hosts file
             if hosts_manager:
-                aliases = container_config.get('aliases', [])
-                hosts_manager.add_container(name, ip_only, aliases)
-                click.echo(f"  Added to /etc/hosts: {name} -> {ip_only} (aliases: {', '.join(aliases)})")
+                # No aliases - only exact container name
+                hosts_manager.add_container(name, ip_only)
+                click.echo(f"  Added to /etc/hosts: {name} -> {ip_only}")
     
     # Collect all port forwards from containers (new integrated format)
     all_port_forwards = []
@@ -1298,8 +1316,8 @@ CONFIGURATION FILE OPERATIONS
 TIPS
 ----
   • Default container for 'test' command is 'datastore'
-  • PostgreSQL aliases: db, database, postgres, postgresql
-  • Redis aliases: redis, cache
+  • Container names must be globally unique (use namespaces)
+  • Example: myapp-db, myapp-cache, myapp-web
   • Use 'lxc-compose COMMAND --help' for command-specific help
     """
     click.echo(examples_text)
