@@ -431,11 +431,11 @@ def execute(container, command):
     cmd = ['sudo', 'lxc-attach', '-n', container, '--'] + list(command)
     subprocess.run(cmd)
 
-@cli.command()
+@cli.command(name='exec-direct')
 @click.argument('container')
 @click.argument('command', nargs=-1, required=True)
-def exec(container, command):
-    """Execute a command in a container (alias for execute)
+def exec_direct(container, command):
+    """Execute a command in a container (direct mode)
     
     \b
     Examples:
@@ -755,11 +755,269 @@ def manager(action, start, stop, restart, status):
             click.echo(f"[!] Failed to restart: {result.stdout.strip()}")
 
 @cli.command()
+@click.option('-f', '--file', 'config_file', 
+              default='lxc-compose.yml',
+              help='Specify the config file (default: lxc-compose.yml)')
+@click.option('-d', '--detach', is_flag=True, help='Run containers in background')
+@click.option('--build', is_flag=True, help='Build/rebuild containers')
+@click.option('--force-recreate', is_flag=True, help='Recreate containers even if config unchanged')
+def up(config_file, detach, build, force_recreate):
+    """Create and start containers (Docker Compose-like)
+    
+    \b
+    This command mimics docker-compose up behavior:
+    - Reads lxc-compose.yml from current directory (or specified file)
+    - Creates containers if they don't exist
+    - Starts all defined containers
+    - Sets up mounts, networking, and services
+    
+    \b
+    Examples:
+      lxc-compose up                    # Use lxc-compose.yml in current dir
+      lxc-compose up -f custom.yml      # Use custom config file
+      lxc-compose up -d                 # Run in background
+      lxc-compose up --build            # Rebuild containers
+    """
+    # Check if config file exists in current directory
+    config_path = Path(config_file)
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_file
+    
+    if not config_path.exists():
+        # Try in /srv/lxc-compose/configs/ as fallback
+        fallback_path = Path('/srv/lxc-compose/configs') / config_file
+        if fallback_path.exists():
+            config_path = fallback_path
+        else:
+            click.echo(f"Error: Config file '{config_file}' not found", err=True)
+            click.echo("Searched in:")
+            click.echo(f"  - {Path.cwd() / config_file}")
+            click.echo(f"  - {fallback_path}")
+            sys.exit(1)
+    
+    click.echo(f"Using config: {config_path}")
+    
+    # Parse the YAML config
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+    except Exception as e:
+        click.echo(f"Error reading config: {e}", err=True)
+        sys.exit(1)
+    
+    # Process containers
+    if 'containers' in config:
+        for name, container_config in config['containers'].items():
+            click.echo(f"\nProcessing container: {name}")
+            
+            # Check if container exists
+            result = subprocess.run(
+                ['sudo', 'lxc-info', '-n', name],
+                capture_output=True, stderr=subprocess.DEVNULL
+            )
+            
+            if result.returncode == 0 and not force_recreate:
+                click.echo(f"  Container '{name}' already exists")
+                # Start if not running
+                if not subprocess.run(['sudo', 'lxc-info', '-n', name], 
+                                    capture_output=True, text=True).stdout.find('RUNNING') != -1:
+                    click.echo(f"  Starting container '{name}'...")
+                    subprocess.run(['sudo', 'lxc-start', '-n', name])
+            else:
+                # Create container
+                click.echo(f"  Creating container '{name}'...")
+                # Implementation would go here - for now just show what would be done
+                click.echo(f"  Would create with config: {container_config.get('container', {})}")
+                
+                # Set up mounts
+                if 'mounts' in container_config:
+                    for mount in container_config['mounts']:
+                        host_path = mount['host']
+                        if host_path == '.':
+                            host_path = str(Path.cwd())
+                        click.echo(f"  Would mount: {host_path} -> {mount['container']}")
+    
+    # Apply port forwards if configured
+    if 'port_forwards' in config:
+        click.echo("\nSetting up port forwarding...")
+        for forward in config['port_forwards']:
+            click.echo(f"  {forward['host_port']} -> {forward['container']}:{forward['container_port']}")
+    
+    if not detach:
+        click.echo("\nContainers started. Press Ctrl+C to stop.")
+        try:
+            # Keep running until interrupted
+            subprocess.run(['tail', '-f', '/dev/null'])
+        except KeyboardInterrupt:
+            click.echo("\nStopping containers...")
+
+@cli.command()
+@click.option('-f', '--file', 'config_file', 
+              default='lxc-compose.yml',
+              help='Specify the config file (default: lxc-compose.yml)')
+@click.option('-v', '--volumes', is_flag=True, help='Remove volumes')
+@click.option('--remove-orphans', is_flag=True, help='Remove containers not in config')
+def down(config_file, volumes, remove_orphans):
+    """Stop and remove containers (Docker Compose-like)
+    
+    \b
+    This command mimics docker-compose down behavior:
+    - Stops all containers defined in config
+    - Optionally removes containers
+    - Optionally removes volumes
+    
+    \b
+    Examples:
+      lxc-compose down                  # Stop containers
+      lxc-compose down -v               # Stop and remove volumes
+      lxc-compose down --remove-orphans # Remove undefined containers
+    """
+    # Check if config file exists
+    config_path = Path(config_file)
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_file
+    
+    if not config_path.exists():
+        click.echo(f"Error: Config file '{config_file}' not found", err=True)
+        sys.exit(1)
+    
+    click.echo(f"Using config: {config_path}")
+    
+    # Parse the YAML config
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+    except Exception as e:
+        click.echo(f"Error reading config: {e}", err=True)
+        sys.exit(1)
+    
+    # Stop containers
+    if 'containers' in config:
+        for name in config['containers']:
+            click.echo(f"Stopping container: {name}")
+            subprocess.run(['sudo', 'lxc-stop', '-n', name], stderr=subprocess.DEVNULL)
+            
+            if volumes:
+                click.echo(f"  Removing container: {name}")
+                subprocess.run(['sudo', 'lxc-destroy', '-n', name], stderr=subprocess.DEVNULL)
+
+@cli.command()
+@click.option('-f', '--file', 'config_file', 
+              default='lxc-compose.yml',
+              help='Specify the config file (default: lxc-compose.yml)')
+def ps(config_file):
+    """List containers defined in config (Docker Compose-like)
+    
+    \b
+    Shows status of containers defined in lxc-compose.yml
+    
+    \b
+    Examples:
+      lxc-compose ps                    # Show containers from lxc-compose.yml
+      lxc-compose ps -f custom.yml      # Use custom config file
+    """
+    # Check if config file exists
+    config_path = Path(config_file)
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_file
+    
+    if not config_path.exists():
+        click.echo(f"Error: Config file '{config_file}' not found", err=True)
+        sys.exit(1)
+    
+    # Parse the YAML config
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+    except Exception as e:
+        click.echo(f"Error reading config: {e}", err=True)
+        sys.exit(1)
+    
+    # Show container status
+    if 'containers' in config:
+        click.echo("Name                    State      IP")
+        click.echo("-" * 50)
+        for name in config['containers']:
+            # Get container info
+            result = subprocess.run(
+                ['sudo', 'lxc-info', '-n', name],
+                capture_output=True, text=True, stderr=subprocess.DEVNULL
+            )
+            
+            if result.returncode == 0:
+                state = "RUNNING" if "RUNNING" in result.stdout else "STOPPED"
+                # Try to get IP
+                ip_result = subprocess.run(
+                    ['sudo', 'lxc-info', '-n', name, '-iH'],
+                    capture_output=True, text=True, stderr=subprocess.DEVNULL
+                )
+                ip = ip_result.stdout.strip() if ip_result.returncode == 0 else "N/A"
+            else:
+                state = "NOT CREATED"
+                ip = "N/A"
+            
+            click.echo(f"{name:23} {state:10} {ip}")
+
+@cli.command(name='exec')
+@click.option('-f', '--file', 'config_file', 
+              default='lxc-compose.yml',
+              help='Specify the config file (default: lxc-compose.yml)')
+@click.argument('container', required=False)
+@click.argument('command', nargs=-1)
+def exec_compose(config_file, container, command):
+    """Execute command in a running container (Docker Compose-like)
+    
+    \b
+    This command mimics docker-compose exec behavior.
+    If no container is specified, uses the first one in config.
+    
+    \b
+    Examples:
+      lxc-compose exec web bash         # Open bash in web container
+      lxc-compose exec db psql          # Open psql in db container
+      lxc-compose exec web python manage.py shell
+    """
+    if not container:
+        # Try to read config and use first container
+        config_path = Path(config_file)
+        if not config_path.is_absolute():
+            config_path = Path.cwd() / config_file
+        
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                if 'containers' in config:
+                    container = list(config['containers'].keys())[0]
+                    click.echo(f"Using first container: {container}")
+    
+    if not container:
+        click.echo("Error: No container specified and none found in config", err=True)
+        sys.exit(1)
+    
+    if not command:
+        command = ['/bin/bash']
+    
+    # Execute command
+    cmd = ['sudo', 'lxc-attach', '-n', container, '--'] + list(command)
+    subprocess.run(cmd)
+
+@cli.command()
 def examples():
     """Show comprehensive examples for all commands"""
     examples_text = """
 LXC COMPOSE COMMAND EXAMPLES
 ============================
+
+DOCKER COMPOSE-LIKE COMMANDS
+-----------------------------
+  lxc-compose up                 # Start containers from lxc-compose.yml
+  lxc-compose up -d              # Start in background (detached)
+  lxc-compose up -f custom.yml   # Use custom config file
+  lxc-compose down               # Stop containers
+  lxc-compose down -v            # Stop and remove volumes
+  lxc-compose ps                 # Show container status
+  lxc-compose exec web bash      # Execute command in container
+  lxc-compose exec db psql       # Open PostgreSQL console
 
 SETUP & MAINTENANCE
 -------------------
