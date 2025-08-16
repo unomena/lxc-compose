@@ -51,10 +51,35 @@ info "Database: $DB_HOST:5432/$DB_NAME"
 info "Redis: $REDIS_HOST:6379"
 echo ""
 
-# Check if sample-datastore container exists and is running
+# Check if both containers already exist and are running
 DATASTORE_CONTAINER="sample-datastore"
+if sudo lxc-ls --running | grep -q "^${DATASTORE_CONTAINER}$" && sudo lxc-ls --running | grep -q "^${APP_CONTAINER}$"; then
+    log "Both containers are already running"
+    
+    # Just ensure database exists
+    log "Ensuring database exists..."
+    sudo lxc-attach -n "$DATASTORE_CONTAINER" -- bash -c "
+        sudo -u postgres psql <<EOF 2>/dev/null || true
+CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
+CREATE DATABASE $DB_NAME OWNER $DB_USER;
+GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
+\\q
+EOF
+    " || true
+    
+    # Check if Django is already installed
+    if sudo lxc-attach -n "$APP_CONTAINER" -- test -d /app/src; then
+        log "Django application already deployed"
+        info "Run 'sudo lxc-attach -n $APP_CONTAINER' to access the container"
+        exit 0
+    else
+        info "Containers exist but Django not deployed. Continuing with deployment..."
+    fi
+fi
+
+# Check if sample-datastore container exists and is running
 if ! sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
-    warning "Sample datastore container not found. Creating it..."
+    info "Sample datastore container not found. Creating it..."
     
     # Use lxc-create for classic LXC
     sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy

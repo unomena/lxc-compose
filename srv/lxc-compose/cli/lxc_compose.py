@@ -154,18 +154,49 @@ def reinstall(force):
 
 @cli.command(name='list')
 @click.option('--running', is_flag=True, help='Show only running containers')
-def list_containers(running):
+@click.option('--ports', is_flag=True, help='Show port forwarding information')
+def list_containers(running, ports):
     """List all containers
     
     \b
     Examples:
       lxc-compose list           # Show all containers with details
       lxc-compose list --running # Show only running containers
+      lxc-compose list --ports   # Show containers with port forwarding
     """
     if running:
         subprocess.run(['sudo', 'lxc-ls', '--running'])
     else:
         subprocess.run(['sudo', 'lxc-ls', '--fancy'])
+    
+    # Show port forwarding information if requested or by default
+    if ports or not running:
+        try:
+            from port_manager import PortManager
+            manager = PortManager()
+            forwards = manager.list_forwards()
+            
+            if forwards:
+                click.echo("\n" + "="*80)
+                click.echo("PORT FORWARDING:")
+                click.echo("-"*80)
+                
+                # Group by container
+                by_container = {}
+                for f in forwards:
+                    container = f["container_name"]
+                    if container not in by_container:
+                        by_container[container] = []
+                    by_container[container].append(f)
+                
+                for container, rules in sorted(by_container.items()):
+                    click.echo(f"\n{container}:")
+                    for rule in rules:
+                        click.echo(f"  • {rule['host_port']} → {rule['container_port']} ({rule['protocol']}) - {rule['description']}")
+                
+                click.echo()
+        except ImportError:
+            pass  # Port manager not available
 
 @cli.command()
 @click.argument('container')
