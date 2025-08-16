@@ -454,11 +454,61 @@ def destroy(container):
     if click.confirm(f"Are you sure you want to destroy container '{container}'?"):
         # Stop if running
         subprocess.run(['sudo', 'lxc-stop', '-n', container], stderr=subprocess.DEVNULL)
-        # Destroy
+        
+        # Destroy container
         subprocess.run(['sudo', 'lxc-destroy', '-n', container])
+        
+        # Clean up hosts entry and IP allocation
+        try:
+            from hosts_manager import HostsManager
+            hosts_manager = HostsManager()
+            hosts_manager.remove_container(container)
+            click.echo(f"✓ Cleaned up hosts entry for '{container}'")
+        except Exception as e:
+            # Don't fail if cleanup has issues
+            click.echo(f"Warning: Could not clean up hosts entry: {e}", err=True)
+        
         click.echo(f"Container '{container}' destroyed")
     else:
         click.echo("Cancelled")
+
+@cli.command()
+def cleanup():
+    """Clean up orphaned hosts entries and IP allocations
+    
+    Removes hosts entries for containers that no longer exist.
+    Useful after manual container deletion or system issues.
+    """
+    try:
+        from hosts_manager import HostsManager
+        hosts_manager = HostsManager()
+        
+        # Get list of existing containers
+        result = subprocess.run(['sudo', 'lxc-ls'], capture_output=True, text=True)
+        if result.returncode == 0:
+            existing_containers = set(result.stdout.strip().split())
+        else:
+            existing_containers = set()
+        
+        # Get all managed entries
+        entries = hosts_manager.list_entries()
+        removed_count = 0
+        
+        for entry in entries:
+            container_name = entry['container']
+            if container_name not in existing_containers:
+                click.echo(f"Removing orphaned entry: {container_name}")
+                hosts_manager.remove_container(container_name)
+                removed_count += 1
+        
+        if removed_count > 0:
+            click.echo(f"✓ Cleaned up {removed_count} orphaned entries")
+        else:
+            click.echo("✓ No orphaned entries found")
+            
+    except Exception as e:
+        click.echo(f"Error during cleanup: {e}", err=True)
+        sys.exit(1)
 
 @cli.command()
 def status():

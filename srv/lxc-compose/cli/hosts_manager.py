@@ -243,20 +243,13 @@ class HostsManager:
         return ip
     
     def check_name_conflict(self, container_name: str) -> bool:
-        """Check if a container name already exists in /etc/hosts or as an LXC container"""
-        # Check /etc/hosts
+        """Check if a container name already exists in /etc/hosts"""
+        # Only check /etc/hosts managed entries
+        # The LXC container check is done separately in lxc_compose.py
         entries = self.list_entries()
         for entry in entries:
             if entry['container'] == container_name:
                 return True
-        
-        # Check existing LXC containers
-        result = subprocess.run(['sudo', 'lxc-ls'], capture_output=True, text=True)
-        if result.returncode == 0:
-            existing_containers = result.stdout.strip().split()
-            if container_name in existing_containers:
-                return True
-        
         return False
     
     def remove_container(self, container_name: str) -> bool:
