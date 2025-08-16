@@ -22,29 +22,20 @@ class IPAllocator:
     def ensure_allocations_file(self):
         """Ensure the IP allocations file exists"""
         if not self.allocations_file.exists():
-            try:
-                self.allocations_file.parent.mkdir(parents=True, exist_ok=True)
-                self.allocations_file.write_text(json.dumps({
-                    "subnet": f"{self.subnet_base}.0/24",
-                    "next_ip": self.start_from,
-                    "allocations": {},
-                    "reserved": list(range(1, self.start_from))  # Reserve .1 to .10
-                }, indent=2))
-            except PermissionError:
-                # Use sudo to create the directory and file
-                subprocess.run(['sudo', 'mkdir', '-p', str(self.allocations_file.parent)])
-                content = json.dumps({
-                    "subnet": f"{self.subnet_base}.0/24",
-                    "next_ip": self.start_from,
-                    "allocations": {},
-                    "reserved": list(range(1, self.start_from))
-                }, indent=2)
-                with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
-                    tmp.write(content)
-                    tmp_path = tmp.name
-                subprocess.run(['sudo', 'cp', tmp_path, str(self.allocations_file)])
-                subprocess.run(['sudo', 'chmod', '666', str(self.allocations_file)])
-                os.unlink(tmp_path)
+            # Use sudo to create the directory and file
+            subprocess.run(['sudo', 'mkdir', '-p', str(self.allocations_file.parent)])
+            content = json.dumps({
+                "subnet": f"{self.subnet_base}.0/24",
+                "next_ip": self.start_from,
+                "allocations": {},
+                "reserved": list(range(1, self.start_from))  # Reserve .1 to .10
+            }, indent=2)
+            with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+            subprocess.run(['sudo', 'cp', tmp_path, str(self.allocations_file)])
+            subprocess.run(['sudo', 'chmod', '666', str(self.allocations_file)])
+            os.unlink(tmp_path)
     
     def load_allocations(self) -> Dict:
         """Load IP allocations from file"""
@@ -55,18 +46,14 @@ class IPAllocator:
             return json.loads(self.allocations_file.read_text())
     
     def save_allocations(self, data: Dict):
-        """Save IP allocations to file"""
-        try:
-            self.allocations_file.write_text(json.dumps(data, indent=2))
-        except PermissionError:
-            # Use sudo to write
-            content = json.dumps(data, indent=2)
-            with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-            subprocess.run(['sudo', 'cp', tmp_path, str(self.allocations_file)])
-            subprocess.run(['sudo', 'chmod', '666', str(self.allocations_file)])
-            os.unlink(tmp_path)
+        """Save IP allocations to file (always use sudo)"""
+        content = json.dumps(data, indent=2)
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        subprocess.run(['sudo', 'cp', tmp_path, str(self.allocations_file)])
+        subprocess.run(['sudo', 'chmod', '666', str(self.allocations_file)])
+        os.unlink(tmp_path)
     
     def allocate_ip(self, container_name: str) -> str:
         """Allocate an IP address for a container"""
@@ -118,23 +105,12 @@ class HostsManager:
         self.marker_end = "# END LXC Compose managed section"
         self.ip_allocator = IPAllocator()
         
-        # Create backup if it doesn't exist
+        # Create backup if it doesn't exist (using sudo from the start)
         if not self.backup_file.exists() and self.hosts_file.exists():
-            try:
-                self.backup_file.write_text(self.hosts_file.read_text())
-            except PermissionError:
-                # Try with sudo
-                try:
-                    result = subprocess.run(
-                        ['sudo', 'cp', str(self.hosts_file), str(self.backup_file)],
-                        capture_output=True, text=True
-                    )
-                    if result.returncode != 0:
-                        # Silently skip if backup fails - not critical
-                        pass
-                except:
-                    # If sudo fails, just continue without backup
-                    pass
+            subprocess.run(
+                ['sudo', 'cp', str(self.hosts_file), str(self.backup_file)],
+                capture_output=True, text=True
+            )
     
     def _lock_file(self, file_handle):
         """Lock file for exclusive access"""
@@ -204,28 +180,21 @@ class HostsManager:
         if content and content[-1] != '':
             content.append('')
         
-        # Write to /etc/hosts using sudo if needed
+        # Write to /etc/hosts using sudo (always)
         content_str = '\n'.join(content)
         
-        # Try direct write first
-        try:
-            with open(self.hosts_file, 'w') as f:
-                self._lock_file(f)
-                f.write(content_str)
-                self._unlock_file(f)
-        except PermissionError:
-            # Use sudo to write if permission denied
-            with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
-                tmp.write(content_str)
-                tmp_path = tmp.name
-            
-            # Use sudo to copy the temp file to /etc/hosts
-            result = subprocess.run(['sudo', 'cp', tmp_path, str(self.hosts_file)], 
-                                  capture_output=True, text=True)
-            os.unlink(tmp_path)
-            
-            if result.returncode != 0:
-                raise PermissionError(f"Failed to write /etc/hosts: {result.stderr}")
+        # Write to temp file then use sudo to copy
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+            tmp.write(content_str)
+            tmp_path = tmp.name
+        
+        # Use sudo to copy the temp file to /etc/hosts
+        result = subprocess.run(['sudo', 'cp', tmp_path, str(self.hosts_file)], 
+                              capture_output=True, text=True)
+        os.unlink(tmp_path)
+        
+        if result.returncode != 0:
+            raise PermissionError(f"Failed to write /etc/hosts: {result.stderr}")
     
     def add_container(self, container_name: str, ip: Optional[str] = None) -> str:
         """Add or update a container entry in /etc/hosts

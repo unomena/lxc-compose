@@ -848,7 +848,7 @@ def up(config_file, detach, build, force_recreate):
         # Check if container exists
         result = subprocess.run(
             ['sudo', 'lxc-info', '-n', name],
-            capture_output=True, stderr=subprocess.DEVNULL
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
         )
         
         container_exists = result.returncode == 0
@@ -1151,7 +1151,7 @@ def ps(config_file):
             # Get container info
             result = subprocess.run(
                 ['sudo', 'lxc-info', '-n', name],
-                capture_output=True, text=True, stderr=subprocess.DEVNULL
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
             )
             
             if result.returncode == 0:
@@ -1159,7 +1159,7 @@ def ps(config_file):
                 # Try to get IP
                 ip_result = subprocess.run(
                     ['sudo', 'lxc-info', '-n', name, '-iH'],
-                    capture_output=True, text=True, stderr=subprocess.DEVNULL
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
                 )
                 ip = ip_result.stdout.strip() if ip_result.returncode == 0 else "N/A"
             else:

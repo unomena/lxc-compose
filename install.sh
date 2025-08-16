@@ -274,12 +274,13 @@ create_directories() {
 install_command() {
     info "Installing lxc-compose command..."
     
-    # Make CLI executable
+    # Make scripts executable
     chmod +x "$INSTALL_DIR/srv/lxc-compose/cli/lxc_compose.py"
+    chmod +x "$INSTALL_DIR/srv/lxc-compose/cli/lxc-compose-wrapper.sh"
     chmod +x "$INSTALL_DIR/wizard.sh"
     
-    # Create symlink
-    ln -sf "$INSTALL_DIR/srv/lxc-compose/cli/lxc_compose.py" /usr/local/bin/lxc-compose
+    # Create symlink to wrapper script
+    ln -sf "$INSTALL_DIR/srv/lxc-compose/cli/lxc-compose-wrapper.sh" /usr/local/bin/lxc-compose
     
     # Install doctor script if present
     if [[ -f "$INSTALL_DIR/srv/lxc-compose/cli/doctor.py" ]]; then
