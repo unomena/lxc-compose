@@ -196,7 +196,7 @@ class HostsManager:
         if result.returncode != 0:
             raise PermissionError(f"Failed to write /etc/hosts: {result.stderr}")
     
-    def add_container(self, container_name: str, ip: Optional[str] = None) -> str:
+    def add_container(self, container_name: str, ip: Optional[str] = None, quiet: bool = False) -> str:
         """Add or update a container entry in /etc/hosts
         
         NO ALIASES ALLOWED - only exact container names for clarity
@@ -239,7 +239,8 @@ class HostsManager:
         # Write back
         self.write_hosts(before, managed, after)
         
-        click.echo(f"✓ Added hosts entry: {entry}")
+        if not quiet:
+            click.echo(f"✓ Added hosts entry: {entry}")
         return ip
     
     def check_name_conflict(self, container_name: str) -> bool:
@@ -252,7 +253,7 @@ class HostsManager:
                 return True
         return False
     
-    def remove_container(self, container_name: str) -> bool:
+    def remove_container(self, container_name: str, quiet: bool = False) -> bool:
         """Remove a container entry from /etc/hosts"""
         # Read current hosts file
         before, managed, after = self.read_hosts()
@@ -269,12 +270,13 @@ class HostsManager:
             # Release IP allocation
             self.ip_allocator.release_ip(container_name)
             
-            click.echo(f"✓ Removed hosts entry for: {container_name}")
+            if not quiet:
+                click.echo(f"✓ Removed hosts entry for: {container_name}")
             return True
         
         return False
     
-    def update_container(self, container_name: str, new_ip: str = None) -> bool:
+    def update_container(self, container_name: str, new_ip: str = None, quiet: bool = False) -> bool:
         """Update a container's hosts entry"""
         # Simply re-add with new info (it will replace existing)
         ip = new_ip or self.ip_allocator.get_ip(container_name)
@@ -299,7 +301,8 @@ class HostsManager:
             # Write back
             self.write_hosts(before, managed, after)
             
-            click.echo(f"✓ Updated hosts entry: {entry}")
+            if not quiet:
+                click.echo(f"✓ Updated hosts entry: {entry}")
             return True
         return False
     
@@ -352,6 +355,72 @@ class HostsManager:
             click.echo("✓ Restored /etc/hosts from backup")
         else:
             click.echo("✗ No backup file found", err=True)
+    
+    def sync_with_reality(self, verbose=False):
+        """Sync /etc/hosts with actual running containers
+        
+        This ensures /etc/hosts always reflects reality:
+        - Removes entries for non-existent containers
+        - Adds entries for existing containers not in hosts
+        - Updates IPs if they've changed
+        """
+        # Get actual containers and their IPs
+        result = subprocess.run(['sudo', 'lxc-ls', '-f'], capture_output=True, text=True)
+        if result.returncode != 0:
+            return
+        
+        actual_containers = {}
+        lines = result.stdout.strip().split('\n')
+        
+        # Parse lxc-ls output (skip header)
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) >= 5:  # NAME STATE AUTOSTART GROUPS IPV4 ...
+                name = parts[0]
+                state = parts[1]
+                if state == 'RUNNING' and len(parts) >= 5:
+                    # Extract IPv4 addresses (may be comma-separated)
+                    ips = parts[4].split(',')
+                    # Use the first IP that matches our subnet
+                    for ip in ips:
+                        ip = ip.strip()
+                        if ip.startswith('10.0.3.'):
+                            actual_containers[name] = ip
+                            break
+        
+        # Get current hosts entries
+        entries = self.list_entries()
+        hosts_containers = {entry['container']: entry['ip'] for entry in entries}
+        
+        # Remove entries for non-existent containers
+        changes_made = False
+        for container_name in list(hosts_containers.keys()):
+            if container_name not in actual_containers:
+                if verbose:
+                    click.echo(f"Removing orphaned entry: {container_name}")
+                # Temporarily suppress output
+                self.remove_container(container_name, quiet=True)
+                changes_made = True
+        
+        # Add/update entries for existing containers
+        for container_name, container_ip in actual_containers.items():
+            if container_name not in hosts_containers:
+                # Add new entry
+                if verbose:
+                    click.echo(f"Adding missing entry: {container_name} -> {container_ip}")
+                self.add_container(container_name, container_ip, quiet=True)
+                changes_made = True
+            elif hosts_containers[container_name] != container_ip:
+                # Update changed IP
+                if verbose:
+                    click.echo(f"Updating IP for {container_name}: {hosts_containers[container_name]} -> {container_ip}")
+                self.update_container(container_name, container_ip, quiet=True)
+                changes_made = True
+        
+        if verbose and changes_made:
+            click.echo("✓ Hosts file synchronized with reality")
+        elif verbose:
+            click.echo("✓ Hosts file already in sync")
 
 
 if __name__ == "__main__":

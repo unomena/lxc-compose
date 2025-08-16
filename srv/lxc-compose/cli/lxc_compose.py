@@ -164,6 +164,14 @@ def list_containers(running, ports):
       lxc-compose list --running # Show only running containers
       lxc-compose list --ports   # Show containers with port forwarding
     """
+    # Sync hosts with reality first
+    try:
+        from hosts_manager import HostsManager
+        hosts_manager = HostsManager()
+        hosts_manager.sync_with_reality()
+    except:
+        pass
+    
     if running:
         subprocess.run(['sudo', 'lxc-ls', '--running'])
     else:
@@ -860,6 +868,9 @@ def up(config_file, detach, build, force_recreate):
         from hosts_manager import HostsManager, IPAllocator
         hosts_manager = HostsManager()
         ip_allocator = IPAllocator()
+        
+        # Sync hosts with reality before starting
+        hosts_manager.sync_with_reality()
     except ImportError:
         click.echo("Warning: hosts_manager not available, using static IPs", err=True)
         hosts_manager = None
@@ -1144,6 +1155,9 @@ def down(config_file, volumes, remove_orphans):
     try:
         from hosts_manager import HostsManager
         hosts_manager = HostsManager()
+        
+        # Sync hosts with reality before processing
+        hosts_manager.sync_with_reality()
     except ImportError:
         hosts_manager = None
     
@@ -1176,6 +1190,14 @@ def ps(config_file):
       lxc-compose ps                    # Show containers from lxc-compose.yml
       lxc-compose ps -f custom.yml      # Use custom config file
     """
+    # Sync hosts with reality first
+    try:
+        from hosts_manager import HostsManager
+        hosts_manager = HostsManager()
+        hosts_manager.sync_with_reality()
+    except:
+        pass
+    
     # Check if config file exists
     config_path = Path(config_file)
     if not config_path.is_absolute():
