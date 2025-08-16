@@ -81,8 +81,14 @@ fi
 if ! sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
     info "Sample datastore container not found. Creating it..."
     
-    # Use lxc-create for classic LXC
-    sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy
+    # Use lxc-create for classic LXC (will fail if already exists, but that's OK)
+    if ! sudo lxc-create -n "$DATASTORE_CONTAINER" -t ubuntu -- -r jammy 2>/dev/null; then
+        warning "Container creation failed (may already exist)"
+        # Check again if it exists now
+        if ! sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
+            error "Failed to create datastore container"
+        fi
+    fi
     
     # Configure with static IP
     sudo bash -c "cat > /var/lib/lxc/$DATASTORE_CONTAINER/config" <<EOF
@@ -133,8 +139,14 @@ fi
 if ! sudo lxc-ls | grep -q "^${APP_CONTAINER}$"; then
     warning "App container '$APP_CONTAINER' not found. Creating it..."
     
-    # Use lxc-create for classic LXC
-    sudo lxc-create -n "$APP_CONTAINER" -t ubuntu -- -r jammy
+    # Use lxc-create for classic LXC (will fail if already exists, but that's OK)
+    if ! sudo lxc-create -n "$APP_CONTAINER" -t ubuntu -- -r jammy 2>/dev/null; then
+        warning "Container creation failed (may already exist)"
+        # Check again if it exists now
+        if ! sudo lxc-ls | grep -q "^${APP_CONTAINER}$"; then
+            error "Failed to create app container"
+        fi
+    fi
     
     # Configure with static IP
     sudo bash -c "cat > /var/lib/lxc/$APP_CONTAINER/config" <<EOF
@@ -187,7 +199,6 @@ sudo lxc-attach -n "$APP_CONTAINER" -- bash -c "
         python3 python3-pip python3-venv python3-dev \
         build-essential libpq-dev nginx supervisor git redis-tools postgresql-client
 "
-fi
 
 # Create application directory
 log "Creating application directory..."

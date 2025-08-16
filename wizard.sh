@@ -1245,26 +1245,20 @@ deploy_django_sample() {
     
     # Step 1: Handle sample-datastore container
     if sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
-        warning "Sample datastore container '$DATASTORE_CONTAINER' already exists"
-        read -p "Remove and recreate it? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            info "Removing existing container..."
-            sudo lxc-stop -n "$DATASTORE_CONTAINER" 2>/dev/null || true
-            sudo lxc-destroy -n "$DATASTORE_CONTAINER"
+        info "Sample datastore container '$DATASTORE_CONTAINER' already exists"
+        
+        # Check if it's running
+        if ! sudo lxc-ls --running | grep -q "^${DATASTORE_CONTAINER}$"; then
+            log "Starting $DATASTORE_CONTAINER container..."
+            sudo lxc-start -n "$DATASTORE_CONTAINER"
+            sleep 5
         else
-            info "Using existing container"
-            # Ensure it's running
-            if ! sudo lxc-ls --running | grep -q "^${DATASTORE_CONTAINER}$"; then
-                log "Starting $DATASTORE_CONTAINER container..."
-                sudo lxc-start -n "$DATASTORE_CONTAINER"
-                sleep 5
-            fi
+            log "Container $DATASTORE_CONTAINER is already running"
         fi
-    fi
-    
-    # Create sample-datastore if it doesn't exist
-    if ! sudo lxc-ls | grep -q "^${DATASTORE_CONTAINER}$"; then
+        
+        # Skip creation and configuration since it exists
+    else
+        # Create sample-datastore only if it doesn't exist
         log "Creating sample datastore container..."
         
         # Use lxc-create (classic LXC)
@@ -1431,7 +1425,7 @@ EOF
         
         # Create simple Django app
         log "Creating Django application..."
-        sudo lxc exec "$DJANGO_CONTAINER" -- bash -c "
+        sudo lxc-attach -n "$DJANGO_CONTAINER" -- bash -c "
             # Create app directory
             mkdir -p /app
             cd /app
