@@ -61,13 +61,14 @@ display_menu() {
     echo ""
     echo -e "  ${CYAN}5)${NC} List Containers"
     echo -e "  ${CYAN}6)${NC} Container Management ${YELLOW}▶${NC}"
+    echo -e "  ${CYAN}7)${NC} Port Forwarding ${YELLOW}▶${NC}"
     echo ""
-    echo -e "  ${CYAN}7)${NC} System Update"
-    echo -e "  ${CYAN}8)${NC} System Diagnostics (Doctor)"
-    echo -e "  ${CYAN}9)${NC} Recovery Tools ${YELLOW}▶${NC}"
+    echo -e "  ${CYAN}8)${NC} System Update"
+    echo -e "  ${CYAN}9)${NC} System Diagnostics (Doctor)"
+    echo -e "  ${CYAN}10)${NC} Recovery Tools ${YELLOW}▶${NC}"
     echo ""
-    echo -e "  ${CYAN}10)${NC} Web Interface ${YELLOW}▶${NC}"
-    echo -e "  ${CYAN}11)${NC} Documentation"
+    echo -e "  ${CYAN}11)${NC} Web Interface ${YELLOW}▶${NC}"
+    echo -e "  ${CYAN}12)${NC} Documentation"
     echo ""
     echo -e "  ${CYAN}0)${NC} Exit"
     echo ""
@@ -125,6 +126,227 @@ container_management_menu() {
         0) return ;;
         *) warning "Invalid option"; sleep 2; container_management_menu ;;
     esac
+}
+
+# Port forwarding submenu
+port_forwarding_menu() {
+    clear
+    display_header
+    echo -e "\n${BOLD}Port Forwarding Management${NC}\n"
+    
+    # Show current port forwards
+    echo -e "${CYAN}Current Port Forwards:${NC}"
+    echo "----------------------------------------"
+    
+    # Use the lxc-compose port list command
+    if command -v lxc-compose >/dev/null 2>&1; then
+        lxc-compose port list || echo "No port forwards configured"
+    else
+        echo "LXC Compose CLI not available"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}Port Forwarding Options:${NC}"
+    echo "----------------------------------------"
+    echo -e "  ${CYAN}1)${NC} Add Port Forward"
+    echo -e "  ${CYAN}2)${NC} Remove Port Forward"
+    echo -e "  ${CYAN}3)${NC} Show Port Forwards for Container"
+    echo -e "  ${CYAN}4)${NC} Update Container IPs"
+    echo -e "  ${CYAN}5)${NC} Apply All Rules (after reboot)"
+    echo -e "  ${CYAN}6)${NC} Clear All Port Forwards"
+    echo ""
+    echo -e "  ${CYAN}7)${NC} Quick Setup: Django App Ports"
+    echo -e "  ${CYAN}8)${NC} Quick Setup: Database Ports"
+    echo ""
+    echo -e "  ${CYAN}R)${NC} Refresh List"
+    echo -e "  ${CYAN}0)${NC} Back to Main Menu"
+    echo ""
+    
+    read -p "Select option: " choice
+    
+    case $choice in
+        1) add_port_forward; port_forwarding_menu ;;
+        2) remove_port_forward; port_forwarding_menu ;;
+        3) show_container_ports; port_forwarding_menu ;;
+        4) update_container_ips; port_forwarding_menu ;;
+        5) apply_all_port_rules; port_forwarding_menu ;;
+        6) clear_all_port_forwards; port_forwarding_menu ;;
+        7) setup_django_ports; port_forwarding_menu ;;
+        8) setup_database_ports; port_forwarding_menu ;;
+        [Rr]) port_forwarding_menu ;;  # Refresh
+        0) return ;;
+        *) warning "Invalid option"; sleep 2; port_forwarding_menu ;;
+    esac
+}
+
+# Port forwarding functions
+add_port_forward() {
+    echo -e "\n${CYAN}Add Port Forward${NC}"
+    echo "----------------------------------------"
+    
+    # Show available containers
+    echo -e "${YELLOW}Available containers:${NC}"
+    sudo lxc-ls -f | grep -E "NAME|RUNNING" || echo "No containers found"
+    echo ""
+    
+    read -p "Enter host port: " host_port
+    if [[ -z "$host_port" ]]; then
+        warning "Host port is required"
+        sleep 2
+        return
+    fi
+    
+    read -p "Enter container name: " container
+    if [[ -z "$container" ]]; then
+        warning "Container name is required"
+        sleep 2
+        return
+    fi
+    
+    read -p "Enter container port (default: same as host port): " container_port
+    container_port=${container_port:-$host_port}
+    
+    read -p "Enter description (optional): " description
+    
+    # Execute the command
+    if [[ -n "$description" ]]; then
+        sudo lxc-compose port add "$host_port" "$container" "$container_port" -d "$description"
+    else
+        sudo lxc-compose port add "$host_port" "$container" "$container_port"
+    fi
+    
+    log "Port forward added successfully"
+    sleep 2
+}
+
+remove_port_forward() {
+    echo -e "\n${CYAN}Remove Port Forward${NC}"
+    echo "----------------------------------------"
+    
+    # Show current forwards
+    lxc-compose port list
+    echo ""
+    
+    read -p "Enter host port to remove: " host_port
+    if [[ -z "$host_port" ]]; then
+        warning "Host port is required"
+        sleep 2
+        return
+    fi
+    
+    read -p "Protocol (tcp/udp) [default: tcp]: " protocol
+    protocol=${protocol:-tcp}
+    
+    sudo lxc-compose port remove "$host_port" -p "$protocol"
+    
+    log "Port forward removed"
+    sleep 2
+}
+
+show_container_ports() {
+    echo -e "\n${CYAN}Show Container Port Forwards${NC}"
+    echo "----------------------------------------"
+    
+    # Show available containers
+    echo -e "${YELLOW}Available containers:${NC}"
+    sudo lxc-ls | xargs echo || echo "No containers found"
+    echo ""
+    
+    read -p "Enter container name: " container
+    if [[ -z "$container" ]]; then
+        return
+    fi
+    
+    lxc-compose port show "$container"
+    echo ""
+    read -p "Press Enter to continue..."
+}
+
+update_container_ips() {
+    echo -e "\n${CYAN}Update Container IPs${NC}"
+    echo "----------------------------------------"
+    
+    read -p "Enter container name (or press Enter for all): " container
+    
+    if [[ -z "$container" ]]; then
+        info "Updating all container IPs..."
+        sudo lxc-compose port apply
+    else
+        info "Updating IPs for container: $container"
+        sudo lxc-compose port update "$container"
+    fi
+    
+    log "Container IPs updated"
+    sleep 2
+}
+
+apply_all_port_rules() {
+    info "Applying all port forwarding rules..."
+    sudo lxc-compose port apply
+    log "All port forwarding rules applied"
+    sleep 2
+}
+
+clear_all_port_forwards() {
+    warning "This will remove ALL port forwarding rules!"
+    read -p "Are you sure? (y/N): " -n 1 -r
+    echo
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        sudo lxc-compose port clear
+        log "All port forwards cleared"
+    else
+        info "Cancelled"
+    fi
+    sleep 2
+}
+
+setup_django_ports() {
+    echo -e "\n${CYAN}Quick Setup: Django App Ports${NC}"
+    echo "----------------------------------------"
+    
+    read -p "Enter Django container name [default: app-1]: " container
+    container=${container:-app-1}
+    
+    info "Setting up standard Django ports for $container..."
+    
+    # Nginx/HTTP
+    sudo lxc-compose port add 8080 "$container" 80 -d "Nginx HTTP" || true
+    # Django dev server
+    sudo lxc-compose port add 8000 "$container" 8000 -d "Django Dev Server" || true
+    # Alternative Django port
+    sudo lxc-compose port add 8001 "$container" 8001 -d "Django Alt Port" || true
+    
+    log "Django ports configured for $container"
+    echo ""
+    echo "Access your Django app at:"
+    echo "  - http://<host-ip>:8080 (Nginx)"
+    echo "  - http://<host-ip>:8000 (Django dev server)"
+    
+    sleep 3
+}
+
+setup_database_ports() {
+    echo -e "\n${CYAN}Quick Setup: Database Ports${NC}"
+    echo "----------------------------------------"
+    
+    read -p "Enter database container name [default: datastore]: " container
+    container=${container:-datastore}
+    
+    info "Setting up database ports for $container..."
+    
+    # PostgreSQL
+    sudo lxc-compose port add 5432 "$container" 5432 -d "PostgreSQL" || true
+    # Redis
+    sudo lxc-compose port add 6379 "$container" 6379 -d "Redis" || true
+    
+    log "Database ports configured for $container"
+    echo ""
+    echo "Access your databases at:"
+    echo "  - PostgreSQL: <host-ip>:5432"
+    echo "  - Redis: <host-ip>:6379"
+    
+    sleep 3
 }
 
 # Recovery tools submenu
@@ -1722,11 +1944,12 @@ main() {
             4) deploy_django_sample ;;
             5) list_containers ;;
             6) container_management_menu ;;
-            7) system_update ;;
-            8) system_diagnostics ;;
-            9) recovery_menu ;;
-            10) web_interface_menu ;;
-            11) show_documentation ;;
+            7) port_forwarding_menu ;;
+            8) system_update ;;
+            9) system_diagnostics ;;
+            10) recovery_menu ;;
+            11) web_interface_menu ;;
+            12) show_documentation ;;
             0) 
                 echo -e "\n${GREEN}Thank you for using LXC Compose!${NC}\n"
                 exit 0

@@ -253,8 +253,136 @@ def stop_all():
 
 @cli.command()
 def ports():
-    """Show listening ports"""
+    """Show listening ports (deprecated - use 'port list' instead)"""
     subprocess.run(['sudo', 'netstat', '-tulpn'])
+
+@cli.group()
+def port():
+    """Manage port forwarding between host and containers"""
+    pass
+
+@port.command('list')
+def port_list():
+    """List all port forwarding rules"""
+    from port_manager import PortManager, format_port_table
+    
+    manager = PortManager()
+    forwards = manager.list_forwards()
+    
+    if forwards:
+        click.echo("\nPort Forwarding Rules:")
+        click.echo("=" * 80)
+        click.echo(format_port_table(forwards))
+        click.echo()
+        
+        # Show access info
+        interface, host_ip = manager.get_host_interface()
+        click.echo(f"Access services from host at: {host_ip}")
+    else:
+        click.echo("No port forwarding rules configured")
+        click.echo("\nAdd a rule with: lxc-compose port add <host-port> <container> <container-port>")
+
+@port.command('add')
+@click.argument('host_port', type=int)
+@click.argument('container')
+@click.argument('container_port', type=int)
+@click.option('--protocol', '-p', default='tcp', type=click.Choice(['tcp', 'udp']), help='Protocol (tcp or udp)')
+@click.option('--description', '-d', default='', help='Description for this forward')
+def port_add(host_port, container, container_port, protocol, description):
+    """Add a port forwarding rule
+    
+    \b
+    Examples:
+      lxc-compose port add 8080 app-1 80              # Forward 8080 to nginx
+      lxc-compose port add 8000 django-app 8000       # Django dev server
+      lxc-compose port add 5432 datastore 5432        # PostgreSQL
+      lxc-compose port add 6379 datastore 6379        # Redis
+      lxc-compose port add 3000 app-1 3000 -p udp     # UDP forward
+    """
+    from port_manager import PortManager
+    
+    manager = PortManager()
+    if manager.add_forward(host_port, container, container_port, protocol, description):
+        manager.save_iptables_rules()
+        
+        interface, host_ip = manager.get_host_interface()
+        click.echo(f"\nAccess at: {host_ip}:{host_port}")
+
+@port.command('remove')
+@click.argument('host_port', type=int)
+@click.option('--protocol', '-p', default='tcp', type=click.Choice(['tcp', 'udp']), help='Protocol (tcp or udp)')
+def port_remove(host_port, protocol):
+    """Remove a port forwarding rule
+    
+    \b
+    Examples:
+      lxc-compose port remove 8080        # Remove TCP forward on port 8080
+      lxc-compose port remove 3000 -p udp  # Remove UDP forward on port 3000
+    """
+    from port_manager import PortManager
+    
+    manager = PortManager()
+    if manager.remove_forward(host_port, protocol):
+        manager.save_iptables_rules()
+
+@port.command('clear')
+@click.confirmation_option(prompt='Remove all port forwarding rules?')
+def port_clear():
+    """Remove all port forwarding rules"""
+    from port_manager import PortManager
+    
+    manager = PortManager()
+    manager.clear_all_rules()
+    manager.save_iptables_rules()
+
+@port.command('apply')
+def port_apply():
+    """Apply all configured port forwarding rules (useful after reboot)"""
+    from port_manager import PortManager
+    
+    manager = PortManager()
+    if manager.apply_all_rules():
+        click.echo("✓ All port forwarding rules applied")
+        manager.save_iptables_rules()
+    else:
+        click.echo("Some rules could not be applied. Check container status.", err=True)
+
+@port.command('update')
+@click.argument('container')
+def port_update(container):
+    """Update IP address for a container's forwarding rules
+    
+    \b
+    Use this after a container restart if its IP changed:
+      lxc-compose port update app-1
+      lxc-compose port update datastore
+    """
+    from port_manager import PortManager
+    
+    manager = PortManager()
+    if manager.update_container_ip(container):
+        manager.save_iptables_rules()
+    else:
+        click.echo(f"No rules found for container '{container}' or container not running")
+
+@port.command('show')
+@click.argument('container', required=False)
+def port_show(container):
+    """Show port forwarding rules for a specific container"""
+    from port_manager import PortManager, format_port_table
+    
+    manager = PortManager()
+    forwards = manager.list_forwards()
+    
+    if container:
+        forwards = [f for f in forwards if f["container_name"] == container]
+        if not forwards:
+            click.echo(f"No port forwarding rules for container '{container}'")
+            return
+    
+    click.echo("\nPort Forwarding Rules:")
+    click.echo("=" * 80)
+    click.echo(format_port_table(forwards))
 
 @cli.command()
 @click.argument('container')
@@ -664,8 +792,20 @@ REDIS OPERATIONS
 
 MONITORING
 ----------
-  lxc-compose ports               # Show all listening ports
+  lxc-compose ports               # Show all listening ports (deprecated)
   lxc-compose status              # System overview with network & disk
+
+PORT FORWARDING
+---------------
+  lxc-compose port list           # List all port forwarding rules
+  lxc-compose port add 8080 app-1 80        # Forward host:8080 to app-1:80
+  lxc-compose port add 5432 datastore 5432  # Forward PostgreSQL
+  lxc-compose port add 6379 datastore 6379  # Forward Redis
+  lxc-compose port remove 8080              # Remove forward on port 8080
+  lxc-compose port show app-1               # Show forwards for a container
+  lxc-compose port update app-1             # Update IPs after container restart
+  lxc-compose port apply                    # Apply all rules (after reboot)
+  lxc-compose port clear                    # Remove all forwarding rules
 
 CONFIGURATION FILE OPERATIONS
 ------------------------------
