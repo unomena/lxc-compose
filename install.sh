@@ -66,9 +66,21 @@ install_dependencies() {
     # Update package list
     apt-get update -qq
     
-    # Install required packages
+    # Determine which LXD package to install based on Ubuntu version
+    . /etc/os-release
+    if [[ "$VERSION_ID" == "24.04" ]]; then
+        # Ubuntu 24.04 uses snap for LXD
+        info "Installing LXD via snap for Ubuntu 24.04..."
+        snap install lxd || true
+        LXD_CMD="lxd"
+    else
+        # Ubuntu 22.04 and earlier use apt package
+        LXD_CMD="lxd"
+        apt-get install -y lxd || true
+    fi
+    
+    # Install other required packages
     apt-get install -y \
-        lxd \
         lxc \
         python3 \
         python3-pip \
@@ -79,12 +91,22 @@ install_dependencies() {
         wget
     
     # Initialize LXD if not already initialized
-    if ! lxd waitready --timeout=5 2>/dev/null; then
-        info "Initializing LXD..."
-        lxd init --auto \
-            --network-address=[::]  \
-            --network-port=8443 \
-            --storage-backend=dir
+    if command -v lxd >/dev/null 2>&1; then
+        if ! lxd waitready --timeout=5 2>/dev/null; then
+            info "Initializing LXD..."
+            lxd init --auto \
+                --network-address=[::]  \
+                --network-port=8443 \
+                --storage-backend=dir
+        fi
+    elif command -v /snap/bin/lxd >/dev/null 2>&1; then
+        if ! /snap/bin/lxd waitready --timeout=5 2>/dev/null; then
+            info "Initializing LXD..."
+            /snap/bin/lxd init --auto \
+                --network-address=[::]  \
+                --network-port=8443 \
+                --storage-backend=dir
+        fi
     fi
     
     # Ensure Python packages
