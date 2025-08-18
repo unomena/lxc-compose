@@ -373,7 +373,7 @@ WantedBy=multi-user.target
                     
                     # Get IP address
                     ip = "N/A"
-                    if info.get('state') and info['state'].get('network', {}).get('eth0'):
+                    if info.get('state') and info['state'].get('network') and info['state']['network'].get('eth0'):
                         for addr in info['state']['network']['eth0']['addresses']:
                             if addr['family'] == 'inet' and not addr['address'].startswith('fe80'):
                                 ip = addr['address']
