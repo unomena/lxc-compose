@@ -87,7 +87,12 @@ containers:
 ### Configuration Options
 
 - **name**: Container name (required)
-- **image**: Base image (default: ubuntu-minimal:22.04, ~100MB vs ~400MB for full)
+- **image**: Base image options:
+  - `ubuntu-minimal:22.04` (default, ~100MB) - Minimal Ubuntu, has apt
+  - `ubuntu:22.04` (~400MB) - Full Ubuntu server
+  - `alpine:3.18` (~8MB) - Ultra-minimal, uses apk package manager
+  - `debian:12` (~120MB) - Debian stable
+  - `rockylinux:9` (~120MB) - RHEL-compatible
 - **ip**: Static IP address (optional)
 - **ports**: Port mappings as "host:container"
 - **mounts**: Directory mappings
@@ -113,6 +118,25 @@ The installer will:
 - Setup networking and port forwarding
 - Install the `lxc-compose` command
 - Create sample configuration
+
+## Alpine Linux Example
+
+For ultra-minimal containers (~8MB), use Alpine Linux:
+
+```yaml
+containers:
+  - name: alpine-web
+    image: alpine:3.18
+    ports:
+      - "8080:80"
+    services:
+      - name: web-server
+        command: |
+          apk add --no-cache python3
+          cd /tmp && python3 -m http.server 80
+```
+
+Note: Alpine uses `apk` instead of `apt` for package management.
 
 ## Architecture
 

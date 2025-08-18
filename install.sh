@@ -203,12 +203,19 @@ download_base_image() {
         FALLBACK="ubuntu-minimal:20.04"
     fi
     
-    # Download the minimal image (much smaller than full server)
+    # Download the minimal images (much smaller than full server)
     if command -v lxc >/dev/null 2>&1; then
-        info "  Downloading minimal Ubuntu image (smaller size, faster download)..."
+        info "  Downloading minimal images (smaller size, faster download)..."
+        
+        # Download Ubuntu minimal
         lxc image copy images:$IMAGE local: --alias $IMAGE 2>/dev/null || \
         lxc image copy images:$FALLBACK local: --alias $FALLBACK 2>/dev/null || \
-        info "  Image pre-download failed, will download on first use"
+        info "  Ubuntu minimal download failed, will download on first use"
+        
+        # Also download Alpine for ultra-minimal containers (~8MB)
+        info "  Downloading Alpine Linux (ultra-minimal, ~8MB)..."
+        lxc image copy images:alpine/3.18 local: --alias alpine:3.18 2>/dev/null || \
+        info "  Alpine download failed, will download on first use"
     fi
     
     log "Base image ready"
@@ -223,13 +230,12 @@ create_sample_config() {
 # Place this file as lxc-compose.yml in your project directory
 
 containers:
+  # Example 1: Ubuntu minimal container (~100MB)
   - name: app-server
-    # Uses ubuntu-minimal by default (smaller, faster)
-    # Options: ubuntu-minimal:22.04, ubuntu:22.04 (full), alpine:3.18 (tiny)
-    image: ubuntu-minimal:22.04
+    image: ubuntu-minimal:22.04  # Options: ubuntu-minimal:22.04 (~100MB), ubuntu:22.04 (~400MB)
     ip: 10.0.3.10
     ports:
-      - "8080:80"    # host:container
+      - "8080:80"
       - "8443:443"
     mounts:
       - source: ./app
@@ -237,7 +243,20 @@ containers:
     services:
       - name: nginx
         command: apt-get update && apt-get install -y nginx && nginx -g 'daemon off;'
+  
+  # Example 2: Alpine Linux container (ultra-minimal ~8MB)
+  - name: web-alpine
+    image: alpine:3.18  # Ultra-lightweight, uses apk instead of apt
+    ip: 10.0.3.12
+    ports:
+      - "3000:3000"
+    services:
+      - name: node-app
+        command: |
+          apk add --no-cache nodejs npm
+          cd /app && npm start
         
+  # Example 3: Database with Ubuntu minimal
   - name: database
     image: ubuntu-minimal:22.04
     ip: 10.0.3.11
