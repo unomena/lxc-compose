@@ -12,21 +12,44 @@ set -euo pipefail
 # Color codes
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║              LXC Compose Quick Installer                      ║${NC}"
-echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
-echo ""
+echo -e "${BOLD}"
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║              LXC Compose Quick Installer                      ║"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
 
-# Download and run the install script
-echo -e "${BLUE}Downloading installation script...${NC}"
-curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/install.sh -o /tmp/lxc-compose-install.sh
+# Create temp directory
+TEMP_DIR=$(mktemp -d)
+cd "$TEMP_DIR"
 
-echo -e "${BLUE}Running installation...${NC}"
-sudo bash /tmp/lxc-compose-install.sh
+# Download the repository
+echo -e "${BLUE}→ Downloading LXC Compose...${NC}"
+curl -fsSL https://github.com/unomena/lxc-compose/archive/main.tar.gz -o lxc-compose.tar.gz
+tar -xzf lxc-compose.tar.gz
+cd lxc-compose-main
+
+# Run the install script
+echo -e "${BLUE}→ Running installation...${NC}"
+sudo bash install.sh
 
 # Cleanup
-rm -f /tmp/lxc-compose-install.sh
+cd /
+rm -rf "$TEMP_DIR"
 
-echo -e "${GREEN}Installation complete! Run 'lxc-compose wizard' to get started.${NC}"
+echo ""
+echo -e "${GREEN}${BOLD}✓ Installation complete!${NC}"
+echo ""
+echo "Quick start:"
+echo "  1. Create a lxc-compose.yml file in your project"
+echo "  2. Run: lxc-compose up"
+echo ""
+echo "Example config saved at: /srv/lxc-compose/lxc-compose.yml.example"
+echo ""
+echo "Available commands:"
+echo "  lxc-compose up       - Create and start containers"
+echo "  lxc-compose down     - Stop containers"
+echo "  lxc-compose list     - List containers and their status"
+echo "  lxc-compose destroy  - Stop and remove containers"

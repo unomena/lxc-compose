@@ -1,6 +1,6 @@
 # LXC Compose
 
-Docker Compose-like orchestration for Linux Containers (LXC).
+Simple Docker Compose-like orchestration for Linux Containers (LXC).
 
 ## Quick Start
 
@@ -8,61 +8,119 @@ Docker Compose-like orchestration for Linux Containers (LXC).
 # Install
 curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
 
-# Run setup wizard
-lxc-compose wizard
+# Create a lxc-compose.yml file
+cat > lxc-compose.yml << EOF
+containers:
+  - name: web
+    image: ubuntu:22.04
+    ports:
+      - "8080:80"
+    mounts:
+      - source: ./app
+        target: /var/www
+EOF
 
-# Or use CLI directly
+# Start containers
 lxc-compose up
-lxc-compose down
-lxc-compose logs
+
+# List containers
+lxc-compose list
 ```
 
 ## Features
 
-- 🚀 Simple container orchestration
-- 🔧 Interactive setup wizard
-- 🌐 Web management interface
-- 📦 Pre-configured templates
-- 🔄 Automatic updates
-- 🏥 Built-in diagnostics and recovery
-
-## Architecture
-
-```
-/srv/
-├── lxc-compose/         # System files
-├── apps/               # Application containers
-├── shared/             # Shared resources
-└── logs/              # Centralized logging
-```
+- 🚀 Simple YAML-based configuration
+- 📦 Container lifecycle management
+- 🔌 Port forwarding support
+- 📁 Directory mounting
+- 🔧 Service management
+- 📊 Status monitoring with port mappings
 
 ## Commands
 
-### Wizard (Primary Interface)
-
 ```bash
-lxc-compose wizard              # Interactive menu
-lxc-compose wizard setup-db     # Setup database
-lxc-compose wizard setup-app    # Setup application
-lxc-compose wizard update       # Update system
-lxc-compose wizard doctor       # Run diagnostics
-lxc-compose wizard recover      # Recovery tools
+lxc-compose up       # Create and start containers
+lxc-compose down     # Stop containers
+lxc-compose start    # Start stopped containers
+lxc-compose stop     # Stop running containers
+lxc-compose list     # List containers with status and ports
+lxc-compose status   # Alias for list
+lxc-compose destroy  # Stop and remove containers
 ```
 
-### CLI Commands
+All commands support `-f` flag to specify a custom config file (default: `lxc-compose.yml`).
 
-```bash
-lxc-compose up                  # Start containers
-lxc-compose down                # Stop containers
-lxc-compose restart <name>      # Restart container
-lxc-compose logs <name>         # View logs
-lxc-compose exec <name> <cmd>   # Execute command
-lxc-compose list                # List containers
+## Configuration
+
+Create a `lxc-compose.yml` file in your project:
+
+```yaml
+containers:
+  - name: app-server
+    image: ubuntu:22.04
+    ip: 10.0.3.10           # Optional static IP
+    ports:
+      - "8080:80"           # host:container
+      - "8443:443"
+    mounts:
+      - source: ./app       # Host directory
+        target: /var/www    # Container directory
+    services:
+      - name: nginx
+        command: apt-get update && apt-get install -y nginx && nginx -g 'daemon off;'
+        
+  - name: database
+    image: ubuntu:22.04
+    ip: 10.0.3.11
+    ports:
+      - "5432:5432"
+    mounts:
+      - source: ./data
+        target: /var/lib/postgresql
+    services:
+      - name: postgresql
+        command: |
+          apt-get update && apt-get install -y postgresql
+          service postgresql start
 ```
 
-## Documentation
+### Configuration Options
 
-See the [docs](docs/) directory for detailed documentation.
+- **name**: Container name (required)
+- **image**: Base image (default: ubuntu:22.04)
+- **ip**: Static IP address (optional)
+- **ports**: Port mappings as "host:container"
+- **mounts**: Directory mappings
+- **services**: Services to run in the container
+
+## Requirements
+
+- Ubuntu 22.04 or 24.04 LTS
+- LXD/LXC installed
+- Python 3.8+
+- Root/sudo access for container management
+
+## Installation
+
+```bash
+# Download and run installer
+curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/install.sh -o install.sh
+sudo bash install.sh
+```
+
+The installer will:
+- Install LXD/LXC and Python dependencies
+- Setup networking and port forwarding
+- Install the `lxc-compose` command
+- Create sample configuration
+
+## Architecture
+
+LXC Compose provides a thin orchestration layer over LXC, similar to Docker Compose but for system containers. It manages:
+- Container lifecycle (create, start, stop, destroy)
+- Network configuration and port forwarding via iptables
+- Directory mounting between host and containers
+- Service installation and startup
 
 ## License
 
