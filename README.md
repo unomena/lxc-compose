@@ -39,16 +39,18 @@ lxc-compose list
 ## Commands
 
 ```bash
-lxc-compose up       # Create and start containers
-lxc-compose down     # Stop containers
-lxc-compose start    # Start stopped containers
-lxc-compose stop     # Stop running containers
-lxc-compose list     # List containers with status and ports
+lxc-compose up       # Create and start containers from config
+lxc-compose down     # Stop containers from config
+lxc-compose start    # Start stopped containers from config
+lxc-compose stop     # Stop running containers from config
+lxc-compose list     # List containers from config with status and ports
 lxc-compose status   # Alias for list
-lxc-compose destroy  # Stop and remove containers
+lxc-compose destroy  # Stop and remove containers from config
+lxc-compose destroy --all  # Destroy ALL containers on system (dangerous!)
 ```
 
 All commands support `-f` flag to specify a custom config file (default: `lxc-compose.yml`).
+Commands only affect containers defined in the config file, except `destroy --all`.
 
 ## Configuration
 

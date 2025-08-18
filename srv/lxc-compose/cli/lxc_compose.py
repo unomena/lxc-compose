@@ -404,16 +404,44 @@ def down(file):
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
-def destroy(file):
+@click.option('--all', is_flag=True, help='Destroy ALL containers on the system (dangerous!)')
+def destroy(file, all):
     """Stop and destroy containers"""
-    compose = LXCCompose(file)
-    
-    # Confirm destruction
-    click.echo(f"{YELLOW}⚠{NC} This will destroy all containers and their data!")
-    if click.confirm('Are you sure?'):
-        compose.destroy()
+    if all:
+        # Destroy all containers on the system
+        click.echo(f"{YELLOW}⚠{NC} This will destroy ALL LXC containers on the system!")
+        if click.confirm('Are you REALLY sure?'):
+            result = subprocess.run(['lxc', 'list', '--format=json'], capture_output=True, text=True)
+            if result.returncode == 0:
+                containers = json.loads(result.stdout)
+                for container in containers:
+                    name = container['name']
+                    click.echo(f"{BLUE}ℹ{NC} Destroying {name}...")
+                    subprocess.run(['lxc', 'stop', name], capture_output=True)
+                    subprocess.run(['lxc', 'delete', name], capture_output=True)
+                    click.echo(f"{GREEN}✓{NC} Destroyed {name}")
+                click.echo(f"{GREEN}✓{NC} All containers destroyed")
+            else:
+                click.echo(f"{RED}✗{NC} Failed to list containers")
+        else:
+            click.echo("Aborted.")
     else:
-        click.echo("Aborted.")
+        # Only destroy containers in the config file
+        compose = LXCCompose(file)
+        containers_to_destroy = [c['name'] for c in compose.config.get('containers', [])]
+        
+        if not containers_to_destroy:
+            click.echo(f"{YELLOW}⚠{NC} No containers defined in {file}")
+            return
+            
+        click.echo(f"{YELLOW}⚠{NC} This will destroy the following containers and their data:")
+        for name in containers_to_destroy:
+            click.echo(f"  - {name}")
+        
+        if click.confirm('Are you sure?'):
+            compose.destroy()
+        else:
+            click.echo("Aborted.")
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
