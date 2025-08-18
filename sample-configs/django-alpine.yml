@@ -1,0 +1,136 @@
+# Django with PostgreSQL and Redis - Alpine Linux Version
+# Ultra-lightweight deployment using Alpine Linux (~8MB base)
+# Note: Alpine uses musl libc, which may have compatibility issues with some Python packages
+
+containers:
+  # Database and cache server using Alpine
+  - name: django-alpine-datastore
+    image: alpine:3.18
+    ip: 10.0.3.30
+    ports:
+      - "5433:5432"  # PostgreSQL (different host port to avoid conflicts)
+      - "6380:6379"  # Redis
+    services:
+      - name: setup-services
+        command: |
+          # Install PostgreSQL and Redis
+          apk add --no-cache postgresql postgresql-client redis
+          
+          # Initialize PostgreSQL
+          mkdir -p /run/postgresql
+          chown postgres:postgres /run/postgresql
+          su postgres -c "initdb -D /var/lib/postgresql/data"
+          
+          # Configure PostgreSQL
+          echo "host all all 10.0.3.0/24 md5" >> /var/lib/postgresql/data/pg_hba.conf
+          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+          
+          # Start PostgreSQL
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          sleep 5
+          
+          # Create database and user
+          su postgres -c "createdb djangodb"
+          su postgres -c "psql -c \"CREATE USER djangouser WITH PASSWORD 'djangopass';\""
+          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE djangodb TO djangouser;\""
+          
+          # Configure and start Redis
+          sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis.conf
+          sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis.conf
+          redis-server /etc/redis.conf
+
+  # Django application server using Alpine
+  - name: django-alpine-app
+    image: alpine:3.18
+    ip: 10.0.3.31
+    ports:
+      - "8001:8000"  # Django dev server
+      - "8081:80"    # Nginx
+    mounts:
+      - source: ./django-app-alpine
+        target: /app
+    services:
+      - name: django-setup
+        command: |
+          # Install Python and dependencies
+          apk add --no-cache python3 py3-pip python3-dev \
+            gcc musl-dev linux-headers \
+            postgresql-dev postgresql-client \
+            nginx build-base libffi-dev
+          
+          # Setup Python environment
+          cd /app
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install django psycopg2 redis celery gunicorn
+          
+          # Create Django project if it doesn't exist
+          if [ ! -f manage.py ]; then
+            django-admin startproject myproject .
+            
+            # Configure settings.py
+            cat >> myproject/settings.py << 'EOF'
+          
+          # Database configuration
+          DATABASES = {
+              'default': {
+                  'ENGINE': 'django.db.backends.postgresql',
+                  'NAME': 'djangodb',
+                  'USER': 'djangouser',
+                  'PASSWORD': 'djangopass',
+                  'HOST': '10.0.3.30',
+                  'PORT': '5432',
+              }
+          }
+          
+          # Redis cache
+          CACHES = {
+              'default': {
+                  'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+                  'LOCATION': 'redis://10.0.3.30:6379',
+              }
+          }
+          
+          # Celery configuration
+          CELERY_BROKER_URL = 'redis://10.0.3.30:6379/0'
+          CELERY_RESULT_BACKEND = 'redis://10.0.3.30:6379/0'
+          
+          ALLOWED_HOSTS = ['*']
+          STATIC_ROOT = '/app/static'
+          EOF
+          fi
+          
+          # Wait for database to be ready
+          sleep 10
+          
+          # Run migrations
+          . venv/bin/activate
+          python manage.py migrate
+          python manage.py collectstatic --noinput || true
+          
+          # Configure Nginx
+          mkdir -p /run/nginx
+          cat > /etc/nginx/http.d/django.conf << 'EOF'
+          server {
+              listen 80;
+              server_name _;
+              
+              location /static/ {
+                  alias /app/static/;
+              }
+              
+              location / {
+                  proxy_pass http://127.0.0.1:8000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
+          }
+          EOF
+          rm -f /etc/nginx/http.d/default.conf
+          nginx
+          
+          # Start Django development server
+          cd /app
+          . venv/bin/activate
+          python manage.py runserver 0.0.0.0:8000

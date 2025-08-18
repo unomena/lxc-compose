@@ -1,0 +1,122 @@
+# Django with PostgreSQL and Redis - Ubuntu Minimal Version
+# Lightweight deployment using ubuntu-minimal:22.04 (~100MB base)
+
+containers:
+  # Database and cache server
+  - name: django-datastore
+    image: ubuntu-minimal:22.04
+    ip: 10.0.3.20
+    ports:
+      - "5432:5432"  # PostgreSQL
+      - "6379:6379"  # Redis
+    services:
+      - name: setup-services
+        command: |
+          apt-get update
+          apt-get install -y postgresql redis-server
+          
+          # Configure PostgreSQL
+          sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" /etc/postgresql/14/main/postgresql.conf
+          echo 'host all all 10.0.3.0/24 md5' >> /etc/postgresql/14/main/pg_hba.conf
+          service postgresql start
+          
+          # Create database and user
+          sudo -u postgres psql -c "CREATE DATABASE djangodb;"
+          sudo -u postgres psql -c "CREATE USER djangouser WITH PASSWORD 'djangopass';"
+          sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE djangodb TO djangouser;"
+          
+          # Configure Redis
+          sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf
+          sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
+          service redis-server start
+          
+          # Keep services running
+          tail -f /dev/null
+
+  # Django application server
+  - name: django-app
+    image: ubuntu-minimal:22.04
+    ip: 10.0.3.21
+    ports:
+      - "8000:8000"  # Django dev server
+      - "8080:80"    # Nginx
+    mounts:
+      - source: ./django-app
+        target: /app
+    services:
+      - name: django-setup
+        command: |
+          apt-get update
+          apt-get install -y python3 python3-pip python3-venv nginx postgresql-client
+          
+          # Setup Python environment
+          cd /app
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install django psycopg2-binary redis celery gunicorn
+          
+          # Create Django project if it doesn't exist
+          if [ ! -f manage.py ]; then
+            django-admin startproject myproject .
+            
+            # Configure settings.py for PostgreSQL and Redis
+            cat >> myproject/settings.py << 'EOF'
+          
+          # Database configuration
+          DATABASES = {
+              'default': {
+                  'ENGINE': 'django.db.backends.postgresql',
+                  'NAME': 'djangodb',
+                  'USER': 'djangouser',
+                  'PASSWORD': 'djangopass',
+                  'HOST': '10.0.3.20',
+                  'PORT': '5432',
+              }
+          }
+          
+          # Redis cache
+          CACHES = {
+              'default': {
+                  'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+                  'LOCATION': 'redis://10.0.3.20:6379',
+              }
+          }
+          
+          # Celery configuration
+          CELERY_BROKER_URL = 'redis://10.0.3.20:6379/0'
+          CELERY_RESULT_BACKEND = 'redis://10.0.3.20:6379/0'
+          
+          ALLOWED_HOSTS = ['*']
+          EOF
+          fi
+          
+          # Run migrations
+          . venv/bin/activate
+          python manage.py migrate
+          python manage.py collectstatic --noinput || true
+          
+          # Configure Nginx
+          cat > /etc/nginx/sites-available/django << 'EOF'
+          server {
+              listen 80;
+              server_name _;
+              
+              location /static/ {
+                  alias /app/static/;
+              }
+              
+              location / {
+                  proxy_pass http://127.0.0.1:8000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
+          }
+          EOF
+          ln -sf /etc/nginx/sites-available/django /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          service nginx start
+          
+          # Start Django development server
+          cd /app
+          . venv/bin/activate
+          python manage.py runserver 0.0.0.0:8000
