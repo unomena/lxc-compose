@@ -3,7 +3,7 @@
 
 containers:
   - name: flask-app
-    image: alpine:3.18
+    image: alpine:3.19
     ports:
       - "5000:5000"
     mounts:

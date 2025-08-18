@@ -209,18 +209,19 @@ download_base_image() {
         
         # Download Ubuntu minimal - using correct image server format
         info "  Attempting to download Ubuntu minimal..."
-        if lxc image copy ubuntu-minimal:22.04 local: --alias ubuntu-minimal:22.04 2>/dev/null; then
+        # Note: Redirect stderr to stdout to capture download progress, but suppress for cleaner output
+        if lxc image copy ubuntu-minimal:22.04 local: --alias ubuntu-minimal:22.04 >/dev/null 2>&1; then
             log "  Ubuntu minimal 22.04 downloaded successfully"
-        elif lxc image copy images:ubuntu/22.04 local: --alias ubuntu:22.04 2>/dev/null; then
+        elif lxc image copy images:ubuntu/22.04 local: --alias ubuntu:22.04 >/dev/null 2>&1; then
             log "  Ubuntu 22.04 downloaded successfully"
         else
             info "  Ubuntu download failed, will download on first use"
         fi
         
-        # Download Alpine for ultra-minimal containers (~8MB)
-        info "  Attempting to download Alpine Linux (ultra-minimal, ~8MB)..."
-        if lxc image copy images:alpine/3.18 local: --alias alpine:3.18 2>/dev/null; then
-            log "  Alpine 3.18 downloaded successfully"
+        # Download Alpine for ultra-minimal containers (~3MB)
+        info "  Attempting to download Alpine Linux (ultra-minimal, ~3MB)..."
+        if lxc image copy images:alpine/3.19 local: --alias alpine:3.19 >/dev/null 2>&1; then
+            log "  Alpine 3.19 downloaded successfully"
         else
             info "  Alpine download failed, will download on first use"
         fi
@@ -254,7 +255,7 @@ containers:
   
   # Example 2: Alpine Linux container (ultra-minimal ~8MB)
   - name: web-alpine
-    image: alpine:3.18  # Ultra-lightweight, uses apk instead of apt
+    image: alpine:3.19  # Ultra-lightweight, uses apk instead of apt
     ip: 10.0.3.12
     ports:
       - "3000:3000"

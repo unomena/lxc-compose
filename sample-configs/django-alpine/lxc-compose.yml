@@ -5,7 +5,7 @@
 containers:
   # Database and cache server using Alpine
   - name: django-alpine-datastore
-    image: alpine:3.18
+    image: alpine:3.19
     ip: 10.0.3.30
     ports:
       - "5433:5432"  # PostgreSQL (different host port to avoid conflicts)
@@ -41,7 +41,7 @@ containers:
 
   # Django application server using Alpine
   - name: django-alpine-app
-    image: alpine:3.18
+    image: alpine:3.19
     ip: 10.0.3.31
     ports:
       - "8001:8000"  # Django dev server

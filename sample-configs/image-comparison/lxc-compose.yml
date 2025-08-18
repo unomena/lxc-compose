@@ -2,9 +2,9 @@
 # This demonstrates the size and setup differences between images
 
 containers:
-  # Alpine version (~8MB base + ~50MB for Python)
+  # Alpine version (~3MB base + ~50MB for Python)
   - name: webapp-alpine
-    image: alpine:3.18
+    image: alpine:3.19
     ip: 10.0.3.50
     ports:
       - "3000:3000"

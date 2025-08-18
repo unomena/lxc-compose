@@ -14,7 +14,7 @@ http://localhost:5000
 
 ## Features
 
-- Alpine Linux base (~8MB)
+- Alpine Linux base (~3MB)
 - Python 3 + Flask
 - Total container size: ~60MB
 - Auto-creates sample app if none exists
