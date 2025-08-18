@@ -24,8 +24,8 @@ info() { echo -e "${BLUE}ℹ${NC} $1"; }
 display_banner() {
     echo -e "${BOLD}"
     echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║              LXC Compose Installation Script                 ║"
-    echo "║                  Simple & Lightweight                        ║"
+    echo "║              LXC Compose Installation Script                  ║"
+    echo "║                   Simple & Lightweight                        ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -189,45 +189,46 @@ setup_network() {
 
 # Pre-download Ubuntu image
 download_base_image() {
-    info "Pre-downloading Ubuntu LTS image for faster first container creation..."
-    echo "  This may take 5-10 minutes depending on your connection speed."
+    info "Pre-downloading container images for faster first container creation..."
+    echo "  This may take a few minutes depending on your connection speed."
     echo "  This is a one-time download that will make future containers launch quickly."
     
-    # Determine Ubuntu LTS version to download - use minimal images
-    . /etc/os-release
-    if [[ "$VERSION_ID" == "24.04" ]]; then
-        IMAGE="ubuntu-minimal:24.04"
-        FALLBACK="ubuntu-minimal:22.04"
-    else
-        IMAGE="ubuntu-minimal:22.04"
-        FALLBACK="ubuntu-minimal:20.04"
+    # Ensure lxc command is available
+    if ! command -v lxc >/dev/null 2>&1; then
+        warning "  LXC command not found, skipping image download"
+        return 0
     fi
     
-    # Download the minimal images (much smaller than full server)
-    if command -v lxc >/dev/null 2>&1; then
-        info "  Downloading minimal images (smaller size, faster download)..."
-        
-        # Download Ubuntu minimal - using correct image server format
-        info "  Attempting to download Ubuntu minimal..."
-        # Note: Redirect stderr to stdout to capture download progress, but suppress for cleaner output
-        if lxc image copy ubuntu-minimal:22.04 local: --alias ubuntu-minimal:22.04 >/dev/null 2>&1; then
+    info "  Checking for existing images..."
+    
+    # Check and download Ubuntu minimal
+    if lxc image list local: --format=csv 2>/dev/null | grep -q "ubuntu-minimal:22.04\|ubuntu:22.04"; then
+        log "  Ubuntu 22.04 already available"
+    else
+        info "  Downloading Ubuntu minimal 22.04 (~100MB)..."
+        # Try downloading without hiding output for better feedback
+        if lxc image copy ubuntu-minimal:22.04 local: --alias ubuntu-minimal:22.04 --quiet 2>/dev/null; then
             log "  Ubuntu minimal 22.04 downloaded successfully"
-        elif lxc image copy images:ubuntu/22.04 local: --alias ubuntu:22.04 >/dev/null 2>&1; then
+        elif lxc image copy images:ubuntu/22.04 local: --alias ubuntu:22.04 --quiet 2>/dev/null; then
             log "  Ubuntu 22.04 downloaded successfully"
         else
-            info "  Ubuntu download failed, will download on first use"
-        fi
-        
-        # Download Alpine for ultra-minimal containers (~3MB)
-        info "  Attempting to download Alpine Linux (ultra-minimal, ~3MB)..."
-        if lxc image copy images:alpine/3.19 local: --alias alpine:3.19 >/dev/null 2>&1; then
-            log "  Alpine 3.19 downloaded successfully"
-        else
-            info "  Alpine download failed, will download on first use"
+            warning "  Ubuntu download will happen on first container creation"
         fi
     fi
     
-    log "Base image ready"
+    # Check and download Alpine
+    if lxc image list local: --format=csv 2>/dev/null | grep -q "alpine:3.19"; then
+        log "  Alpine 3.19 already available"
+    else
+        info "  Downloading Alpine Linux 3.19 (~3MB)..."
+        if lxc image copy images:alpine/3.19 local: --alias alpine:3.19 --quiet 2>/dev/null; then
+            log "  Alpine 3.19 downloaded successfully"
+        else
+            warning "  Alpine download will happen on first container creation"
+        fi
+    fi
+    
+    log "Images ready"
 }
 
 # Create sample config
