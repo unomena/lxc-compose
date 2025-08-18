@@ -13,8 +13,6 @@ containers:
     ports:
       - 8080:80    # Nginx
       - 8000:8000  # Django dev server
-      - 5432:5432  # PostgreSQL (for external access if needed)
-      - 6379:6379  # Redis (for external access if needed)
     
     # Mount application directory
     mounts:
