@@ -224,11 +224,26 @@ WantedBy=multi-user.target
             else:
                 continue
             
-            # Add iptables rule
+            # Add iptables rules for port forwarding
+            # PREROUTING for external access
             self.run_command([
                 'sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING',
                 '-p', 'tcp', '--dport', str(host_port),
                 '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'
+            ], check=False)
+            
+            # OUTPUT for local access (localhost and host IP)
+            self.run_command([
+                'sudo', 'iptables', '-t', 'nat', '-A', 'OUTPUT',
+                '-p', 'tcp', '--dport', str(host_port), '-d', '127.0.0.1',
+                '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'
+            ], check=False)
+            
+            # Also handle POSTROUTING for proper SNAT
+            self.run_command([
+                'sudo', 'iptables', '-t', 'nat', '-A', 'POSTROUTING',
+                '-p', 'tcp', '-d', container_ip, '--dport', str(container_port),
+                '-j', 'MASQUERADE'
             ], check=False)
             
             # Save to registry
@@ -247,6 +262,48 @@ WantedBy=multi-user.target
         # Debug info (can be removed later)
         if os.geteuid() != 0:
             click.echo(f"  Port forwarding info saved to: {PORT_FORWARDS_FILE}")
+    
+    def cleanup_port_forwarding(self, container_name: str, ports: List):
+        """Clean up port forwarding rules for a container"""
+        # Load port forwards to get the container IP
+        if not os.path.exists(PORT_FORWARDS_FILE):
+            return
+        
+        with open(PORT_FORWARDS_FILE, 'r') as f:
+            forwards = json.load(f)
+        
+        # Find and remove rules for this container
+        container_forwards = [fw for fw in forwards if fw['container'] == container_name]
+        for fw in container_forwards:
+            host_port = fw['host_port']
+            container_port = fw['container_port']
+            container_ip = fw['container_ip']
+            
+            # Remove PREROUTING rule
+            self.run_command([
+                'sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
+                '-p', 'tcp', '--dport', str(host_port),
+                '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'
+            ], check=False)
+            
+            # Remove OUTPUT rule
+            self.run_command([
+                'sudo', 'iptables', '-t', 'nat', '-D', 'OUTPUT',
+                '-p', 'tcp', '--dport', str(host_port), '-d', '127.0.0.1',
+                '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'
+            ], check=False)
+            
+            # Remove POSTROUTING rule
+            self.run_command([
+                'sudo', 'iptables', '-t', 'nat', '-D', 'POSTROUTING',
+                '-p', 'tcp', '-d', container_ip, '--dport', str(container_port),
+                '-j', 'MASQUERADE'
+            ], check=False)
+        
+        # Update the port forwards file
+        remaining_forwards = [fw for fw in forwards if fw['container'] != container_name]
+        with open(PORT_FORWARDS_FILE, 'w') as f:
+            json.dump(remaining_forwards, f, indent=2)
     
     def up(self):
         """Create and start all containers"""
@@ -293,6 +350,10 @@ WantedBy=multi-user.target
         for container in containers:
             name = container['name']
             if self.container_exists(name):
+                # Clean up port forwarding rules before destroying
+                if 'ports' in container:
+                    self.cleanup_port_forwarding(name, container['ports'])
+                
                 if self.container_running(name):
                     click.echo(f"{BLUE}ℹ{NC} Stopping {name}...")
                     self.run_command(['lxc', 'stop', name])
