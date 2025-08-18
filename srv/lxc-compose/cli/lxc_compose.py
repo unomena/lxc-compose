@@ -129,6 +129,18 @@ class LXCCompose:
         if not command:
             return
         
+        # Handle multi-line commands - join them with && if they don't already have it
+        if isinstance(command, str) and '\n' in command:
+            # Split into lines and filter out empty ones
+            lines = [line.strip() for line in command.strip().split('\n') if line.strip()]
+            # Join lines with && if they don't end with operators
+            joined_lines = []
+            for line in lines:
+                if joined_lines and not joined_lines[-1].endswith(('&&', '||', '|', ';', '&')):
+                    joined_lines.append('&&')
+                joined_lines.append(line)
+            command = ' '.join(joined_lines)
+        
         click.echo(f"  Setting up service: {service_name}")
         
         # Create systemd service or run command
