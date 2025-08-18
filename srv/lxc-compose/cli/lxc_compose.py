@@ -73,8 +73,8 @@ class LXCCompose:
         
         click.echo(f"{BLUE}ℹ{NC} Creating container {name}...")
         
-        # Create container
-        image = container.get('image', 'ubuntu:22.04')
+        # Create container - use minimal cloud image by default
+        image = container.get('image', 'ubuntu-minimal:22.04')
         
         # Check if image exists locally
         check_image = self.run_command(['lxc', 'image', 'list', image, '--format=json'], check=False)

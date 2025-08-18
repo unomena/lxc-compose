@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | b
 cat > lxc-compose.yml << EOF
 containers:
   - name: web
-    image: ubuntu:22.04
+    image: ubuntu-minimal:22.04
     ports:
       - "8080:80"
     mounts:
@@ -57,8 +57,8 @@ Create a `lxc-compose.yml` file in your project:
 ```yaml
 containers:
   - name: app-server
-    image: ubuntu:22.04
-    ip: 10.0.3.10           # Optional static IP
+    image: ubuntu-minimal:22.04  # Uses minimal image by default (smaller/faster)
+    ip: 10.0.3.10                # Optional static IP
     ports:
       - "8080:80"           # host:container
       - "8443:443"
@@ -70,7 +70,7 @@ containers:
         command: apt-get update && apt-get install -y nginx && nginx -g 'daemon off;'
         
   - name: database
-    image: ubuntu:22.04
+    image: ubuntu-minimal:22.04
     ip: 10.0.3.11
     ports:
       - "5432:5432"
@@ -87,7 +87,7 @@ containers:
 ### Configuration Options
 
 - **name**: Container name (required)
-- **image**: Base image (default: ubuntu:22.04)
+- **image**: Base image (default: ubuntu-minimal:22.04, ~100MB vs ~400MB for full)
 - **ip**: Static IP address (optional)
 - **ports**: Port mappings as "host:container"
 - **mounts**: Directory mappings

@@ -193,19 +193,22 @@ download_base_image() {
     echo "  This may take 5-10 minutes depending on your connection speed."
     echo "  This is a one-time download that will make future containers launch quickly."
     
-    # Determine Ubuntu LTS version to download
+    # Determine Ubuntu LTS version to download - use minimal images
     . /etc/os-release
     if [[ "$VERSION_ID" == "24.04" ]]; then
-        IMAGE="ubuntu:24.04"
+        IMAGE="ubuntu-minimal:24.04"
+        FALLBACK="ubuntu-minimal:22.04"
     else
-        IMAGE="ubuntu:22.04"
+        IMAGE="ubuntu-minimal:22.04"
+        FALLBACK="ubuntu-minimal:20.04"
     fi
     
-    # Download the image
+    # Download the minimal image (much smaller than full server)
     if command -v lxc >/dev/null 2>&1; then
+        info "  Downloading minimal Ubuntu image (smaller size, faster download)..."
         lxc image copy images:$IMAGE local: --alias $IMAGE 2>/dev/null || \
-        lxc image copy ubuntu:22.04 local: --alias ubuntu:22.04 2>/dev/null || \
-        info "  Image download failed, will download on first use"
+        lxc image copy images:$FALLBACK local: --alias $FALLBACK 2>/dev/null || \
+        info "  Image pre-download failed, will download on first use"
     fi
     
     log "Base image ready"
@@ -221,7 +224,9 @@ create_sample_config() {
 
 containers:
   - name: app-server
-    image: ubuntu:22.04
+    # Uses ubuntu-minimal by default (smaller, faster)
+    # Options: ubuntu-minimal:22.04, ubuntu:22.04 (full), alpine:3.18 (tiny)
+    image: ubuntu-minimal:22.04
     ip: 10.0.3.10
     ports:
       - "8080:80"    # host:container
@@ -234,7 +239,7 @@ containers:
         command: apt-get update && apt-get install -y nginx && nginx -g 'daemon off;'
         
   - name: database
-    image: ubuntu:22.04
+    image: ubuntu-minimal:22.04
     ip: 10.0.3.11
     ports:
       - "5432:5432"
