@@ -156,8 +156,16 @@ WantedBy=multi-user.target
             self.run_command(['lxc', 'exec', container_name, '--', 'systemctl', 'enable', f'{service_name}.service'])
             self.run_command(['lxc', 'exec', container_name, '--', 'systemctl', 'start', f'{service_name}.service'])
         else:
-            # Just run the command
-            self.run_command(['lxc', 'exec', container_name, '--', 'bash', '-c', command])
+            # Run the command in background if it's a long-running service
+            # Add nohup and background execution for commands that don't exit
+            if 'http.server' in command or 'nginx' in command or 'tail -f' in command:
+                # Long-running services should be run in background
+                bg_command = f'nohup bash -c "{command}" > /tmp/{service_name}.log 2>&1 &'
+                self.run_command(['lxc', 'exec', container_name, '--', 'bash', '-c', bg_command])
+                click.echo(f"    Service {service_name} started in background")
+            else:
+                # Regular setup commands run synchronously
+                self.run_command(['lxc', 'exec', container_name, '--', 'bash', '-c', command])
     
     def setup_port_forwarding(self, container_name: str, ports: List, container_ip: Optional[str]):
         """Setup port forwarding for container"""
@@ -339,7 +347,7 @@ WantedBy=multi-user.target
                     
                     # Get IP address
                     ip = "N/A"
-                    if info.get('state', {}).get('network', {}).get('eth0'):
+                    if info.get('state') and info['state'].get('network', {}).get('eth0'):
                         for addr in info['state']['network']['eth0']['addresses']:
                             if addr['family'] == 'inet' and not addr['address'].startswith('fe80'):
                                 ip = addr['address']
