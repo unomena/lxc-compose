@@ -168,12 +168,19 @@ setup_network() {
     echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
     
     # Setup iptables for NAT
-    iptables -t nat -A POSTROUTING -s 10.0.0.0/16 -o $(ip route | grep default | awk '{print $5}' | head -n1) -j MASQUERADE
+    DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
+    if [ -n "$DEFAULT_IFACE" ]; then
+        # Check if rule already exists before adding
+        if ! iptables -t nat -C POSTROUTING -s 10.0.0.0/16 -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null; then
+            iptables -t nat -A POSTROUTING -s 10.0.0.0/16 -o "$DEFAULT_IFACE" -j MASQUERADE
+        fi
+    fi
     
     # Save iptables rules
     if command -v netfilter-persistent >/dev/null 2>&1; then
         netfilter-persistent save
     elif command -v iptables-save >/dev/null 2>&1; then
+        mkdir -p /etc/iptables
         iptables-save > /etc/iptables/rules.v4
     fi
     
