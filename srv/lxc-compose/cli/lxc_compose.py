@@ -75,6 +75,13 @@ class LXCCompose:
         
         # Create container
         image = container.get('image', 'ubuntu:22.04')
+        
+        # Check if image exists locally
+        check_image = self.run_command(['lxc', 'image', 'list', image, '--format=json'], check=False)
+        if check_image.returncode != 0 or not json.loads(check_image.stdout):
+            click.echo(f"{YELLOW}⚠{NC} Image {image} not found locally. Downloading...")
+            click.echo(f"  This may take 5-10 minutes on first use. Future containers will be fast.")
+        
         cmd = ['lxc', 'launch', image, name]
         
         # Add network config if specified

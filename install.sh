@@ -187,6 +187,30 @@ setup_network() {
     log "Network configured"
 }
 
+# Pre-download Ubuntu image
+download_base_image() {
+    info "Pre-downloading Ubuntu LTS image for faster first container creation..."
+    echo "  This may take 5-10 minutes depending on your connection speed."
+    echo "  This is a one-time download that will make future containers launch quickly."
+    
+    # Determine Ubuntu LTS version to download
+    . /etc/os-release
+    if [[ "$VERSION_ID" == "24.04" ]]; then
+        IMAGE="ubuntu:24.04"
+    else
+        IMAGE="ubuntu:22.04"
+    fi
+    
+    # Download the image
+    if command -v lxc >/dev/null 2>&1; then
+        lxc image copy images:$IMAGE local: --alias $IMAGE 2>/dev/null || \
+        lxc image copy ubuntu:22.04 local: --alias ubuntu:22.04 2>/dev/null || \
+        info "  Image download failed, will download on first use"
+    fi
+    
+    log "Base image ready"
+}
+
 # Create sample config
 create_sample_config() {
     info "Creating sample configuration..."
@@ -237,6 +261,7 @@ main() {
     copy_files
     setup_cli
     setup_network
+    download_base_image
     create_sample_config
     
     echo
