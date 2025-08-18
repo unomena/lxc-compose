@@ -83,7 +83,6 @@ install_dependencies() {
     apt-get install -y \
         lxc \
         python3 \
-        python3-pip \
         python3-click \
         python3-yaml \
         iptables \
@@ -108,9 +107,6 @@ install_dependencies() {
                 --storage-backend=dir
         fi
     fi
-    
-    # Ensure Python packages
-    pip3 install --quiet click pyyaml
     
     log "Dependencies installed"
 }
