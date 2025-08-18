@@ -960,12 +960,8 @@ def up(config_file, detach, build, force_recreate):
                 container_ip = ip_allocator.allocate_ip(name)
                 click.echo(f"  Allocated IP: {container_ip}")
             else:
-                # Fallback to config or auto
-                # Support both old format (container.ip) and new format (direct ip)
-                if 'container' in container_config:
-                    container_ip = container_config.get('container', {}).get('ip', '10.0.3.100/24')
-                else:
-                    container_ip = container_config.get('ip', '10.0.3.100/24')
+                # Fallback to config IP if specified (simplified format only)
+                container_ip = container_config.get('ip', '10.0.3.100/24')
             
             # Extract network parts
             if '/' in str(container_ip):
@@ -975,16 +971,9 @@ def up(config_file, detach, build, force_recreate):
                 ip_only = container_ip
                 cidr = '24'
             
-            # Create container with LXC
-            # Support both old format (container.template) and new format (direct template)
-            if 'container' in container_config:
-                # Old format for backward compatibility
-                template = container_config.get('container', {}).get('template', 'ubuntu')
-                release = container_config.get('container', {}).get('release', 'jammy')
-            else:
-                # New simplified format
-                template = container_config.get('template', 'ubuntu')
-                release = container_config.get('release', 'jammy')
+            # Create container with LXC (simplified format only)
+            template = container_config.get('template', 'ubuntu')
+            release = container_config.get('release', 'jammy')
             
             # Check if template cache exists
             cache_path = f"/var/cache/lxc/{release}/rootfs-amd64"

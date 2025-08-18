@@ -1,0 +1,236 @@
+# LXC Compose Configuration for Django+Celery Sample Application
+# Simplified syntax with integrated port forwards and dependencies
+# 
+# IMPORTANT: Container names must be globally unique across the system.
+# Use project namespaces to avoid conflicts (e.g., myapp-db, myapp-cache)
+
+version: '1.0'
+
+containers:
+  sample-datastore:
+    template: ubuntu
+    release: jammy
+    
+    packages:
+      - postgresql
+      - postgresql-contrib
+      - redis-server
+    
+    services:
+      postgresql:
+        type: system
+        config: |
+          # Configure PostgreSQL to listen on all interfaces
+          sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" /etc/postgresql/14/main/postgresql.conf
+          echo 'host    all             all             10.0.3.0/24            md5' >> /etc/postgresql/14/main/pg_hba.conf
+          systemctl restart postgresql
+      
+      redis:
+        type: system
+        config: |
+          # Configure Redis to listen on all interfaces
+          sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/g' /etc/redis/redis.conf
+          sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
+          systemctl restart redis-server
+    
+    post_install:
+      - name: "Setup PostgreSQL database"
+        command: |
+          sudo -u postgres psql <<EOF
+          CREATE DATABASE djangosample;
+          CREATE USER djangouser WITH PASSWORD 'djangopass123';
+          GRANT ALL PRIVILEGES ON DATABASE djangosample TO djangouser;
+          \q
+          EOF
+
+  sample-django-app:
+    template: ubuntu
+    release: jammy
+    
+    # Simple list of dependencies
+    depends_on:
+      - sample-datastore
+    
+    mounts:
+      - .:/app  # Mount current directory to /app in container
+    
+    # Port forwarding with optional descriptions
+    ports:
+      - 8080:80    # Nginx
+      - 8000:8000  # Django dev server
+    
+    packages:
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - build-essential
+      - libpq-dev
+      - nginx
+      - supervisor
+      - git
+      - redis-tools
+      - postgresql-client
+    
+    
+    services:
+      django:
+        command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
+        directory: /app/src
+        autostart: true
+        autorestart: true
+        user: www-data
+        stdout_logfile: /var/log/django/django.log
+        stderr_logfile: /var/log/django/django_err.log
+        environment:
+          DEBUG: "True"
+          DJANGO_SECRET_KEY: "your-secret-key-here-change-in-production"
+          DB_NAME: djangosample
+          DB_USER: djangouser
+          DB_PASSWORD: djangopass123
+          DB_HOST: sample-datastore
+          DB_PORT: "5432"
+          REDIS_HOST: sample-datastore
+          REDIS_PORT: "6379"
+          CELERY_BROKER_URL: redis://sample-datastore:6379/0
+          CELERY_RESULT_BACKEND: redis://sample-datastore:6379/0
+          ALLOWED_HOSTS: "*"
+      
+      celery:
+        command: /app/venv/bin/celery -A config worker -l info
+        directory: /app/src
+        autostart: true
+        autorestart: true
+        user: www-data
+        stdout_logfile: /var/log/celery/celery.log
+        stderr_logfile: /var/log/celery/celery_err.log
+        environment:
+          DEBUG: "True"
+          DJANGO_SECRET_KEY: "your-secret-key-here-change-in-production"
+          DB_NAME: djangosample
+          DB_USER: djangouser
+          DB_PASSWORD: djangopass123
+          DB_HOST: sample-datastore
+          DB_PORT: "5432"
+          REDIS_HOST: sample-datastore
+          REDIS_PORT: "6379"
+          CELERY_BROKER_URL: redis://sample-datastore:6379/0
+          CELERY_RESULT_BACKEND: redis://sample-datastore:6379/0
+          ALLOWED_HOSTS: "*"
+      
+      celery-beat:
+        command: /app/venv/bin/celery -A config beat -l info
+        directory: /app/src
+        autostart: true
+        autorestart: true
+        user: www-data
+        stdout_logfile: /var/log/celery/celery-beat.log
+        stderr_logfile: /var/log/celery/celery-beat_err.log
+        environment:
+          DEBUG: "True"
+          DJANGO_SECRET_KEY: "your-secret-key-here-change-in-production"
+          DB_NAME: djangosample
+          DB_USER: djangouser
+          DB_PASSWORD: djangopass123
+          DB_HOST: sample-datastore
+          DB_PORT: "5432"
+          REDIS_HOST: sample-datastore
+          REDIS_PORT: "6379"
+          CELERY_BROKER_URL: redis://sample-datastore:6379/0
+          CELERY_RESULT_BACKEND: redis://sample-datastore:6379/0
+          ALLOWED_HOSTS: "*"
+      
+      nginx:
+        type: system
+        config: |
+          # Nginx configuration
+          cat > /etc/nginx/sites-available/django-app <<'EOF'
+          server {
+              listen 80;
+              server_name _;
+              
+              location /static/ {
+                  alias /app/static/;
+              }
+              
+              location /media/ {
+                  alias /app/media/;
+              }
+              
+              location / {
+                  proxy_pass http://127.0.0.1:8000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+          EOF
+          ln -sf /etc/nginx/sites-available/django-app /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          nginx -t && systemctl restart nginx
+    
+    post_install:      
+      - name: "Setup Python environment"
+        command: |
+          cd /app
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+      
+      - name: "Create directories"
+        command: |
+          mkdir -p /var/log/django /var/log/celery /run/django
+          mkdir -p /app/static /app/media
+      
+      - name: "Run migrations"
+        command: |
+          cd /app/src
+          source ../venv/bin/activate
+          export DJANGO_SETTINGS_MODULE=config.settings
+          export DEBUG=True
+          export DJANGO_SECRET_KEY="your-secret-key-here-change-in-production"
+          export DB_NAME=djangosample
+          export DB_USER=djangouser
+          export DB_PASSWORD=djangopass123
+          export DB_HOST=sample-datastore
+          export DB_PORT=5432
+          export REDIS_HOST=sample-datastore
+          export REDIS_PORT=6379
+          export CELERY_BROKER_URL="redis://sample-datastore:6379/0"
+          export CELERY_RESULT_BACKEND="redis://sample-datastore:6379/0"
+          export ALLOWED_HOSTS="*"
+          python manage.py makemigrations api tasks
+          python manage.py migrate
+          python manage.py collectstatic --noinput
+      
+      - name: "Create superuser"
+        command: |
+          cd /app/src
+          source ../venv/bin/activate
+          export DJANGO_SETTINGS_MODULE=config.settings
+          export DEBUG=True
+          export DJANGO_SECRET_KEY="your-secret-key-here-change-in-production"
+          export DB_NAME=djangosample
+          export DB_USER=djangouser
+          export DB_PASSWORD=djangopass123
+          export DB_HOST=sample-datastore
+          export DB_PORT=5432
+          export REDIS_HOST=sample-datastore
+          export REDIS_PORT=6379
+          export CELERY_BROKER_URL="redis://sample-datastore:6379/0"
+          export CELERY_RESULT_BACKEND="redis://sample-datastore:6379/0"
+          export ALLOWED_HOSTS="*"
+          python manage.py createsuperuser --noinput --username admin --email admin@example.com || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='admin'); u.set_password('admin123'); u.save()" | python manage.py shell
+      
+      - name: "Set permissions"
+        command: |
+          chown -R www-data:www-data /app
+          chmod -R 755 /app
+          chmod -R 775 /app/media /app/static /var/log/django /var/log/celery
+      
+      - name: "Restart supervisor services"
+        command: |
+          supervisorctl restart all || true
