@@ -41,7 +41,7 @@ containers:
       - "8000:8000"  # Django dev server
       - "8080:80"    # Nginx
     mounts:
-      - source: ./django-app
+      - source: ./
         target: /app
     services:
       - name: django-setup
@@ -53,7 +53,13 @@ containers:
           cd /app
           python3 -m venv venv
           . venv/bin/activate
-          pip install django psycopg2-binary redis celery gunicorn
+          
+          # Install from requirements.txt if it exists, otherwise install defaults
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install django psycopg2-binary redis celery gunicorn
+          fi
           
           # Create Django project if it doesn't exist
           if [ ! -f manage.py ]; then

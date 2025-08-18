@@ -275,6 +275,45 @@ EOF
     log "Sample config created at $INSTALL_DIR/lxc-compose.yml.example"
 }
 
+# Copy sample projects
+copy_sample_projects() {
+    info "Sample projects available..."
+    echo "  - django-ubuntu-minimal: Django with PostgreSQL and Redis"
+    echo "  - django-alpine: Ultra-lightweight Django"
+    echo "  - django-production: Production-ready Django setup"
+    echo "  - flask-minimal: Simple Flask app in Alpine"
+    echo "  - image-comparison: Compare different base images"
+    echo ""
+    
+    read -p "Would you like to copy sample projects to ~/lxc-samples? (y/N): " -n 1 -r
+    echo
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        info "Copying sample projects to ~/lxc-samples..."
+        
+        # Get the real user's home directory (not root)
+        if [ -n "$SUDO_USER" ]; then
+            USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+            USER_NAME="$SUDO_USER"
+        else
+            USER_HOME="$HOME"
+            USER_NAME="$USER"
+        fi
+        
+        # Copy samples
+        cp -r "$SCRIPT_DIR/sample-configs" "$USER_HOME/lxc-samples"
+        chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/lxc-samples"
+        
+        log "Sample projects copied to $USER_HOME/lxc-samples"
+        echo ""
+        echo "To use a sample:"
+        echo "  cd ~/lxc-samples/flask-minimal"
+        echo "  lxc-compose up"
+    else
+        info "Skipping sample projects (you can find them in the repo)"
+    fi
+}
+
 # Main installation
 main() {
     display_banner
@@ -287,6 +326,7 @@ main() {
     setup_network
     download_base_image
     create_sample_config
+    copy_sample_projects
     
     echo
     echo -e "${GREEN}${BOLD}Installation complete!${NC}"
