@@ -207,15 +207,23 @@ download_base_image() {
     if command -v lxc >/dev/null 2>&1; then
         info "  Downloading minimal images (smaller size, faster download)..."
         
-        # Download Ubuntu minimal
-        lxc image copy images:$IMAGE local: --alias $IMAGE 2>/dev/null || \
-        lxc image copy images:$FALLBACK local: --alias $FALLBACK 2>/dev/null || \
-        info "  Ubuntu minimal download failed, will download on first use"
+        # Download Ubuntu minimal - using correct image server format
+        info "  Attempting to download Ubuntu minimal..."
+        if lxc image copy ubuntu-minimal:22.04 local: --alias ubuntu-minimal:22.04 2>/dev/null; then
+            log "  Ubuntu minimal 22.04 downloaded successfully"
+        elif lxc image copy images:ubuntu/22.04 local: --alias ubuntu:22.04 2>/dev/null; then
+            log "  Ubuntu 22.04 downloaded successfully"
+        else
+            info "  Ubuntu download failed, will download on first use"
+        fi
         
-        # Also download Alpine for ultra-minimal containers (~8MB)
-        info "  Downloading Alpine Linux (ultra-minimal, ~8MB)..."
-        lxc image copy images:alpine/3.18 local: --alias alpine:3.18 2>/dev/null || \
-        info "  Alpine download failed, will download on first use"
+        # Download Alpine for ultra-minimal containers (~8MB)
+        info "  Attempting to download Alpine Linux (ultra-minimal, ~8MB)..."
+        if lxc image copy images:alpine/3.18 local: --alias alpine:3.18 2>/dev/null; then
+            log "  Alpine 3.18 downloaded successfully"
+        else
+            info "  Alpine download failed, will download on first use"
+        fi
     fi
     
     log "Base image ready"
