@@ -19,8 +19,18 @@ BOLD = '\033[1m'
 NC = '\033[0m'
 
 DEFAULT_CONFIG = 'lxc-compose.yml'
-REGISTRY_FILE = '/etc/lxc-compose/registry.json'
-PORT_FORWARDS_FILE = '/etc/lxc-compose/port-forwards.json'
+
+# Use XDG standard for user data, fallback to /etc if running as root
+if os.geteuid() == 0:
+    # Running as root, use system directory
+    DATA_DIR = '/etc/lxc-compose'
+else:
+    # Running as user, use XDG data directory
+    XDG_DATA_HOME = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+    DATA_DIR = os.path.join(XDG_DATA_HOME, 'lxc-compose')
+
+REGISTRY_FILE = os.path.join(DATA_DIR, 'registry.json')
+PORT_FORWARDS_FILE = os.path.join(DATA_DIR, 'port-forwards.json')
 
 class LXCCompose:
     def __init__(self, config_file: str):
@@ -230,9 +240,13 @@ WantedBy=multi-user.target
             })
         
         # Save port forwards
-        os.makedirs(os.path.dirname(PORT_FORWARDS_FILE), exist_ok=True)
+        os.makedirs(DATA_DIR, exist_ok=True)
         with open(PORT_FORWARDS_FILE, 'w') as f:
             json.dump(forwards, f, indent=2)
+        
+        # Debug info (can be removed later)
+        if os.geteuid() != 0:
+            click.echo(f"  Port forwarding info saved to: {PORT_FORWARDS_FILE}")
     
     def up(self):
         """Create and start all containers"""
