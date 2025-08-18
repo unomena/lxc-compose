@@ -390,17 +390,65 @@ def cli():
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
-def up(file):
+@click.option('--all', is_flag=True, help='Start ALL containers on the system')
+def up(file, all):
     """Create and start containers"""
-    compose = LXCCompose(file)
-    compose.up()
+    if all:
+        # Start all containers on the system
+        click.echo(f"{YELLOW}⚠{NC} This will start ALL LXC containers on the system!")
+        confirmation = click.prompt('Type exactly: "Yes, I want to start all containers. I am aware of the risks involved."')
+        if confirmation == "Yes, I want to start all containers. I am aware of the risks involved.":
+            result = subprocess.run(['lxc', 'list', '--format=json'], capture_output=True, text=True)
+            if result.returncode == 0:
+                containers = json.loads(result.stdout)
+                for container in containers:
+                    name = container['name']
+                    status = container.get('status', '')
+                    if status != 'Running':
+                        click.echo(f"{BLUE}ℹ{NC} Starting {name}...")
+                        subprocess.run(['lxc', 'start', name], capture_output=True)
+                        click.echo(f"{GREEN}✓{NC} Started {name}")
+                    else:
+                        click.echo(f"{YELLOW}⚠{NC} {name} is already running")
+                click.echo(f"{GREEN}✓{NC} All containers started")
+            else:
+                click.echo(f"{RED}✗{NC} Failed to list containers")
+        else:
+            click.echo(f"{RED}✗{NC} Confirmation failed. Aborted.")
+    else:
+        compose = LXCCompose(file)
+        compose.up()
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
-def down(file):
+@click.option('--all', is_flag=True, help='Stop ALL containers on the system')
+def down(file, all):
     """Stop containers"""
-    compose = LXCCompose(file)
-    compose.down()
+    if all:
+        # Stop all containers on the system
+        click.echo(f"{YELLOW}⚠{NC} This will stop ALL LXC containers on the system!")
+        confirmation = click.prompt('Type exactly: "Yes, I want to stop all containers. I am aware of the risks involved."')
+        if confirmation == "Yes, I want to stop all containers. I am aware of the risks involved.":
+            result = subprocess.run(['lxc', 'list', '--format=json'], capture_output=True, text=True)
+            if result.returncode == 0:
+                containers = json.loads(result.stdout)
+                for container in containers:
+                    name = container['name']
+                    status = container.get('status', '')
+                    if status == 'Running':
+                        click.echo(f"{BLUE}ℹ{NC} Stopping {name}...")
+                        subprocess.run(['lxc', 'stop', name], capture_output=True)
+                        click.echo(f"{GREEN}✓{NC} Stopped {name}")
+                    else:
+                        click.echo(f"{YELLOW}⚠{NC} {name} is not running")
+                click.echo(f"{GREEN}✓{NC} All containers stopped")
+            else:
+                click.echo(f"{RED}✗{NC} Failed to list containers")
+        else:
+            click.echo(f"{RED}✗{NC} Confirmation failed. Aborted.")
+    else:
+        compose = LXCCompose(file)
+        compose.down()
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
@@ -409,8 +457,9 @@ def destroy(file, all):
     """Stop and destroy containers"""
     if all:
         # Destroy all containers on the system
-        click.echo(f"{YELLOW}⚠{NC} This will destroy ALL LXC containers on the system!")
-        if click.confirm('Are you REALLY sure?'):
+        click.echo(f"{YELLOW}⚠{NC} This will PERMANENTLY DESTROY ALL LXC containers and their data on the system!")
+        confirmation = click.prompt('Type exactly: "Yes, I want to destroy all containers. I am aware of the risks involved."')
+        if confirmation == "Yes, I want to destroy all containers. I am aware of the risks involved.":
             result = subprocess.run(['lxc', 'list', '--format=json'], capture_output=True, text=True)
             if result.returncode == 0:
                 containers = json.loads(result.stdout)
@@ -424,7 +473,7 @@ def destroy(file, all):
             else:
                 click.echo(f"{RED}✗{NC} Failed to list containers")
         else:
-            click.echo("Aborted.")
+            click.echo(f"{RED}✗{NC} Confirmation failed. Aborted.")
     else:
         # Only destroy containers in the config file
         compose = LXCCompose(file)
@@ -445,17 +494,65 @@ def destroy(file, all):
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
-def start(file):
+@click.option('--all', is_flag=True, help='Start ALL containers on the system')
+def start(file, all):
     """Start containers"""
-    compose = LXCCompose(file)
-    compose.start()
+    if all:
+        # Start all containers on the system (same as up --all)
+        click.echo(f"{YELLOW}⚠{NC} This will start ALL LXC containers on the system!")
+        confirmation = click.prompt('Type exactly: "Yes, I want to start all containers. I am aware of the risks involved."')
+        if confirmation == "Yes, I want to start all containers. I am aware of the risks involved.":
+            result = subprocess.run(['lxc', 'list', '--format=json'], capture_output=True, text=True)
+            if result.returncode == 0:
+                containers = json.loads(result.stdout)
+                for container in containers:
+                    name = container['name']
+                    status = container.get('status', '')
+                    if status != 'Running':
+                        click.echo(f"{BLUE}ℹ{NC} Starting {name}...")
+                        subprocess.run(['lxc', 'start', name], capture_output=True)
+                        click.echo(f"{GREEN}✓{NC} Started {name}")
+                    else:
+                        click.echo(f"{YELLOW}⚠{NC} {name} is already running")
+                click.echo(f"{GREEN}✓{NC} All containers started")
+            else:
+                click.echo(f"{RED}✗{NC} Failed to list containers")
+        else:
+            click.echo(f"{RED}✗{NC} Confirmation failed. Aborted.")
+    else:
+        compose = LXCCompose(file)
+        compose.start()
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
-def stop(file):
+@click.option('--all', is_flag=True, help='Stop ALL containers on the system')
+def stop(file, all):
     """Stop containers"""
-    compose = LXCCompose(file)
-    compose.stop()
+    if all:
+        # Stop all containers on the system (same as down --all)
+        click.echo(f"{YELLOW}⚠{NC} This will stop ALL LXC containers on the system!")
+        confirmation = click.prompt('Type exactly: "Yes, I want to stop all containers. I am aware of the risks involved."')
+        if confirmation == "Yes, I want to stop all containers. I am aware of the risks involved.":
+            result = subprocess.run(['lxc', 'list', '--format=json'], capture_output=True, text=True)
+            if result.returncode == 0:
+                containers = json.loads(result.stdout)
+                for container in containers:
+                    name = container['name']
+                    status = container.get('status', '')
+                    if status == 'Running':
+                        click.echo(f"{BLUE}ℹ{NC} Stopping {name}...")
+                        subprocess.run(['lxc', 'stop', name], capture_output=True)
+                        click.echo(f"{GREEN}✓{NC} Stopped {name}")
+                    else:
+                        click.echo(f"{YELLOW}⚠{NC} {name} is not running")
+                click.echo(f"{GREEN}✓{NC} All containers stopped")
+            else:
+                click.echo(f"{RED}✗{NC} Failed to list containers")
+        else:
+            click.echo(f"{RED}✗{NC} Confirmation failed. Aborted.")
+    else:
+        compose = LXCCompose(file)
+        compose.stop()
 
 @cli.command('list')
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
