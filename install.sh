@@ -286,11 +286,9 @@ EOF
 # Copy sample projects
 copy_sample_projects() {
     info "Sample projects available..."
-    echo "  - django-ubuntu-minimal: Django with PostgreSQL and Redis"
-    echo "  - django-alpine: Ultra-lightweight Django"
-    echo "  - django-production: Production-ready Django setup"
-    echo "  - flask-minimal: Simple Flask app in Alpine"
-    echo "  - image-comparison: Compare different base images"
+    echo "  - django-minimal: Django + PostgreSQL in Alpine (150MB)"
+    echo "  - flask-app: Flask with Redis cache"
+    echo "  - nodejs-app: Express.js with MongoDB"
     echo ""
     
     read -p "Would you like to copy sample projects to ~/lxc-samples? (y/N): " -n 1 -r
@@ -309,13 +307,13 @@ copy_sample_projects() {
         fi
         
         # Copy samples
-        cp -r "$SCRIPT_DIR/sample-configs" "$USER_HOME/lxc-samples"
+        cp -r "$SCRIPT_DIR/samples" "$USER_HOME/lxc-samples"
         chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/lxc-samples"
         
         log "Sample projects copied to $USER_HOME/lxc-samples"
         echo ""
         echo "To use a sample:"
-        echo "  cd ~/lxc-samples/flask-minimal"
+        echo "  cd ~/lxc-samples/django-minimal"
         echo "  lxc-compose up"
     else
         info "Skipping sample projects (you can find them in the repo)"
