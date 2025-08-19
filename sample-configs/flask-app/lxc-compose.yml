@@ -1,0 +1,109 @@
+# Flask Application with Redis
+# Following the reference project format - expects source files to exist
+
+version: '1.0'
+
+containers:
+  flask-redis:
+    template: ubuntu
+    release: jammy
+    
+    packages:
+      - redis-server
+    
+    services:
+      redis:
+        type: system
+        config: |
+          # Configure Redis
+          sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/g' /etc/redis/redis.conf
+          sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
+          systemctl restart redis-server
+
+  flask-app:
+    template: ubuntu
+    release: jammy
+    
+    depends_on:
+      - flask-redis
+    
+    mounts:
+      - .:/app  # Mount current directory containing Flask app
+    
+    ports:
+      - 5000:5000  # Flask dev server
+      - 8080:80    # Nginx
+    
+    packages:
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - nginx
+      - supervisor
+      - redis-tools
+    
+    services:
+      flask:
+        command: /app/venv/bin/python /app/app.py
+        directory: /app
+        autostart: true
+        autorestart: true
+        user: www-data
+        stdout_logfile: /var/log/flask/flask.log
+        stderr_logfile: /var/log/flask/flask_err.log
+        environment:
+          FLASK_ENV: development
+          REDIS_HOST: flask-redis
+          REDIS_PORT: "6379"
+      
+      nginx:
+        type: system
+        config: |
+          cat > /etc/nginx/sites-available/flask-app <<'EOF'
+          server {
+              listen 80;
+              server_name _;
+              
+              location /static/ {
+                  alias /app/static/;
+              }
+              
+              location / {
+                  proxy_pass http://127.0.0.1:5000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+          EOF
+          ln -sf /etc/nginx/sites-available/flask-app /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          nginx -t && systemctl restart nginx
+    
+    post_install:
+      - name: "Setup Python environment"
+        command: |
+          cd /app
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: "Create directories"
+        command: |
+          mkdir -p /var/log/flask
+          mkdir -p /app/static
+      
+      - name: "Set permissions"
+        command: |
+          chown -R www-data:www-data /app
+          chmod -R 755 /app
+          chmod -R 775 /var/log/flask
+      
+      - name: "Restart services"
+        command: |
+          supervisorctl reread
+          supervisorctl update
+          supervisorctl restart all || true

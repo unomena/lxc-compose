@@ -1,0 +1,104 @@
+# Node.js Application with MongoDB
+# Following the reference project format
+
+version: '1.0'
+
+containers:
+  nodejs-mongo:
+    template: ubuntu
+    release: jammy
+    
+    packages:
+      - mongodb
+      - mongodb-clients
+    
+    services:
+      mongodb:
+        type: system
+        config: |
+          # Configure MongoDB
+          sed -i 's/bind_ip = 127.0.0.1/bind_ip = 0.0.0.0/g' /etc/mongodb.conf
+          systemctl restart mongodb
+
+  nodejs-app:
+    template: ubuntu
+    release: jammy
+    
+    depends_on:
+      - nodejs-mongo
+    
+    mounts:
+      - .:/app
+    
+    ports:
+      - 3000:3000  # Node.js app
+      - 8080:80    # Nginx
+    
+    packages:
+      - curl
+      - nginx
+      - supervisor
+    
+    services:
+      nodejs:
+        command: /usr/bin/node /app/server.js
+        directory: /app
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/nodejs/app.log
+        stderr_logfile: /var/log/nodejs/app_err.log
+        environment:
+          NODE_ENV: development
+          PORT: "3000"
+          MONGO_URL: "mongodb://nodejs-mongo:27017/myapp"
+      
+      nginx:
+        type: system
+        config: |
+          cat > /etc/nginx/sites-available/nodejs-app <<'EOF'
+          server {
+              listen 80;
+              server_name _;
+              
+              location / {
+                  proxy_pass http://127.0.0.1:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+          EOF
+          ln -sf /etc/nginx/sites-available/nodejs-app /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          nginx -t && systemctl restart nginx
+    
+    post_install:
+      - name: "Install Node.js"
+        command: |
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y nodejs
+      
+      - name: "Install dependencies"
+        command: |
+          cd /app
+          npm install
+      
+      - name: "Create directories"
+        command: |
+          mkdir -p /var/log/nodejs
+      
+      - name: "Set permissions"
+        command: |
+          chmod -R 755 /app
+          chmod -R 775 /var/log/nodejs
+      
+      - name: "Restart services"
+        command: |
+          supervisorctl reread
+          supervisorctl update
+          supervisorctl restart all || true

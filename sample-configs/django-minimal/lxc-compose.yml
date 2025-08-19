@@ -1,0 +1,151 @@
+# Minimal Django Application - Single Alpine Container
+# Ultra-lightweight setup with PostgreSQL and Django in one container
+
+version: '1.0'
+
+containers:
+  django-minimal:
+    template: alpine
+    release: "3.19"
+    
+    mounts:
+      - .:/app
+    
+    ports:
+      - 8000:8000  # Django dev server
+      - 5432:5432  # PostgreSQL (optional external access)
+    
+    packages:
+      - postgresql
+      - postgresql-client
+      - python3
+      - py3-pip
+      - python3-dev
+      - gcc
+      - musl-dev
+      - linux-headers
+      - postgresql-dev
+      - build-base
+      - libffi-dev
+    
+    services:
+      postgresql:
+        type: system
+        config: |
+          # Initialize PostgreSQL if needed
+          if [ ! -d /var/lib/postgresql/data ]; then
+            mkdir -p /run/postgresql
+            chown postgres:postgres /run/postgresql
+            su postgres -c "initdb -D /var/lib/postgresql/data"
+            
+            # Configure PostgreSQL
+            echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "host all all 10.0.3.0/24 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+          fi
+          
+          # Start PostgreSQL
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          
+          # Wait for PostgreSQL to be ready
+          sleep 5
+          
+          # Create database and user if they don't exist
+          su postgres -c "createdb djangodb 2>/dev/null || true"
+          su postgres -c "psql -c \"CREATE USER djangouser WITH PASSWORD 'djangopass';\" 2>/dev/null || true"
+          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE djangodb TO djangouser;\" 2>/dev/null || true"
+      
+      django:
+        command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
+        directory: /app/src
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/django.log
+        stderr_logfile: /var/log/django_err.log
+        environment:
+          DEBUG: "True"
+          SECRET_KEY: "django-insecure-change-this-in-production"
+          DB_NAME: djangodb
+          DB_USER: djangouser
+          DB_PASSWORD: djangopass
+          DB_HOST: localhost
+          DB_PORT: "5432"
+    
+    post_install:
+      - name: "Setup PostgreSQL"
+        command: |
+          # Initialize PostgreSQL
+          mkdir -p /run/postgresql
+          chown postgres:postgres /run/postgresql
+          su postgres -c "initdb -D /var/lib/postgresql/data"
+          
+          # Configure PostgreSQL
+          echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
+          echo "host all all 10.0.3.0/24 md5" >> /var/lib/postgresql/data/pg_hba.conf
+          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+          
+          # Start PostgreSQL
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          sleep 5
+          
+          # Create database and user
+          su postgres -c "createdb djangodb"
+          su postgres -c "psql -c \"CREATE USER djangouser WITH PASSWORD 'djangopass';\""
+          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE djangodb TO djangouser;\""
+      
+      - name: "Setup Python environment"
+        command: |
+          cd /app
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: "Run migrations"
+        command: |
+          # Ensure PostgreSQL is running
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start" || true
+          sleep 3
+          
+          cd /app/src
+          source ../venv/bin/activate
+          export DB_NAME=djangodb
+          export DB_USER=djangouser
+          export DB_PASSWORD=djangopass
+          export DB_HOST=localhost
+          export DB_PORT=5432
+          python manage.py migrate
+          python manage.py collectstatic --noinput || true
+      
+      - name: "Create superuser"
+        command: |
+          cd /app/src
+          source ../venv/bin/activate
+          export DB_NAME=djangodb
+          export DB_USER=djangouser
+          export DB_PASSWORD=djangopass
+          export DB_HOST=localhost
+          export DB_PORT=5432
+          python manage.py createsuperuser --noinput --username admin --email admin@example.com || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u, _ = User.objects.get_or_create(username='admin'); u.set_password('admin123'); u.save()" | python manage.py shell
+      
+      - name: "Create startup script"
+        command: |
+          # Create a startup script to ensure PostgreSQL starts before Django
+          cat > /startup.sh << 'EOF'
+          #!/bin/sh
+          # Start PostgreSQL
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          sleep 3
+          
+          # Start Django
+          cd /app/src
+          source ../venv/bin/activate
+          export DB_NAME=djangodb
+          export DB_USER=djangouser
+          export DB_PASSWORD=djangopass
+          export DB_HOST=localhost
+          export DB_PORT=5432
+          python manage.py runserver 0.0.0.0:8000
+          EOF
+          chmod +x /startup.sh

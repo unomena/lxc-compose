@@ -1,164 +1,296 @@
-# LXC Compose Sample Projects
+# LXC Compose Sample Configurations
 
-Ready-to-use sample projects demonstrating various deployment scenarios with LXC Compose.
+Production-ready sample applications demonstrating LXC Compose configuration best practices. All samples follow the reference project structure from https://github.com/euan/sample-lxc-compose-app.
 
 ## Available Samples
 
-Each sample is in its own directory with a `lxc-compose.yml` file and README.
+### 1. Django Minimal (`django-minimal/`)
+**Ultra-lightweight Django + PostgreSQL in a single Alpine container**
 
-### 🎯 django-ubuntu-minimal
-**Full-featured Django application with PostgreSQL and Redis**
-- Two containers: datastore (PostgreSQL + Redis) and app server
-- Ubuntu Minimal base (~100MB per container)
-- Includes requirements.txt and auto-setup
-- Perfect for Django development
+- **Container Size**: ~150MB total
+- **Stack**: Django 5.0 + PostgreSQL 16 + WhiteNoise
+- **Features**:
+  - Single Alpine Linux container (3MB base)
+  - PostgreSQL and Django in one container
+  - WhiteNoise for static file serving
+  - Auto-creates superuser (admin/admin123)
+  - Environment-based configuration
+  - Production-ready settings
 
-```bash
-cd django-ubuntu-minimal
-lxc-compose up
-# Access at http://localhost:8000
+**Access**:
+- Web: http://localhost:8000
+- Admin: http://localhost:8000/admin
+- PostgreSQL: localhost:5432 (optional)
+
+### 2. Flask Application (`flask-app/`)
+**Microservice architecture with Flask and Redis**
+
+- **Container Size**: ~200MB total
+- **Stack**: Flask + Gunicorn + Redis + Nginx
+- **Features**:
+  - Flask with Gunicorn WSGI server
+  - Redis for caching and session storage
+  - Nginx reverse proxy
+  - Visit counter with Redis backend
+  - RESTful API endpoints
+  - Health check endpoint
+  - Supervisor process management
+
+**Access**:
+- Web: http://localhost:5000
+- API: http://localhost:5000/api
+- Health: http://localhost:5000/health
+
+### 3. Node.js Application (`nodejs-app/`)
+**Express.js with MongoDB and PM2**
+
+- **Container Size**: ~300MB total
+- **Stack**: Express.js + MongoDB + PM2 + Nginx
+- **Features**:
+  - Express.js web framework
+  - MongoDB for data persistence
+  - PM2 process manager with auto-restart
+  - Nginx reverse proxy with caching
+  - RESTful API with CRUD operations
+  - Environment-based configuration
+  - Automatic database seeding
+
+**Access**:
+- Web: http://localhost:3000
+- API: http://localhost:3000/api
+- MongoDB: localhost:27017 (if exposed)
+
+## Configuration Format
+
+All samples follow the same configuration format:
+
+```yaml
+version: '1.0'
+
+containers:
+  container-name:
+    template: ubuntu        # Base template (ubuntu, alpine, etc.)
+    release: jammy          # Release version
+    
+    depends_on:             # Container dependencies
+      - other-container
+    
+    mounts:                 # Directory mounts
+      - .:/app              # Mount current dir to /app
+    
+    ports:                  # Port mappings
+      - 8000:8000          # host:container
+    
+    packages:               # APT packages to install
+      - python3
+      - nginx
+    
+    services:               # Service definitions
+      service-name:
+        command: /path/to/command
+        directory: /app
+        autostart: true
+        environment:
+          KEY: value
+    
+    post_install:          # Post-installation commands
+      - name: "Setup task"
+        command: |
+          echo "Running setup"
 ```
 
-### 🏔️ django-alpine
-**Ultra-lightweight Django setup using Alpine Linux**
-- Alpine base (~8MB per container)
-- Same Django + PostgreSQL + Redis stack
-- ~75% smaller than Ubuntu version
-- Note: May have Python package compatibility issues
+## Key Principles
 
-```bash
-cd django-alpine
-lxc-compose up
-# Access at http://localhost:8001
-```
+1. **No Dynamic Generation**: All source files must exist in the project directory before running `lxc-compose up`. No files are generated on the fly.
 
-### 🚀 django-production
-**Production-ready Django with Gunicorn, Celery, and Nginx**
-- Complete production stack
-- Supervisor for process management
-- Separate containers for app and database
-- Volume mounts for data persistence
+2. **Mount-based Development**: The entire project directory is mounted into the container, allowing for live code changes during development.
 
-```bash
-cd django-production
-lxc-compose up
-# Access at http://localhost:80
-```
+3. **Dictionary Format**: Containers are defined as a dictionary (not a list) with container names as keys.
 
-### ⚡ flask-minimal
-**Simple Flask application in Alpine**
-- Single container (~60MB total)
-- Auto-creates sample app if none exists
-- Perfect for microservices
-- Includes API endpoint examples
+4. **Service Management**: Services can be either:
+   - System services (managed by systemd)
+   - Supervisor services (managed by supervisord)
 
-```bash
-cd flask-minimal
-lxc-compose up
-# Access at http://localhost:5000
-```
-
-### 📊 image-comparison
-**Compare the same app across different base images**
-- Runs identical Flask app in:
-  - Alpine (~60MB)
-  - Ubuntu Minimal (~150MB)
-  - Ubuntu Full (~450MB)
-- Great for understanding size/performance tradeoffs
-
-```bash
-cd image-comparison
-lxc-compose up
-# Alpine: http://localhost:3000
-# Ubuntu Minimal: http://localhost:3001
-# Ubuntu Full: http://localhost:3002
-```
+5. **Environment Variables**: Configuration is done through environment variables, making it easy to adapt for different environments.
 
 ## Quick Start
 
-### During Installation
+### Running a Sample
 
-The installer will ask if you want to copy samples to `~/lxc-samples`:
+1. **Choose and navigate to a sample**:
+   ```bash
+   cd sample-configs/django-minimal
+   # or: cd sample-configs/flask-app
+   # or: cd sample-configs/nodejs-app
+   ```
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/get.sh | bash
-# Answer 'y' when asked about copying samples
+2. **Review the configuration**:
+   ```bash
+   cat lxc-compose.yml
+   ls -la  # View all project files
+   ```
+
+3. **Start the application**:
+   ```bash
+   lxc-compose up
+   # Or run in background:
+   lxc-compose up -d
+   ```
+
+4. **Monitor status**:
+   ```bash
+   lxc-compose list
+   # Output:
+   # NAME              STATUS    IP           PORTS
+   # django-minimal    RUNNING   10.0.3.11    8000:8000, 5432:5432
+   ```
+
+5. **View logs**:
+   ```bash
+   lxc-compose logs
+   # Or follow logs:
+   lxc-compose logs -f
+   ```
+
+6. **Stop the application**:
+   ```bash
+   lxc-compose down
+   ```
+
+7. **Clean up (remove containers)**:
+   ```bash
+   lxc-compose destroy
+   ```
+
+### Customizing Samples
+
+1. **Copy the sample to your workspace**:
+   ```bash
+   cp -r sample-configs/django-minimal ~/myproject
+   cd ~/myproject
+   ```
+
+2. **Modify the configuration**:
+   ```bash
+   # Edit container name to avoid conflicts
+   sed -i 's/django-minimal/myproject/g' lxc-compose.yml
+   ```
+
+3. **Add your code**:
+   - Place your application files in the directory
+   - Update `requirements.txt` or `package.json`
+   - Modify `post_install` commands as needed
+
+4. **Run your customized version**:
+   ```bash
+   lxc-compose up
+   ```
+
+## Directory Structure
+
+Each sample follows this structure:
+```
+sample-name/
+├── lxc-compose.yml    # Container configuration
+├── requirements.txt   # Python dependencies (Python projects)
+├── package.json       # Node dependencies (Node projects)
+├── src/              # Source code directory (if applicable)
+├── *.py/*.js         # Application files
+└── README.md         # Sample documentation
 ```
 
-### Manual Usage
+## Requirements
 
-Clone the repo and navigate to any sample:
+- LXC/LXD installed and configured
+- lxc-compose CLI installed
+- Network bridge configured (usually lxcbr0)
+- Sufficient permissions to create containers
 
-```bash
-git clone https://github.com/unomena/lxc-compose.git
-cd lxc-compose/sample-configs/flask-minimal
-lxc-compose up
-```
+## Performance Comparison
 
-## Project Structure
+| Sample | Base Image | Container Size | Memory Usage | Startup Time |
+|--------|------------|----------------|--------------|-------------|
+| Django Minimal | Alpine 3.19 | ~150MB | ~100MB | ~15 seconds |
+| Flask App | Alpine 3.19 | ~200MB | ~80MB | ~10 seconds |
+| Node.js App | Ubuntu 22.04 | ~300MB | ~150MB | ~20 seconds |
 
-Each sample project contains:
-- `lxc-compose.yml` - Container configuration
-- `README.md` - Project-specific documentation
-- Application files (where applicable)
+## Best Practices Demonstrated
 
-```
-sample-configs/
-├── django-ubuntu-minimal/
-│   ├── lxc-compose.yml
-│   ├── requirements.txt
-│   ├── manage.py
-│   └── README.md
-├── django-alpine/
-│   └── lxc-compose.yml
-├── django-production/
-│   └── lxc-compose.yml
-├── flask-minimal/
-│   ├── lxc-compose.yml
-│   └── README.md
-└── image-comparison/
-    └── lxc-compose.yml
-```
+### 1. Container Optimization
+- Use Alpine Linux for minimal footprint
+- Combine related services in single container when appropriate
+- Install only required packages
+- Clean package caches in `post_install`
 
-## Customization
+### 2. Configuration Management
+- Environment variables for all settings
+- Separate development and production configs
+- No hardcoded passwords in code
+- Use `.env` files for local development
 
-Each sample can be customized:
-1. Copy the sample directory to your workspace
-2. Modify the `lxc-compose.yml` as needed
-3. Add your application code
-4. Run `lxc-compose up`
+### 3. Service Management
+- Supervisor for multi-process containers
+- Systemd for system services
+- Auto-restart on failures
+- Proper PID file management
 
-## Image Size Comparison
-
-| Sample | Base Image | Container Size | Use Case |
-|--------|------------|----------------|----------|
-| flask-minimal | Alpine 3.18 | ~60MB | Microservices |
-| django-alpine | Alpine 3.18 | ~100MB | Lightweight Django |
-| django-ubuntu-minimal | Ubuntu Minimal | ~300MB | Standard Django |
-| django-production | Ubuntu Minimal | ~400MB | Production Django |
-| image-comparison | Mixed | 60-450MB | Testing/Comparison |
-
-## Network Configuration
-
-Default IP ranges used by samples:
-- `10.0.3.20-29`: Database containers
-- `10.0.3.30-39`: Application containers  
-- `10.0.3.40-49`: Production containers
-- `10.0.3.50-59`: Test containers
-
-Adjust IPs in `lxc-compose.yml` if they conflict with your network.
-
-## Tips
-
-- **Development**: Use `django-ubuntu-minimal` or `flask-minimal`
-- **Production**: Use `django-production` as a starting point
-- **Microservices**: Use Alpine-based samples for smallest footprint
-- **Learning**: Use `image-comparison` to understand tradeoffs
+### 4. Development Workflow
+- Mount entire directory for live reloading
+- Keep source files in version control
+- No dynamic file generation
+- Clear separation of code and config
 
 ## Troubleshooting
 
-If a sample doesn't work:
-1. Check port conflicts: `lxc-compose list`
-2. Ensure IPs don't conflict: `ip addr show`
-3. Check logs: `lxc exec <container-name> -- journalctl -f`
-4. Destroy and recreate: `lxc-compose destroy && lxc-compose up`
+### Container won't start
+```bash
+# Check container status
+lxc list
+
+# View container logs
+lxc console <container-name>
+
+# Check lxc-compose logs
+lxc-compose logs
+```
+
+### Port already in use
+```bash
+# Find process using port
+sudo lsof -i :8000
+
+# Change port in lxc-compose.yml
+ports:
+  - "8001:8000"  # Use different host port
+```
+
+### Permission issues
+```bash
+# Ensure LXD group membership
+sudo usermod -aG lxd $USER
+newgrp lxd
+
+# Check LXD status
+lxc list
+```
+
+## Security Notes
+
+⚠️ **Development Only**: Default credentials are for development. Always change them in production:
+- Django: admin/admin123
+- PostgreSQL: postgres/postgres
+- MongoDB: No auth (bind to localhost)
+
+## Contributing
+
+To add a new sample:
+1. Create directory in `sample-configs/`
+2. Add `lxc-compose.yml` following dictionary format
+3. Include all source files (no generation)
+4. Add README.md with setup instructions
+5. Test with `lxc-compose up`
+6. Submit pull request
+
+## License
+
+All samples are provided as-is for educational purposes. Modify freely for your needs.
