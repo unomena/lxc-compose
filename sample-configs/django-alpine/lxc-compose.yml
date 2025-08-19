@@ -4,9 +4,8 @@
 
 containers:
   # Database and cache server using Alpine
-  - name: django-alpine-datastore
+  - name: datastore
     image: alpine:3.19
-    ip: 10.0.3.30
     ports:
       - "5433:5432"  # PostgreSQL (different host port to avoid conflicts)
       - "6380:6379"  # Redis
@@ -40,9 +39,8 @@ containers:
           redis-server /etc/redis.conf
 
   # Django application server using Alpine
-  - name: django-alpine-app
+  - name: app
     image: alpine:3.19
-    ip: 10.0.3.31
     ports:
       - "8001:8000"  # Django dev server
       - "8081:80"    # Nginx
@@ -68,65 +66,21 @@ containers:
           # Create Django project if it doesn't exist
           if [ ! -f manage.py ]; then
             django-admin startproject myproject .
-            
-            # Configure settings.py
-            cat >> myproject/settings.py << 'EOF'
+            mv /app/settings.py /app/myproject/settings.py
           
-          # Database configuration
-          DATABASES = {
-              'default': {
-                  'ENGINE': 'django.db.backends.postgresql',
-                  'NAME': 'djangodb',
-                  'USER': 'djangouser',
-                  'PASSWORD': 'djangopass',
-                  'HOST': '10.0.3.30',
-                  'PORT': '5432',
-              }
-          }
-          
-          # Redis cache
-          CACHES = {
-              'default': {
-                  'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-                  'LOCATION': 'redis://10.0.3.30:6379',
-              }
-          }
-          
-          # Celery configuration
-          CELERY_BROKER_URL = 'redis://10.0.3.30:6379/0'
-          CELERY_RESULT_BACKEND = 'redis://10.0.3.30:6379/0'
-          
-          ALLOWED_HOSTS = ['*']
-          STATIC_ROOT = '/app/static'
-          EOF
+            # Wait for database to be ready
+            sleep 10
+
+            # Run migrations
+            . venv/bin/activate
+            python manage.py migrate
+            python manage.py collectstatic --noinput || true
+
+            # Configure Nginx
+            mkdir -p /run/nginx
+            cp /app/nginx.conf /etc/nginx/http.d/django.conf
           fi
           
-          # Wait for database to be ready
-          sleep 10
-          
-          # Run migrations
-          . venv/bin/activate
-          python manage.py migrate
-          python manage.py collectstatic --noinput || true
-          
-          # Configure Nginx
-          mkdir -p /run/nginx
-          cat > /etc/nginx/http.d/django.conf << 'EOF'
-          server {
-              listen 80;
-              server_name _;
-              
-              location /static/ {
-                  alias /app/static/;
-              }
-              
-              location / {
-                  proxy_pass http://127.0.0.1:8000;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-              }
-          }
-          EOF
           rm -f /etc/nginx/http.d/default.conf
           nginx
           

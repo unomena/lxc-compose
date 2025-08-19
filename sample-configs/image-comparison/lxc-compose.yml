@@ -5,7 +5,6 @@ containers:
   # Alpine version (~3MB base + ~50MB for Python)
   - name: webapp-alpine
     image: alpine:3.19
-    ip: 10.0.3.50
     ports:
       - "3000:3000"
     mounts:
@@ -32,7 +31,6 @@ containers:
   # Ubuntu Minimal version (~100MB base + ~50MB for Python)
   - name: webapp-ubuntu-minimal
     image: ubuntu-minimal:22.04
-    ip: 10.0.3.51
     ports:
       - "3001:3000"
     mounts:
@@ -59,7 +57,6 @@ containers:
   # Ubuntu Full version (~400MB base + ~50MB for Python)
   - name: webapp-ubuntu-full
     image: ubuntu:22.04
-    ip: 10.0.3.52
     ports:
       - "3002:3000"
     mounts:

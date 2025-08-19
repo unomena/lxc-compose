@@ -3,9 +3,8 @@
 
 containers:
   # Database and cache server
-  - name: django-datastore
+  - name: datastore
     image: ubuntu-minimal:22.04
-    ip: 10.0.3.20
     ports:
       - "5432:5432"  # PostgreSQL
       - "6379:6379"  # Redis
@@ -34,9 +33,8 @@ containers:
           tail -f /dev/null
 
   # Django application server
-  - name: django-app
+  - name: app
     image: ubuntu-minimal:22.04
-    ip: 10.0.3.21
     ports:
       - "8000:8000"  # Django dev server
       - "8080:80"    # Nginx
@@ -75,7 +73,7 @@ containers:
                   'NAME': 'djangodb',
                   'USER': 'djangouser',
                   'PASSWORD': 'djangopass',
-                  'HOST': '10.0.3.20',
+                  'HOST': 'datastore',
                   'PORT': '5432',
               }
           }
@@ -84,13 +82,13 @@ containers:
           CACHES = {
               'default': {
                   'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-                  'LOCATION': 'redis://10.0.3.20:6379',
+                  'LOCATION': 'redis://datastore:6379',
               }
           }
           
           # Celery configuration
-          CELERY_BROKER_URL = 'redis://10.0.3.20:6379/0'
-          CELERY_RESULT_BACKEND = 'redis://10.0.3.20:6379/0'
+          CELERY_BROKER_URL = 'redis://datastore:6379/0'
+          CELERY_RESULT_BACKEND = 'redis://datastore:6379/0'
           
           ALLOWED_HOSTS = ['*']
           EOF
