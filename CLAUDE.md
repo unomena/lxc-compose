@@ -70,8 +70,10 @@ containers:
       - "8080:80"           # host:container format
       - "8443:443"
     mounts:
-      - source: ./app       # Host directory (relative or absolute)
-        target: /var/www    # Container directory
+      - ./app:/var/www    # Simple format: host:container
+      # OR explicit format:
+      # - source: ./app
+      #   target: /var/www
     services:
       - name: service-name
         command: command-to-run

@@ -16,8 +16,7 @@ containers:
     ports:
       - "8080:80"
     mounts:
-      - source: ./app
-        target: /var/www
+      - ./app:/var/www
 EOF
 
 # Start containers
@@ -77,8 +76,7 @@ containers:
       - "8080:80"           # host:container
       - "8443:443"
     mounts:
-      - source: ./app       # Host directory
-        target: /var/www    # Container directory
+      - ./app:/var/www    # Simple format: host:container
     services:
       - name: nginx
         command: apt-get update && apt-get install -y nginx && nginx -g 'daemon off;'
@@ -89,8 +87,7 @@ containers:
     ports:
       - "5432:5432"
     mounts:
-      - source: ./data
-        target: /var/lib/postgresql
+      - ./data:/var/lib/postgresql
     services:
       - name: postgresql
         command: |

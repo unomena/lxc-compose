@@ -39,8 +39,7 @@ containers:
       - "8000:8000"  # Django dev server
       - "8080:80"    # Nginx
     mounts:
-      - source: ./
-        target: /app
+      - .:/app
     services:
       - name: django-setup
         command: |

@@ -106,8 +106,30 @@ class LXCCompose:
         # Setup mounts
         if 'mounts' in container:
             for mount in container['mounts']:
-                source = os.path.expanduser(mount['source'])
-                target = mount['target']
+                # Support both string format (./path:/container) and dict format
+                if isinstance(mount, str):
+                    # Parse string format like "./app:/var/www" or ".:/app"
+                    if ':' in mount:
+                        source, target = mount.split(':', 1)
+                        source = os.path.expanduser(source)
+                        # Convert relative paths to absolute
+                        if not os.path.isabs(source):
+                            config_dir = os.path.dirname(os.path.abspath(self.config_file))
+                            source = os.path.join(config_dir, source)
+                    else:
+                        click.echo(f"{YELLOW}⚠{NC} Invalid mount format: {mount}")
+                        continue
+                elif isinstance(mount, dict):
+                    # Parse dict format with source and target keys
+                    source = os.path.expanduser(mount['source'])
+                    target = mount['target']
+                    # Convert relative paths to absolute
+                    if not os.path.isabs(source):
+                        config_dir = os.path.dirname(os.path.abspath(self.config_file))
+                        source = os.path.join(config_dir, source)
+                else:
+                    click.echo(f"{YELLOW}⚠{NC} Invalid mount format: {mount}")
+                    continue
                 
                 # Create source directory if it doesn't exist
                 os.makedirs(source, exist_ok=True)

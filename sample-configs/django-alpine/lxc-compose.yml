@@ -4,11 +4,8 @@
 
 containers:
   # Database and cache server using Alpine
-  - name: datastore
+  django-alpine-datastore:
     image: alpine:3.19
-    ports:
-      - "5433:5432"  # PostgreSQL (different host port to avoid conflicts)
-      - "6380:6379"  # Redis
     services:
       - name: setup-services
         command: |
@@ -39,14 +36,10 @@ containers:
           redis-server /etc/redis.conf
 
   # Django application server using Alpine
-  - name: app
+  django-alpine-app:
     image: alpine:3.19
     ports:
       - "8001:8000"  # Django dev server
-      - "8081:80"    # Nginx
-    mounts:
-      - source: ./django-app-alpine
-        target: /app
     services:
       - name: django-setup
         command: |
@@ -57,9 +50,8 @@ containers:
             nginx build-base libffi-dev
           
           # Setup Python environment
+          mkdir /app
           cd /app
-          python3 -m venv venv
-          . venv/bin/activate
           pip install --upgrade pip
           pip install django psycopg2 redis celery gunicorn
           
@@ -72,19 +64,9 @@ containers:
             sleep 10
 
             # Run migrations
-            . venv/bin/activate
             python manage.py migrate
             python manage.py collectstatic --noinput || true
-
-            # Configure Nginx
-            mkdir -p /run/nginx
-            cp /app/nginx.conf /etc/nginx/http.d/django.conf
           fi
-          
-          rm -f /etc/nginx/http.d/default.conf
-          nginx
-          
+
           # Start Django development server
-          cd /app
-          . venv/bin/activate
           python manage.py runserver 0.0.0.0:8000
