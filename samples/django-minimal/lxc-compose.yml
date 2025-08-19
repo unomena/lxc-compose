@@ -4,16 +4,16 @@
 version: '1.0'
 
 containers:
-  django-minimal:
+  sample-django-minimal:
     template: alpine
     release: "3.19"
     
     mounts:
       - .:/app
     
-    ports:
-      - 8000:8000  # Django dev server
-      - 5432:5432  # PostgreSQL (optional external access)
+    exposed_ports:
+      - 8000  # Django dev server
+      - 5432  # PostgreSQL (optional external access)
     
     packages:
       - postgresql
@@ -28,6 +28,7 @@ containers:
       - build-base
       - libffi-dev
     
+    # Note: Environment variables from .env are automatically available
     services:
       postgresql:
         type: system
@@ -50,10 +51,10 @@ containers:
           # Wait for PostgreSQL to be ready
           sleep 5
           
-          # Create database and user if they don't exist
-          su postgres -c "createdb djangodb 2>/dev/null || true"
-          su postgres -c "psql -c \"CREATE USER djangouser WITH PASSWORD 'djangopass';\" 2>/dev/null || true"
-          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE djangodb TO djangouser;\" 2>/dev/null || true"
+          # Create database and user if they don't exist (using env vars)
+          su postgres -c "createdb ${DB_NAME} 2>/dev/null || true"
+          su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\" 2>/dev/null || true"
+          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\" 2>/dev/null || true"
       
       django:
         command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
@@ -62,14 +63,6 @@ containers:
         autorestart: true
         stdout_logfile: /var/log/django.log
         stderr_logfile: /var/log/django_err.log
-        environment:
-          DEBUG: "True"
-          SECRET_KEY: "django-insecure-change-this-in-production"
-          DB_NAME: djangodb
-          DB_USER: djangouser
-          DB_PASSWORD: djangopass
-          DB_HOST: localhost
-          DB_PORT: "5432"
     
     post_install:
       - name: "Setup PostgreSQL"
@@ -88,10 +81,10 @@ containers:
           su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
           sleep 5
           
-          # Create database and user
-          su postgres -c "createdb djangodb"
-          su postgres -c "psql -c \"CREATE USER djangouser WITH PASSWORD 'djangopass';\""
-          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE djangodb TO djangouser;\""
+          # Create database and user (using env vars from .env)
+          su postgres -c "createdb ${DB_NAME}"
+          su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
+          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
       
       - name: "Setup Python environment"
         command: |
@@ -109,11 +102,7 @@ containers:
           
           cd /app/src
           source ../venv/bin/activate
-          export DB_NAME=djangodb
-          export DB_USER=djangouser
-          export DB_PASSWORD=djangopass
-          export DB_HOST=localhost
-          export DB_PORT=5432
+          # Environment variables are already available from .env
           python manage.py migrate
           python manage.py collectstatic --noinput || true
       
@@ -121,13 +110,9 @@ containers:
         command: |
           cd /app/src
           source ../venv/bin/activate
-          export DB_NAME=djangodb
-          export DB_USER=djangouser
-          export DB_PASSWORD=djangopass
-          export DB_HOST=localhost
-          export DB_PORT=5432
-          python manage.py createsuperuser --noinput --username admin --email admin@example.com || true
-          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u, _ = User.objects.get_or_create(username='admin'); u.set_password('admin123'); u.save()" | python manage.py shell
+          # Using env vars from .env
+          python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u, _ = User.objects.get_or_create(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | python manage.py shell
       
       - name: "Create startup script"
         command: |
@@ -138,14 +123,9 @@ containers:
           su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
           sleep 3
           
-          # Start Django
+          # Start Django (env vars already loaded system-wide)
           cd /app/src
           source ../venv/bin/activate
-          export DB_NAME=djangodb
-          export DB_USER=djangouser
-          export DB_PASSWORD=djangopass
-          export DB_HOST=localhost
-          export DB_PORT=5432
           python manage.py runserver 0.0.0.0:8000
           EOF
           chmod +x /startup.sh

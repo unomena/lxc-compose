@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-LXC Compose v2 - Docker Compose-like orchestration for LXC
-Supports both list-based and dictionary-based container definitions
+LXC Compose - Simple container orchestration for LXC
+Commands: up, down, list, destroy (with --all support)
 """
 
 import os
@@ -11,7 +11,8 @@ import json
 import yaml
 import click
 import subprocess
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, Optional, List
 
 # Terminal colors
 RED = '\033[0;31m'
@@ -22,6 +23,7 @@ BOLD = '\033[1m'
 NC = '\033[0m'  # No Color
 
 DEFAULT_CONFIG = 'lxc-compose.yml'
+DEFAULT_ENV_FILE = '.env'
 
 # Data directory setup
 if os.geteuid() == 0:
@@ -30,33 +32,79 @@ else:
     XDG_DATA_HOME = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
     DATA_DIR = os.path.join(XDG_DATA_HOME, 'lxc-compose')
 
-REGISTRY_FILE = os.path.join(DATA_DIR, 'registry.json')
-PORT_FORWARDS_FILE = os.path.join(DATA_DIR, 'port-forwards.json')
+# Shared hosts file location
+SHARED_HOSTS_DIR = '/srv/lxc-compose/etc'
+SHARED_HOSTS_FILE = os.path.join(SHARED_HOSTS_DIR, 'hosts')
+
+# Container IP tracking file
+CONTAINER_IPS_FILE = os.path.join(DATA_DIR, 'container-ips.json')
 
 class LXCCompose:
-    def __init__(self, config_file: str):
+    def __init__(self, config_file: str = None, all_containers: bool = False):
+        self.all_containers = all_containers
         self.config_file = config_file
-        self.config = self.load_config()
-        self.containers = self.parse_containers()
+        self.env_vars = {}
         
+        if not all_containers:
+            if not config_file or not os.path.exists(config_file):
+                click.echo(f"{RED}✗{NC} Config file not found: {config_file}")
+                sys.exit(1)
+            
+            # Load .env file if it exists
+            self.load_env_file()
+            
+            # Load and parse config
+            self.config = self.load_config()
+            self.containers = self.parse_containers()
+        else:
+            self.config = {}
+            self.containers = []
+        
+        # Initialize hosts file if it doesn't exist
+        self.init_hosts_file()
+    
+    def load_env_file(self):
+        """Load environment variables from .env file"""
+        config_dir = os.path.dirname(os.path.abspath(self.config_file))
+        env_file = os.path.join(config_dir, DEFAULT_ENV_FILE)
+        
+        if os.path.exists(env_file):
+            click.echo(f"  Loading environment from {DEFAULT_ENV_FILE}")
+            with open(env_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    # Skip comments and empty lines
+                    if line and not line.startswith('#'):
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            # Remove quotes if present
+                            key = key.strip()
+                            value = value.strip().strip('"').strip("'")
+                            self.env_vars[key] = value
+                            # Also set in current environment for variable expansion
+                            os.environ[key] = value
+            
     def load_config(self) -> Dict:
         """Load configuration from YAML file"""
-        if not os.path.exists(self.config_file):
-            click.echo(f"{RED}✗{NC} Config file not found: {self.config_file}")
-            sys.exit(1)
-            
         with open(self.config_file, 'r') as f:
-            return yaml.safe_load(f)
+            content = f.read()
+            
+            # Expand environment variables in the YAML content
+            for key, value in self.env_vars.items():
+                content = content.replace(f'${{{key}}}', value)
+                content = content.replace(f'${key}', value)
+            
+            return yaml.safe_load(content)
     
     def parse_containers(self):
         """Parse containers from either list or dictionary format"""
         containers_config = self.config.get('containers', {})
         
-        if type(containers_config) == list:
-            # Old format: list of containers with 'name' field
+        if isinstance(containers_config, list):
+            # List format: containers with 'name' field
             return containers_config
-        elif type(containers_config) == dict:
-            # New format: dictionary with container names as keys
+        elif isinstance(containers_config, dict):
+            # Dictionary format: container names as keys
             containers = []
             for name, config in containers_config.items():
                 container = config.copy() if config else {}
@@ -66,19 +114,192 @@ class LXCCompose:
         else:
             return []
     
-    def run_command(self, cmd, check: bool = True, env = None):
+    def run_command(self, cmd, check: bool = True):
         """Run a command and return the result"""
         try:
-            return subprocess.run(cmd, capture_output=True, text=True, check=check, env=env)
+            return subprocess.run(cmd, capture_output=True, text=True, check=check)
         except subprocess.CalledProcessError as e:
             if check:
                 click.echo(f"{RED}✗{NC} Command failed: {' '.join(cmd)}")
                 if e.stderr:
                     click.echo(f"  Error: {e.stderr}")
-                if e.stdout:
-                    click.echo(f"  Output: {e.stdout}")
                 sys.exit(1)
             return e
+    
+    def init_hosts_file(self):
+        """Initialize the shared hosts file with basic entries"""
+        os.makedirs(SHARED_HOSTS_DIR, exist_ok=True)
+        os.makedirs(DATA_DIR, exist_ok=True)
+        
+        if not os.path.exists(SHARED_HOSTS_FILE):
+            with open(SHARED_HOSTS_FILE, 'w') as f:
+                f.write("# LXC Compose managed hosts file\n")
+                f.write("127.0.0.1\tlocalhost\n")
+                f.write("::1\tlocalhost ip6-localhost ip6-loopback\n")
+                f.write("\n# Container entries\n")
+    
+    def update_hosts_file(self, action: str, name: str, ip: str = None):
+        """Add or remove entry from shared hosts file"""
+        if action == "add" and ip:
+            # Check if entry already exists
+            with open(SHARED_HOSTS_FILE, 'r') as f:
+                existing = f.read()
+                if f"{ip}\t{name}" in existing or f" {name}\n" in existing:
+                    return  # Already exists
+            
+            # Add new entry
+            with open(SHARED_HOSTS_FILE, 'a') as f:
+                f.write(f"{ip}\t{name}\n")
+            click.echo(f"  Added {name} ({ip}) to hosts file")
+            
+        elif action == "remove":
+            # Remove entry containing the container name
+            if os.path.exists(SHARED_HOSTS_FILE):
+                with open(SHARED_HOSTS_FILE, 'r') as f:
+                    lines = f.readlines()
+                
+                # Filter out lines with this container name
+                new_lines = []
+                for line in lines:
+                    # Skip lines that have this container name as a hostname
+                    if name in line.split():
+                        continue
+                    new_lines.append(line)
+                
+                with open(SHARED_HOSTS_FILE, 'w') as f:
+                    f.writelines(new_lines)
+    
+    def mount_hosts_file(self, name: str):
+        """Mount the shared hosts file into the container"""
+        click.echo(f"  Mounting shared hosts file...")
+        self.run_command(['lxc', 'config', 'device', 'add', name, 'hosts',
+                         'disk', f'source={SHARED_HOSTS_FILE}', 
+                         'path=/etc/hosts'])
+    
+    def mount_env_file(self, name: str):
+        """Mount the .env file into the container if it exists"""
+        config_dir = os.path.dirname(os.path.abspath(self.config_file))
+        env_file = os.path.join(config_dir, DEFAULT_ENV_FILE)
+        
+        if os.path.exists(env_file):
+            click.echo(f"  Mounting .env file...")
+            self.run_command(['lxc', 'config', 'device', 'add', name, 'envfile',
+                             'disk', f'source={env_file}', 
+                             'path=/app/.env'])
+    
+    def setup_container_environment(self, name: str):
+        """Setup system-wide environment variables in container"""
+        if not self.env_vars:
+            return
+        
+        click.echo(f"  Setting up environment variables...")
+        
+        # Create /etc/environment entries
+        env_content = ""
+        for key, value in self.env_vars.items():
+            env_content += f'{key}="{value}"\n'
+        
+        if env_content:
+            # Write to /etc/environment
+            self.run_command(['lxc', 'exec', name, '--', 'sh', '-c',
+                            f'echo \'{env_content}\' >> /etc/environment'])
+            
+            # Also create a profile.d script for shell environments
+            profile_script = "#!/bin/sh\n"
+            profile_script += "# LXC Compose environment variables\n"
+            for key, value in self.env_vars.items():
+                profile_script += f'export {key}="{value}"\n'
+            
+            self.run_command(['lxc', 'exec', name, '--', 'sh', '-c',
+                            f'echo \'{profile_script}\' > /etc/profile.d/lxc-compose.sh && chmod +x /etc/profile.d/lxc-compose.sh'])
+    
+    def manage_exposed_ports(self, action: str, ip: str, ports: List[int]):
+        """Add or remove iptables rules for exposed ports"""
+        if action == "add" and ports:
+            click.echo(f"  Setting up exposed ports: {ports}")
+            
+            # Allow established connections
+            self.run_command(['sudo', 'iptables', '-A', 'FORWARD',
+                            '-d', ip, '-m', 'state', '--state',
+                            'ESTABLISHED,RELATED', '-j', 'ACCEPT'], check=False)
+            
+            # Allow each exposed port
+            for port in ports:
+                self.run_command(['sudo', 'iptables', '-A', 'FORWARD',
+                                '-d', ip, '-p', 'tcp', '--dport', str(port),
+                                '-j', 'ACCEPT'], check=False)
+                click.echo(f"    Exposed port {port}")
+            
+            # Allow container to initiate outbound connections
+            self.run_command(['sudo', 'iptables', '-A', 'FORWARD',
+                            '-s', ip, '-j', 'ACCEPT'], check=False)
+            
+            # Drop all other inbound traffic to this container
+            self.run_command(['sudo', 'iptables', '-A', 'FORWARD',
+                            '-d', ip, '-j', 'DROP'], check=False)
+            
+        elif action == "remove":
+            click.echo(f"  Removing iptables rules...")
+            
+            # Get all FORWARD rules
+            result = self.run_command(['sudo', 'iptables', '-L', 'FORWARD',
+                                     '--line-numbers', '-n'], check=False)
+            
+            if result.returncode == 0:
+                # Parse rules and find ones with our IP
+                lines = result.stdout.split('\n')
+                rules_to_remove = []
+                
+                for line in lines:
+                    if ip in line:
+                        # Extract rule number
+                        match = re.match(r'^(\d+)', line)
+                        if match:
+                            rules_to_remove.append(int(match.group(1)))
+                
+                # Remove rules in reverse order (highest number first)
+                for rule_num in sorted(rules_to_remove, reverse=True):
+                    self.run_command(['sudo', 'iptables', '-D', 'FORWARD',
+                                    str(rule_num)], check=False)
+    
+    def save_container_ip(self, name: str, ip: str):
+        """Save container IP for later cleanup"""
+        ips = {}
+        if os.path.exists(CONTAINER_IPS_FILE):
+            with open(CONTAINER_IPS_FILE, 'r') as f:
+                ips = json.load(f)
+        
+        ips[name] = ip
+        
+        with open(CONTAINER_IPS_FILE, 'w') as f:
+            json.dump(ips, f, indent=2)
+    
+    def get_saved_container_ip(self, name: str) -> Optional[str]:
+        """Get saved container IP"""
+        if os.path.exists(CONTAINER_IPS_FILE):
+            with open(CONTAINER_IPS_FILE, 'r') as f:
+                ips = json.load(f)
+                return ips.get(name)
+        return None
+    
+    def remove_saved_container_ip(self, name: str):
+        """Remove saved container IP"""
+        if os.path.exists(CONTAINER_IPS_FILE):
+            with open(CONTAINER_IPS_FILE, 'r') as f:
+                ips = json.load(f)
+            
+            if name in ips:
+                del ips[name]
+                with open(CONTAINER_IPS_FILE, 'w') as f:
+                    json.dump(ips, f, indent=2)
+    
+    def get_all_containers(self) -> List[str]:
+        """Get all containers on the system"""
+        result = self.run_command(['lxc', 'list', '--format=json'], check=False)
+        if result.returncode != 0:
+            return []
+        containers = json.loads(result.stdout)
+        return [c['name'] for c in containers]
     
     def container_exists(self, name: str) -> bool:
         """Check if container exists"""
@@ -96,115 +317,123 @@ class LXCCompose:
         containers = json.loads(result.stdout)
         return len(containers) > 0 and containers[0].get('status') == 'Running'
     
-    def wait_for_container(self, name: str, timeout: int = 60) -> bool:
-        """Wait for container to be ready"""
-        click.echo(f"  Waiting for {name} to be ready...")
-        for i in range(timeout):
-            result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
-            if result.returncode == 0:
-                containers = json.loads(result.stdout)
-                if containers and containers[0].get('status') == 'Running':
-                    # Check if network is ready
-                    info = self.run_command(['lxc', 'info', name, '--format=json'], check=False)
-                    if info.returncode == 0:
-                        data = json.loads(info.stdout)
-                        if data.get('state') and data['state'].get('network'):
-                            return True
-            time.sleep(1)
-        return False
+    def get_container_ip(self, name: str) -> Optional[str]:
+        """Get container IP address"""
+        result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
+        if result.returncode != 0:
+            return None
+        
+        containers = json.loads(result.stdout)
+        if not containers:
+            return None
+        
+        container = containers[0]
+        if container.get('state', {}).get('network'):
+            for iface, details in container['state']['network'].items():
+                if iface != 'lo' and details.get('addresses'):
+                    for addr in details['addresses']:
+                        if addr['family'] == 'inet' and not addr['address'].startswith('fe80'):
+                            return addr['address'].split('/')[0]
+        return None
     
-    def get_container_order(self):
-        """Get containers in dependency order"""
-        containers = self.containers.copy()
-        ordered = []
-        added_names = set()
-        
-        # First pass: containers without dependencies
-        for container in containers:
-            if not container.get('depends_on'):
-                ordered.append(container)
-                added_names.add(container['name'])
-        
-        # Second pass: containers with dependencies
-        max_iterations = len(containers) * 2
-        iteration = 0
-        while len(ordered) < len(containers) and iteration < max_iterations:
-            iteration += 1
-            for container in containers:
-                if container['name'] in added_names:
-                    continue
-                    
-                deps = container.get('depends_on', [])
-                if isinstance(deps, str):
-                    deps = [deps]
-                    
-                if all(dep in added_names for dep in deps):
-                    ordered.append(container)
-                    added_names.add(container['name'])
-        
-        # Add any remaining containers (circular dependencies)
-        for container in containers:
-            if container['name'] not in added_names:
-                click.echo(f"{YELLOW}⚠{NC} Warning: {container['name']} has unresolved dependencies")
-                ordered.append(container)
-        
-        return ordered
+    def wait_for_network(self, name: str, timeout: int = 60) -> Optional[str]:
+        """Wait for container to get network and return IP"""
+        click.echo(f"  Waiting for network...")
+        start = time.time()
+        while time.time() - start < timeout:
+            ip = self.get_container_ip(name)
+            if ip:
+                click.echo(f"  Got IP: {ip}")
+                return ip
+            time.sleep(2)
+        return None
     
-    def create_container(self, container: Dict) -> bool:
-        """Create a new container"""
+    def setup_container_networking(self, name: str, exposed_ports: List[int]):
+        """Setup both hosts file and iptables rules"""
+        # Get container IP
+        ip = self.get_container_ip(name)
+        if not ip:
+            click.echo(f"  {YELLOW}Warning: Could not get container IP{NC}")
+            return
+        
+        try:
+            # Save IP for later cleanup
+            self.save_container_ip(name, ip)
+            
+            # Update hosts file
+            self.update_hosts_file("add", name, ip)
+            
+            # Mount shared hosts file to container
+            self.mount_hosts_file(name)
+            
+            # Mount .env file if it exists
+            self.mount_env_file(name)
+            
+            # Setup system-wide environment variables
+            self.setup_container_environment(name)
+            
+            # Setup iptables rules for exposed ports
+            if exposed_ports:
+                self.manage_exposed_ports("add", ip, exposed_ports)
+            
+        except Exception as e:
+            # Rollback on failure
+            click.echo(f"  {RED}Error setting up networking: {e}{NC}")
+            self.cleanup_container_networking(name)
+            raise
+    
+    def cleanup_container_networking(self, name: str):
+        """Remove hosts entry and iptables rules"""
+        # Try to get IP from saved data first, then from container
+        ip = self.get_saved_container_ip(name)
+        if not ip:
+            ip = self.get_container_ip(name)
+        
+        # Remove from hosts file
+        self.update_hosts_file("remove", name)
+        
+        # Remove iptables rules if we have an IP
+        if ip:
+            self.manage_exposed_ports("remove", ip, [])
+        
+        # Remove saved IP
+        self.remove_saved_container_ip(name)
+    
+    def create_container(self, container: Dict):
+        """Create a single container"""
         name = container['name']
         
-        if self.container_exists(name):
-            if self.container_running(name):
-                click.echo(f"{YELLOW}⚠{NC} Container {name} already running")
-            else:
-                click.echo(f"{BLUE}ℹ{NC} Starting existing container {name}...")
-                self.run_command(['lxc', 'start', name])
-            return True
-        
-        click.echo(f"{BLUE}ℹ{NC} Creating container {name}...")
-        
-        # Determine image/template
+        # Determine base image
         if 'image' in container:
-            # Old format: image field
             image = container['image']
-            cmd = ['lxc', 'launch', image, name]
         elif 'template' in container:
-            # New format: template and release
             template = container['template']
-            release = container.get('release', 'jammy')
-            
-            # Map template names to image sources
-            if template == 'ubuntu':
-                image = f'ubuntu:{release}'
-            elif template == 'alpine':
-                image = f'images:alpine/{release}'
+            release = container.get('release', 'latest')
+            if template == 'alpine':
+                image = f"images:alpine/{release}"
+            elif template in ['ubuntu', 'debian']:
+                image = f"images:{template}/{release}"
             else:
-                image = f'images:{template}/{release}'
-            
-            cmd = ['lxc', 'launch', image, name]
+                image = f"images:{template}/{release}"
         else:
-            # Default to Ubuntu 22.04
-            cmd = ['lxc', 'launch', 'ubuntu:22.04', name]
+            image = 'ubuntu:22.04'
         
-        # Add static IP if specified
-        if 'ip' in container:
-            cmd.extend(['--network', f'lxcbr0:ip={container["ip"]}'])
+        # Create container
+        click.echo(f"  Creating from {image}...")
+        self.run_command(['lxc', 'launch', image, name])
         
-        # Create the container
-        result = self.run_command(cmd, check=False)
-        if result.returncode != 0:
-            if 'already exists' in result.stderr:
-                click.echo(f"{YELLOW}⚠{NC} Container {name} already exists")
-                return True
-            else:
-                click.echo(f"{RED}✗{NC} Failed to create container {name}")
-                click.echo(f"  Error: {result.stderr}")
-                return False
+        # Wait for network
+        ip = self.wait_for_network(name)
         
-        # Wait for container to be ready
-        if not self.wait_for_container(name):
-            click.echo(f"{YELLOW}⚠{NC} Container {name} took too long to start")
+        # Setup networking (hosts file, env vars, and exposed ports)
+        exposed_ports = []
+        if 'exposed_ports' in container:
+            exposed_ports = container['exposed_ports']
+            if isinstance(exposed_ports, int):
+                exposed_ports = [exposed_ports]
+        
+        if ip:
+            self.setup_container_networking(name, exposed_ports)
         
         # Setup mounts
         if 'mounts' in container:
@@ -214,442 +443,376 @@ class LXCCompose:
         if 'packages' in container:
             self.install_packages(name, container['packages'])
         
-        # Run post_install commands
+        # Run post-install commands (with environment variables)
         if 'post_install' in container:
             self.run_post_install(name, container['post_install'])
-        
-        # Setup services
-        if 'services' in container:
-            self.setup_services(name, container['services'])
-        
-        # Setup port forwarding
-        if 'ports' in container:
-            self.setup_port_forwarding(name, container['ports'], container.get('ip'))
-        
-        click.echo(f"{GREEN}✓{NC} Container {name} created and configured")
-        return True
-    
-    def setup_mounts(self, container_name: str, mounts):
+            
+    def setup_mounts(self, name: str, mounts: List):
         """Setup container mounts"""
+        click.echo(f"  Setting up mounts...")
+        
+        config_dir = os.path.dirname(os.path.abspath(self.config_file))
+        
         for mount in mounts:
-            # Support both string format (./path:/container) and dict format
             if isinstance(mount, str):
+                # Simple format: "./path:/container/path"
                 if ':' in mount:
                     source, target = mount.split(':', 1)
-                    source = os.path.expanduser(source)
-                    # Convert relative paths to absolute
-                    if not os.path.isabs(source):
-                        config_dir = os.path.dirname(os.path.abspath(self.config_file))
-                        source = os.path.join(config_dir, source)
                 else:
-                    click.echo(f"{YELLOW}⚠{NC} Invalid mount format: {mount}")
                     continue
             elif isinstance(mount, dict):
-                source = os.path.expanduser(mount['source'])
-                target = mount['target']
-                # Convert relative paths to absolute
-                if not os.path.isabs(source):
-                    config_dir = os.path.dirname(os.path.abspath(self.config_file))
-                    source = os.path.join(config_dir, source)
+                # Dictionary format: {source: path, target: path}
+                source = mount.get('source', '')
+                target = mount.get('target', '')
             else:
-                click.echo(f"{YELLOW}⚠{NC} Invalid mount format: {mount}")
                 continue
             
-            # Create source directory if it doesn't exist
-            os.makedirs(source, exist_ok=True)
+            # Expand and resolve paths
+            source = os.path.expanduser(source)
+            if not os.path.isabs(source):
+                source = os.path.join(config_dir, source)
+            source = os.path.abspath(source)
             
-            # Add device
-            device_name = f"mount-{target.replace('/', '-').strip('-')}"
-            click.echo(f"  Mounting {source} -> {target}")
-            self.run_command([
-                'lxc', 'config', 'device', 'add', container_name,
-                device_name, 'disk',
-                f'source={source}', f'path={target}'
-            ])
+            # Create source directory if it doesn't exist
+            if not os.path.exists(source):
+                os.makedirs(source, exist_ok=True)
+                click.echo(f"    Created directory: {source}")
+            
+            # Add mount to container
+            device_name = target.replace('/', '-').strip('-') or 'root'
+            self.run_command(['lxc', 'config', 'device', 'add', name, device_name, 
+                            'disk', f'source={source}', f'path={target}'])
+            click.echo(f"    Mounted {source} -> {target}")
     
-    def install_packages(self, container_name: str, packages):
+    def install_packages(self, name: str, packages: List[str]):
         """Install packages in container"""
         if not packages:
             return
-        
+            
         click.echo(f"  Installing packages...")
         
-        # Determine package manager
-        result = self.run_command(['lxc', 'exec', container_name, '--', 'which', 'apt-get'], check=False)
+        # Detect package manager
+        result = self.run_command(['lxc', 'exec', name, '--', 'which', 'apt-get'], check=False)
         if result.returncode == 0:
             # Ubuntu/Debian
-            self.run_command(['lxc', 'exec', container_name, '--', 'apt-get', 'update'])
-            cmd = ['lxc', 'exec', container_name, '--', 'apt-get', 'install', '-y'] + packages
+            self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'update'])
+            self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'install', '-y'] + packages)
         else:
-            result = self.run_command(['lxc', 'exec', container_name, '--', 'which', 'apk'], check=False)
+            # Try Alpine
+            result = self.run_command(['lxc', 'exec', name, '--', 'which', 'apk'], check=False)
             if result.returncode == 0:
-                # Alpine
-                cmd = ['lxc', 'exec', container_name, '--', 'apk', 'add', '--no-cache'] + packages
-            else:
-                click.echo(f"{YELLOW}⚠{NC} Unknown package manager in {container_name}")
-                return
-        
-        self.run_command(cmd)
+                self.run_command(['lxc', 'exec', name, '--', 'apk', 'update'])
+                self.run_command(['lxc', 'exec', name, '--', 'apk', 'add'] + packages)
     
-    def run_post_install(self, container_name: str, post_install):
-        """Run post-install commands"""
-        for item in post_install:
+    def run_post_install(self, name: str, commands: List):
+        """Run post-installation commands with environment variables"""
+        click.echo(f"  Running post-install commands...")
+        
+        # Build environment string for commands
+        env_prefix = ""
+        if self.env_vars:
+            for key, value in self.env_vars.items():
+                env_prefix += f'export {key}="{value}"; '
+        
+        for item in commands:
             if isinstance(item, dict):
-                name = item.get('name', 'Post-install command')
+                cmd_name = item.get('name', 'Command')
                 command = item.get('command', '')
             else:
-                name = 'Post-install command'
+                cmd_name = 'Command'
                 command = item
             
-            if not command:
-                continue
-            
-            click.echo(f"  Running: {name}")
-            
-            # Handle multi-line commands
-            if isinstance(command, str) and '\n' in command:
-                # Write to temp script and execute
-                script = f"#!/bin/bash\nset -e\n{command}"
-                result = self.run_command([
-                    'lxc', 'exec', container_name, '--', 
-                    'bash', '-c', script
-                ])
-            else:
-                result = self.run_command([
-                    'lxc', 'exec', container_name, '--',
-                    'bash', '-c', command
-                ])
-    
-    def setup_services(self, container_name: str, services: Dict):
-        """Setup services in container"""
-        for service_name, service_config in services.items():
-            click.echo(f"  Setting up service: {service_name}")
-            
-            if isinstance(service_config, dict):
-                service_type = service_config.get('type', 'command')
-                
-                if service_type == 'system':
-                    # System service configuration
-                    config = service_config.get('config', '')
-                    if config:
-                        self.run_command([
-                            'lxc', 'exec', container_name, '--',
-                            'bash', '-c', config
-                        ])
-                
-                elif service_type == 'systemd':
-                    # Create systemd service
-                    self.create_systemd_service(container_name, service_name, service_config)
-                
+            if command:
+                click.echo(f"    {cmd_name}...")
+                # Handle multi-line commands
+                if '\n' in command:
+                    # Create a script with environment variables
+                    script = f"#!/bin/sh\n{env_prefix}\n{command}"
+                    script = script.replace('\r\n', '\n').replace('\r', '\n')
+                    self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', script])
                 else:
-                    # Regular command or supervisor service
-                    self.create_supervisor_service(container_name, service_name, service_config)
-            else:
-                # Simple command
-                self.run_command([
-                    'lxc', 'exec', container_name, '--',
-                    'bash', '-c', service_config
-                ])
+                    # Single line command with environment
+                    full_command = f"{env_prefix}{command}" if env_prefix else command
+                    self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', full_command])
     
-    def create_systemd_service(self, container_name: str, service_name: str, config: Dict):
-        """Create systemd service in container"""
-        command = config.get('command', '')
-        if not command:
+    def handle_dependencies(self, container: Dict):
+        """Handle container dependencies"""
+        if 'depends_on' not in container:
             return
-        
-        service_content = f"""[Unit]
-Description={service_name}
-After=network.target
-
-[Service]
-Type=simple
-ExecStart={command}
-Restart=always
-User={config.get('user', 'root')}
-WorkingDirectory={config.get('directory', '/')}
-
-[Install]
-WantedBy=multi-user.target
-"""
-        
-        # Write service file
-        self.run_command([
-            'lxc', 'exec', container_name, '--',
-            'bash', '-c', f'cat > /etc/systemd/system/{service_name}.service << EOF\n{service_content}\nEOF'
-        ])
-        
-        # Enable and start service
-        self.run_command(['lxc', 'exec', container_name, '--', 'systemctl', 'daemon-reload'])
-        self.run_command(['lxc', 'exec', container_name, '--', 'systemctl', 'enable', service_name])
-        self.run_command(['lxc', 'exec', container_name, '--', 'systemctl', 'start', service_name])
-    
-    def create_supervisor_service(self, container_name: str, service_name: str, config: Dict):
-        """Create supervisor service in container"""
-        # Check if supervisor is installed
-        result = self.run_command(['lxc', 'exec', container_name, '--', 'which', 'supervisorctl'], check=False)
-        if result.returncode != 0:
-            return
-        
-        command = config.get('command', '')
-        if not command:
-            return
-        
-        # Build environment string
-        env_vars = config.get('environment', {})
-        env_str = ','.join([f'{k}="{v}"' for k, v in env_vars.items()])
-        
-        supervisor_config = f"""[program:{service_name}]
-command={command}
-directory={config.get('directory', '/')}
-user={config.get('user', 'root')}
-autostart={str(config.get('autostart', True)).lower()}
-autorestart={str(config.get('autorestart', True)).lower()}
-stdout_logfile={config.get('stdout_logfile', f'/var/log/{service_name}.log')}
-stderr_logfile={config.get('stderr_logfile', f'/var/log/{service_name}_err.log')}
-environment={env_str}
-"""
-        
-        # Write supervisor config
-        self.run_command([
-            'lxc', 'exec', container_name, '--',
-            'bash', '-c', f'cat > /etc/supervisor/conf.d/{service_name}.conf << EOF\n{supervisor_config}\nEOF'
-        ])
-        
-        # Reload supervisor
-        self.run_command(['lxc', 'exec', container_name, '--', 'supervisorctl', 'reread'], check=False)
-        self.run_command(['lxc', 'exec', container_name, '--', 'supervisorctl', 'update'], check=False)
-    
-    def setup_port_forwarding(self, container_name: str, ports, container_ip: Optional[str] = None):
-        """Setup port forwarding for container"""
-        if not container_ip:
-            # Get container IP
-            result = self.run_command(['lxc', 'list', container_name, '--format=json'])
-            containers = json.loads(result.stdout)
-            if not containers:
-                return
             
-            container = containers[0]
-            if container.get('state') and container['state'].get('network'):
-                for iface, details in container['state']['network'].items():
-                    if iface == 'lo':
-                        continue
-                    for addr in details.get('addresses', []):
-                        if addr['family'] == 'inet' and not addr['address'].startswith('fe80'):
-                            container_ip = addr['address']
-                            break
+        deps = container['depends_on']
+        if isinstance(deps, str):
+            deps = [deps]
         
-        if not container_ip:
-            click.echo(f"{YELLOW}⚠{NC} Could not determine IP for {container_name}")
-            return
-        
-        # Load existing port forwards
-        os.makedirs(DATA_DIR, exist_ok=True)
-        forwards = []
-        if os.path.exists(PORT_FORWARDS_FILE):
-            with open(PORT_FORWARDS_FILE, 'r') as f:
-                forwards = json.load(f)
-        
-        for port_config in ports:
-            if isinstance(port_config, int):
-                host_port = container_port = port_config
-            elif isinstance(port_config, str) and ':' in port_config:
-                parts = port_config.split(':')
-                host_port = int(parts[0])
-                container_port = int(parts[1])
-            elif isinstance(port_config, dict):
-                host_port = port_config.get('host', port_config.get('port'))
-                container_port = port_config.get('container', port_config.get('port'))
-            else:
+        for dep in deps:
+            if not self.container_exists(dep):
+                click.echo(f"  {YELLOW}Warning: Dependency {dep} doesn't exist{NC}")
                 continue
-            
-            click.echo(f"  Port forward: {host_port} -> {container_ip}:{container_port}")
-            
-            # Add iptables rules
-            # PREROUTING for external access
-            self.run_command([
-                'sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING',
-                '-p', 'tcp', '--dport', str(host_port),
-                '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'
-            ], check=False)
-            
-            # OUTPUT for local access
-            self.run_command([
-                'sudo', 'iptables', '-t', 'nat', '-A', 'OUTPUT',
-                '-p', 'tcp', '--dport', str(host_port), '-d', '127.0.0.1',
-                '-j', 'DNAT', '--to-destination', f'{container_ip}:{container_port}'
-            ], check=False)
-            
-            # POSTROUTING for SNAT
-            self.run_command([
-                'sudo', 'iptables', '-t', 'nat', '-A', 'POSTROUTING',
-                '-p', 'tcp', '-d', container_ip, '--dport', str(container_port),
-                '-j', 'MASQUERADE'
-            ], check=False)
-            
-            # Save to registry
-            forwards.append({
-                'container': container_name,
-                'host_port': host_port,
-                'container_port': container_port,
-                'container_ip': container_ip
-            })
-        
-        # Save port forwards
-        with open(PORT_FORWARDS_FILE, 'w') as f:
-            json.dump(forwards, f, indent=2)
+                
+            if not self.container_running(dep):
+                click.echo(f"  Starting dependency: {dep}")
+                self.run_command(['lxc', 'start', dep])
+                
+                # Wait for network and setup networking if needed
+                ip = self.wait_for_network(dep, timeout=30)
+                if ip and not self.get_saved_container_ip(dep):
+                    # Dependency wasn't properly setup, just add to hosts
+                    self.save_container_ip(dep, ip)
+                    self.update_hosts_file("add", dep, ip)
     
     def up(self):
-        """Create and start all containers"""
-        if not self.containers:
-            click.echo(f"{YELLOW}⚠{NC} No containers defined in {self.config_file}")
-            return
-        
-        click.echo(f"{BOLD}Starting LXC Compose...{NC}")
-        
-        # Process containers in dependency order
-        ordered_containers = self.get_container_order()
-        
-        for container in ordered_containers:
-            # Handle dependencies
-            deps = container.get('depends_on', [])
-            if isinstance(deps, str):
-                deps = [deps]
-            
-            for dep in deps:
-                click.echo(f"  Waiting for dependency: {dep}")
-                max_wait = 60
-                for i in range(max_wait):
-                    if self.container_running(dep):
-                        break
-                    time.sleep(1)
+        """Create and start containers"""
+        if self.all_containers:
+            click.echo(f"{BOLD}Starting all containers on system...{NC}")
+            containers = self.get_all_containers()
+            if not containers:
+                click.echo(f"{YELLOW}No containers found on system{NC}")
+                return
+                
+            for name in containers:
+                if not self.container_running(name):
+                    click.echo(f"Starting {name}...")
+                    self.run_command(['lxc', 'start', name])
                 else:
-                    click.echo(f"{YELLOW}⚠{NC} Dependency {dep} not ready after {max_wait}s")
+                    click.echo(f"Container {name} already running")
+        else:
+            click.echo(f"{BOLD}Creating/starting containers from {self.config_file}...{NC}")
             
-            self.create_container(container)
+            for container in self.containers:
+                name = container['name']
+                click.echo(f"\n{BLUE}Container: {name}{NC}")
+                
+                # Handle dependencies
+                self.handle_dependencies(container)
+                
+                if self.container_exists(name):
+                    if self.container_running(name):
+                        click.echo(f"  Already running")
+                    else:
+                        click.echo(f"  Starting...")
+                        self.run_command(['lxc', 'start', name])
+                        
+                        # Re-setup networking
+                        ip = self.wait_for_network(name)
+                        if ip:
+                            exposed_ports = container.get('exposed_ports', [])
+                            if isinstance(exposed_ports, int):
+                                exposed_ports = [exposed_ports]
+                            self.setup_container_networking(name, exposed_ports)
+                else:
+                    self.create_container(container)
+            
+            click.echo(f"\n{GREEN}✓{NC} All containers are up")
     
     def down(self):
-        """Stop all containers"""
-        if not self.containers:
-            click.echo(f"{YELLOW}⚠{NC} No containers defined in {self.config_file}")
-            return
-        
-        click.echo(f"{BOLD}Stopping containers...{NC}")
-        
-        # Stop in reverse dependency order
-        for container in reversed(self.get_container_order()):
-            name = container['name']
-            if self.container_running(name):
-                click.echo(f"{BLUE}ℹ{NC} Stopping {name}...")
-                self.run_command(['lxc', 'stop', name])
-                click.echo(f"{GREEN}✓{NC} Stopped {name}")
-            else:
-                click.echo(f"{YELLOW}⚠{NC} Container {name} is not running")
+        """Stop containers"""
+        if self.all_containers:
+            click.echo(f"{BOLD}Stopping all containers on system...{NC}")
+            containers = self.get_all_containers()
+            if not containers:
+                click.echo(f"{YELLOW}No containers found on system{NC}")
+                return
+                
+            for name in containers:
+                if self.container_running(name):
+                    click.echo(f"Stopping {name}...")
+                    self.run_command(['lxc', 'stop', name])
+                else:
+                    click.echo(f"Container {name} already stopped")
+        else:
+            click.echo(f"{BOLD}Stopping containers from {self.config_file}...{NC}")
+            
+            for container in self.containers:
+                name = container['name']
+                if self.container_exists(name) and self.container_running(name):
+                    click.echo(f"Stopping {name}...")
+                    # Note: We don't cleanup networking on stop, only on destroy
+                    self.run_command(['lxc', 'stop', name])
+                else:
+                    click.echo(f"Container {name} not running")
+            
+            click.echo(f"\n{GREEN}✓{NC} All containers stopped")
+    
+    def destroy(self):
+        """Stop and remove containers"""
+        if self.all_containers:
+            click.echo(f"{BOLD}{RED}DESTROYING ALL CONTAINERS ON SYSTEM!{NC}")
+            containers = self.get_all_containers()
+            if not containers:
+                click.echo(f"{YELLOW}No containers found on system{NC}")
+                return
+                
+            for name in containers:
+                click.echo(f"Destroying {name}...")
+                if self.container_running(name):
+                    self.run_command(['lxc', 'stop', name])
+                
+                # Cleanup networking
+                self.cleanup_container_networking(name)
+                
+                # Delete container
+                self.run_command(['lxc', 'delete', name])
+        else:
+            click.echo(f"{BOLD}Destroying containers from {self.config_file}...{NC}")
+            
+            for container in self.containers:
+                name = container['name']
+                if self.container_exists(name):
+                    click.echo(f"Destroying {name}...")
+                    if self.container_running(name):
+                        self.run_command(['lxc', 'stop', name])
+                    
+                    # Cleanup networking
+                    self.cleanup_container_networking(name)
+                    
+                    # Delete container
+                    self.run_command(['lxc', 'delete', name])
+                else:
+                    click.echo(f"Container {name} doesn't exist")
+                    # Still try to cleanup any lingering network config
+                    self.cleanup_container_networking(name)
+            
+            click.echo(f"\n{GREEN}✓{NC} All containers destroyed")
     
     def list_containers(self):
-        """List all containers with their status"""
-        if not self.containers:
-            click.echo(f"{YELLOW}⚠{NC} No containers defined in {self.config_file}")
-            return
-        
-        click.echo(f"{BOLD}Containers from {self.config_file}:{NC}")
-        click.echo("=" * 60)
-        
-        # Load port forwards
-        port_forwards = {}
-        if os.path.exists(PORT_FORWARDS_FILE):
-            with open(PORT_FORWARDS_FILE, 'r') as f:
-                forwards = json.load(f)
-                for fw in forwards:
-                    container = fw['container']
-                    if container not in port_forwards:
-                        port_forwards[container] = []
-                    port_forwards[container].append(f"{fw['host_port']}:{fw['container_port']}")
-        
-        for container in self.containers:
-            name = container['name']
-            
-            # Get container info
-            result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
-            
-            if result.returncode != 0 or not result.stdout:
-                click.echo(f"  {name}: {RED}Not Found{NC}")
-                continue
-            
+        """List containers and their status"""
+        if self.all_containers:
+            click.echo(f"{BOLD}All containers on system:{NC}")
+            result = self.run_command(['lxc', 'list', '--format=json'])
             containers = json.loads(result.stdout)
+            
             if not containers:
-                click.echo(f"  {name}: {RED}Not Found{NC}")
-                continue
+                click.echo(f"{YELLOW}No containers found{NC}")
+                return
             
-            info = containers[0]
-            status = info.get('status', 'Unknown')
-            
-            # Color code status
-            if status == 'Running':
-                status_color = GREEN
-            elif status == 'Stopped':
-                status_color = YELLOW
-            else:
-                status_color = RED
-            
-            click.echo(f"  {name}: {status_color}{status}{NC}")
-            
-            # Show IP address if running
-            if status == 'Running' and info.get('state') and info['state'].get('network'):
-                for iface, details in info['state']['network'].items():
-                    if iface == 'lo':
-                        continue
-                    for addr in details.get('addresses', []):
-                        if addr['family'] == 'inet' and not addr['address'].startswith('fe80'):
-                            click.echo(f"    IP: {addr['address']}")
-                            break
-            
-            # Show port mappings
-            if name in port_forwards:
-                click.echo(f"    Ports: {', '.join(port_forwards[name])}")
-            
-            # Show services
-            if 'services' in container:
-                if isinstance(container['services'], dict):
-                    services = list(container['services'].keys())
+            click.echo("\n" + "=" * 60)
+            for container in containers:
+                name = container['name']
+                status = container.get('status', 'Unknown')
+                
+                # Color code status
+                if status == 'Running':
+                    status_color = GREEN
+                elif status == 'Stopped':
+                    status_color = YELLOW
                 else:
-                    services = [s.get('name', 'unnamed') for s in container['services'] if isinstance(s, dict)]
-                if services:
-                    click.echo(f"    Services: {', '.join(services)}")
+                    status_color = RED
+                
+                click.echo(f"  {name}: {status_color}{status}{NC}")
+                
+                # Show IP if running
+                if status == 'Running':
+                    ip = self.get_container_ip(name)
+                    if ip:
+                        click.echo(f"    IP: {ip}")
+                        
+                        # Check if this container has saved exposed ports
+                        # (We don't have config for --all, so we can't show exposed ports)
+        else:
+            click.echo(f"{BOLD}Containers from {self.config_file}:{NC}")
+            
+            # Show loaded environment variables
+            if self.env_vars:
+                click.echo(f"\n  Environment variables loaded from .env:")
+                for key in self.env_vars:
+                    click.echo(f"    {key}")
+            
+            click.echo("\n" + "=" * 60)
+            for container in self.containers:
+                name = container['name']
+                
+                # Get container status
+                result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
+                if result.returncode != 0:
+                    click.echo(f"  {name}: {RED}Not Found{NC}")
+                    continue
+                
+                containers = json.loads(result.stdout)
+                if not containers:
+                    click.echo(f"  {name}: {RED}Not Found{NC}")
+                    continue
+                
+                info = containers[0]
+                status = info.get('status', 'Unknown')
+                
+                # Color code status
+                if status == 'Running':
+                    status_color = GREEN
+                elif status == 'Stopped':
+                    status_color = YELLOW
+                else:
+                    status_color = RED
+                
+                click.echo(f"  {name}: {status_color}{status}{NC}")
+                
+                # Show IP if running
+                if status == 'Running':
+                    ip = self.get_container_ip(name)
+                    if ip:
+                        click.echo(f"    IP: {ip}")
+                
+                # Show exposed ports from config
+                exposed_ports = container.get('exposed_ports', [])
+                if exposed_ports:
+                    if isinstance(exposed_ports, int):
+                        exposed_ports = [exposed_ports]
+                    click.echo(f"    Exposed ports: {', '.join(map(str, exposed_ports))}")
         
         click.echo("=" * 60)
+
+# Confirmation helper
+def confirm_all_operation(operation: str):
+    """Require confirmation for --all operations"""
+    expected = f"Yes, I want to {operation} all containers. I am aware of the risks involved."
+    click.echo(f"\n{YELLOW}⚠ WARNING: This will {operation} ALL containers on the system!{NC}")
+    click.echo(f"Type exactly: {BOLD}{expected}{NC}")
+    confirmation = input("> ")
+    if confirmation != expected:
+        click.echo(f"{RED}✗{NC} Confirmation failed. Operation cancelled.")
+        sys.exit(1)
 
 @click.group()
 def cli():
-    """LXC Compose v2 - Container orchestration for LXC"""
+    """LXC Compose - Simple container orchestration"""
     pass
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
-def up(file):
+@click.option('--all', 'all_containers', is_flag=True, help='Start ALL containers on system')
+def up(file, all_containers):
     """Create and start containers"""
-    compose = LXCCompose(file)
+    if all_containers:
+        confirm_all_operation("start")
+    compose = LXCCompose(file if not all_containers else None, all_containers)
     compose.up()
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
-def down(file):
+@click.option('--all', 'all_containers', is_flag=True, help='Stop ALL containers on system')
+def down(file, all_containers):
     """Stop containers"""
-    compose = LXCCompose(file)
+    if all_containers:
+        confirm_all_operation("stop")
+    compose = LXCCompose(file if not all_containers else None, all_containers)
     compose.down()
 
 @cli.command('list')
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
-def list_cmd(file):
+@click.option('--all', 'all_containers', is_flag=True, help='List ALL containers on system')
+def list_cmd(file, all_containers):
     """List containers and status"""
-    compose = LXCCompose(file)
+    compose = LXCCompose(file if not all_containers else None, all_containers)
     compose.list_containers()
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
-def status(file):
-    """Alias for list"""
-    compose = LXCCompose(file)
-    compose.list_containers()
+@click.option('--all', 'all_containers', is_flag=True, help='Destroy ALL containers on system')
+def destroy(file, all_containers):
+    """Stop and remove containers"""
+    if all_containers:
+        confirm_all_operation("destroy")
+    compose = LXCCompose(file if not all_containers else None, all_containers)
+    compose.destroy()
 
 if __name__ == '__main__':
     cli()

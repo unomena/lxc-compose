@@ -30,9 +30,9 @@ containers:
     mounts:
       - .:/app  # Mount current directory containing Flask app
     
-    ports:
-      - 5000:5000  # Flask dev server
-      - 8080:80    # Nginx
+    exposed_ports:
+      - 5000  # Flask dev server
+      - 80    # Nginx
     
     packages:
       - python3
@@ -52,10 +52,7 @@ containers:
         user: www-data
         stdout_logfile: /var/log/flask/flask.log
         stderr_logfile: /var/log/flask/flask_err.log
-        environment:
-          FLASK_ENV: development
-          REDIS_HOST: flask-redis
-          REDIS_PORT: "6379"
+        # Environment variables from .env are automatically available
       
       nginx:
         type: system

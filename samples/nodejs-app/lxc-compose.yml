@@ -4,7 +4,7 @@
 version: '1.0'
 
 containers:
-  nodejs-mongo:
+  sample-nodejs-mongo:
     template: ubuntu
     release: jammy
     
@@ -20,7 +20,7 @@ containers:
           sed -i 's/bind_ip = 127.0.0.1/bind_ip = 0.0.0.0/g' /etc/mongodb.conf
           systemctl restart mongodb
 
-  nodejs-app:
+  sample-nodejs-app:
     template: ubuntu
     release: jammy
     
@@ -30,9 +30,9 @@ containers:
     mounts:
       - .:/app
     
-    ports:
-      - 3000:3000  # Node.js app
-      - 8080:80    # Nginx
+    exposed_ports:
+      - 3000  # Node.js app
+      - 80    # Nginx
     
     packages:
       - curl
@@ -47,10 +47,10 @@ containers:
         autorestart: true
         stdout_logfile: /var/log/nodejs/app.log
         stderr_logfile: /var/log/nodejs/app_err.log
+        # Environment variables from .env are automatically available
+        # MONGO_URL constructed from env vars
         environment:
-          NODE_ENV: development
-          PORT: "3000"
-          MONGO_URL: "mongodb://nodejs-mongo:27017/myapp"
+          MONGO_URL: "mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}"
       
       nginx:
         type: system
