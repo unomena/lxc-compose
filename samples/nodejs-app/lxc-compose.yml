@@ -9,23 +9,33 @@ containers:
     release: jammy
     
     packages:
-      - mongodb
-      - mongodb-clients
+      - wget
+      - curl
+      - gnupg
     
-    services:
-      mongodb:
-        type: system
-        config: |
-          # Configure MongoDB
-          sed -i 's/bind_ip = 127.0.0.1/bind_ip = 0.0.0.0/g' /etc/mongodb.conf
-          systemctl restart mongodb
+    post_install:
+      - name: "Install MongoDB"
+        command: |
+          # Install MongoDB from official repository
+          wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add -
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          apt-get update
+          apt-get install -y mongodb-org
+          
+          # Configure MongoDB for container
+          sed -i 's/bindIp: 127.0.0.1/bindIp: 0.0.0.0/g' /etc/mongod.conf
+          
+          # Start MongoDB
+          systemctl daemon-reload
+          systemctl enable mongod
+          systemctl start mongod
 
   sample-nodejs-app:
     template: ubuntu
     release: jammy
     
     depends_on:
-      - nodejs-mongo
+      - sample-nodejs-mongo
     
     mounts:
       - .:/app

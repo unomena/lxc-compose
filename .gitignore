@@ -27,6 +27,8 @@ logs/
 # Local environment
 .env
 .env.local
+# But allow .env files in samples directory
+!samples/**/.env
 
 # Runtime generated files
 srv/lxc-compose/scripts/*.sh
