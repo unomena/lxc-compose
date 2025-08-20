@@ -310,52 +310,40 @@ cache_container_images() {
 
     # Test 1: Create vanilla Alpine container
     info "  Downloading Alpine image..."
-    if lxc launch images:alpine/3.19 test-alpine-cache >/dev/null 2>&1; then
-        sleep 2
-        if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-alpine-cache$"; then
-            log "    ✓ Alpine image cached"
-        else
-            warning "    ✗ Alpine container creation failed"
-            success=false
-        fi
+    lxc launch alpine/3.19 test-alpine-cache
+    sleep 2
+    if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-alpine-cache$"; then
+        log "    ✓ Alpine image cached"
         lxc delete test-alpine-cache --force >/dev/null 2>&1
     else
-        warning "    ✗ Failed to download Alpine image"
+        warning "    ✗ Alpine container creation failed"
         success=false
     fi
-
+    
     # Test 2: Create vanilla Ubuntu minimal container
     info "  Downloading Ubuntu minimal image..."
-    if lxc launch ubuntu-minimal:lts test-ubuntu-minimal-cache >/dev/null 2>&1; then
-        sleep 2
-        if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-minimal-cache$"; then
-            log "    ✓ Ubuntu minimal image cached"
-        else
-            warning "    ✗ Ubuntu minimal container creation failed"
-            success=false
-        fi
+    lxc launch ubuntu-minimal:lts test-ubuntu-minimal-cache
+    sleep 2
+    if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-minimal-cache$"; then
+        log "    ✓ Ubuntu minimal image cached"
         lxc delete test-ubuntu-minimal-cache --force >/dev/null 2>&1
     else
-        warning "    ✗ Failed to download Ubuntu minimal image"
+        warning "    ✗ Ubuntu minimal container creation failed"
         success=false
     fi
-
+    
     # Test 3: Create vanilla Ubuntu LTS container
     info "  Downloading Ubuntu LTS image..."
-    if lxc launch ubuntu:lts test-ubuntu-lts-cache >/dev/null 2>&1; then
-        sleep 2
-        if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-lts-cache$"; then
-            log "    ✓ Ubuntu LTS image cached"
-        else
-            warning "    ✗ Ubuntu LTS container creation failed"
-            success=false
-        fi
+    lxc launch ubuntu:lts test-ubuntu-lts-cache
+    sleep 2
+    if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-lts-cache$"; then
+        log "    ✓ Ubuntu LTS image cached"
         lxc delete test-ubuntu-lts-cache --force >/dev/null 2>&1
     else
-        warning "    ✗ Failed to download Ubuntu LTS image"
+        warning "    ✗ Ubuntu LTS container creation failed"
         success=false
     fi
-
+        
     # Test basic lxc-compose command
     info "  Testing lxc-compose command..."
     if $BIN_PATH list >/dev/null 2>&1; then
