@@ -117,7 +117,8 @@ setup_directories() {
     
     # Create required directories
     mkdir -p "$INSTALL_DIR/cli"
-    mkdir -p "$INSTALL_DIR/configs"
+    mkdir -p "$INSTALL_DIR/docs"
+    mkdir -p "$INSTALL_DIR/samples"
     mkdir -p "/etc/lxc-compose"
     mkdir -p "/var/log/lxc-compose"
     
@@ -134,8 +135,11 @@ copy_files() {
     # Copy CLI files
     cp -r "$SCRIPT_DIR/srv/lxc-compose/cli/"* "$INSTALL_DIR/cli/" 2>/dev/null || true
     
-    # Copy config templates if they exist
-    cp -r "$SCRIPT_DIR/srv/lxc-compose/configs/"* "$INSTALL_DIR/configs/" 2>/dev/null || true
+    # Copy docs
+    cp -r "$SCRIPT_DIR/docs/"* "$INSTALL_DIR/docs/" 2>/dev/null || true
+    
+    # Copy samples
+    cp -r "$SCRIPT_DIR/samples/"* "$INSTALL_DIR/samples/" 2>/dev/null || true
     
     # Make scripts executable
     chmod +x "$INSTALL_DIR/cli/lxc_compose.py"
@@ -290,34 +294,26 @@ copy_sample_projects() {
     echo "  - flask-app: Flask with Redis cache"
     echo "  - nodejs-app: Express.js with MongoDB"
     echo ""
+    info "Copying sample projects to ~/lxc-samples..."
     
-    read -p "Would you like to copy sample projects to ~/lxc-samples? (y/N): " -n 1 -r
-    echo
-    
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        info "Copying sample projects to ~/lxc-samples..."
-        
-        # Get the real user's home directory (not root)
-        if [ -n "$SUDO_USER" ]; then
-            USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-            USER_NAME="$SUDO_USER"
-        else
-            USER_HOME="$HOME"
-            USER_NAME="$USER"
-        fi
-        
-        # Copy samples
-        cp -r "$SCRIPT_DIR/samples" "$USER_HOME/lxc-samples"
-        chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/lxc-samples"
-        
-        log "Sample projects copied to $USER_HOME/lxc-samples"
-        echo ""
-        echo "To use a sample:"
-        echo "  cd ~/lxc-samples/django-minimal"
-        echo "  lxc-compose up"
+    # Get the real user's home directory (not root)
+    if [ -n "$SUDO_USER" ]; then
+        USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+        USER_NAME="$SUDO_USER"
     else
-        info "Skipping sample projects (you can find them in the repo)"
+        USER_HOME="$HOME"
+        USER_NAME="$USER"
     fi
+    
+    # Copy samples
+    cp -r "$SCRIPT_DIR/samples" "$USER_HOME/lxc-samples"
+    chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/lxc-samples"
+    
+    log "Sample projects copied to $USER_HOME/lxc-samples"
+    echo ""
+    echo "To use a sample:"
+    echo "  cd ~/lxc-samples/django-minimal"
+    echo "  lxc-compose up"
 }
 
 # Main installation
