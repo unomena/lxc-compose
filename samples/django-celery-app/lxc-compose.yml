@@ -1,25 +1,29 @@
 # Django + Celery Application with PostgreSQL and Redis
 # Multi-container setup with proper dependencies
 
-version: '1.0'
+version: "1.0"
 
 containers:
   sample-datastore:
     template: alpine
     release: "3.19"
-    
+
     packages:
       - postgresql
       - postgresql-client
       - redis
 
     exposed_ports:
-      - 5432    # PostgreSQL
-      - 6379    # Redis
-    
+      - 5432 # PostgreSQL
+      - 6379 # Redis
+
     mounts:
       - ./config/sample-datastore/redis.conf:/etc/redis.conf
-    
+
+    logs:
+      - postgres:/var/log/postgresql/postgresql.log
+      - redis:/var/log/redis/redis.log
+
     post_install:
       - name: "Setup PostgreSQL"
         command: |
@@ -28,27 +32,27 @@ containers:
           mkdir -p /var/lib/postgresql/data
           chown -R postgres:postgres /run/postgresql
           chown -R postgres:postgres /var/lib/postgresql
-          
+
           # Initialize PostgreSQL
           su postgres -c "initdb -D /var/lib/postgresql/data"
-          
+
           # Configure PostgreSQL
           echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
           echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
-          
+
           # Start PostgreSQL temporarily for setup
           su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
           sleep 5
-          
+
           # Create database and user (using env vars from .env)
           su postgres -c "createdb ${DB_NAME}"
           su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
           su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
           su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
-          
+
           # Stop PostgreSQL to restart it as a daemon
           su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
-          
+
       - name: "Start PostgreSQL"
         command: |
           # Start PostgreSQL as a daemon
@@ -57,42 +61,50 @@ containers:
           sleep 2
           su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
 
-      - name: "Setup and start Redis"
+      - name: "Setup Redis"
         command: |
           # Create Redis directories with proper ownership
           mkdir -p /var/lib/redis
           mkdir -p /var/log/redis
           mkdir -p /run/redis
-          
+
           # Create redis user if it doesn't exist
           adduser -D -H -s /sbin/nologin redis 2>/dev/null || true
-          
+
           chown -R redis:redis /var/lib/redis
           chown -R redis:redis /var/log/redis
           chown -R redis:redis /run/redis
-          
+
           # Set permissions on redis config
           chmod 644 /etc/redis.conf
-          
+
+      - name: "Start Redis"
+        command: |
           # Start Redis directly (OpenRC might not work properly in LXC)
           /usr/bin/redis-server /etc/redis.conf --daemonize yes
 
   sample-django-app:
-    template: ubuntu
+    template: ubuntu-minimal
     release: lts
-    
+
     # Dependencies must exist before this container can start
     depends_on:
       - sample-datastore
-    
+
     mounts:
       - .:/app
       - ./config/sample-django-app/supervisord.conf:/etc/supervisord.conf
       - ./config/sample-django-app/nginx.conf:/etc/nginx/sites-available/django-app
-    
+
     exposed_ports:
-      - 80    # Nginx (serves Django app)
-    
+      - 80 # Nginx (serves Django app)
+
+    logs:
+      - django:/var/log/django/django.log
+      - django-error:/var/log/django/django_err.log
+      - celery:/var/log/celery/celery.log
+      - celery-error:/var/log/celery/celery_err.log
+
     packages:
       - python3
       - python3-pip
@@ -106,7 +118,7 @@ containers:
       - redis-tools
       - postgresql-client
       - curl
-    
+
     # Note: Environment variables from .env are automatically available
 
     services:
@@ -120,7 +132,7 @@ containers:
         stderr_logfile: /var/log/django/django_err.log
         startsecs: 10
         stopwaitsecs: 600
-      
+
       celery:
         command: /app/venv/bin/celery -A config worker -l info
         directory: /app/src
@@ -131,7 +143,7 @@ containers:
         stderr_logfile: /var/log/celery/celery_err.log
         startsecs: 10
         stopwaitsecs: 600
-      
+
       celery-beat:
         command: /app/venv/bin/celery -A config beat -l info
         directory: /app/src
@@ -142,21 +154,21 @@ containers:
         stderr_logfile: /var/log/celery/celery-beat_err.log
         startsecs: 10
         stopwaitsecs: 600
-    
-    post_install:      
+
+    post_install:
+      - name: "Create directories"
+        command: |
+          mkdir -p /var/log/django /var/log/celery /run/django
+          mkdir -p /app/static /app/media
+          mkdir -p /var/log/nginx
+
       - name: "Setup Python environment"
         command: |
           cd /app
           python3 -m venv venv
           ./venv/bin/pip install --upgrade pip setuptools wheel
           ./venv/bin/pip install -r requirements.txt
-      
-      - name: "Create directories"
-        command: |
-          mkdir -p /var/log/django /var/log/celery /run/django
-          mkdir -p /app/static /app/media
-          mkdir -p /var/log/nginx
-      
+
       - name: "Run migrations"
         command: |
           cd /app/src
@@ -174,14 +186,14 @@ containers:
           ../venv/bin/python manage.py makemigrations api tasks
           ../venv/bin/python manage.py migrate
           ../venv/bin/python manage.py collectstatic --noinput
-      
+
       - name: "Create superuser"
         command: |
           cd /app/src
           # Using env vars from .env
           ../venv/bin/python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
           echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | ../venv/bin/python manage.py shell
-      
+
       - name: "Set permissions"
         command: |
           # Create www-data user if it doesn't exist
@@ -189,7 +201,7 @@ containers:
           chown -R www-data:www-data /app
           chmod -R 755 /app
           chmod -R 775 /app/media /app/static /var/log/django /var/log/celery
-      
+
       - name: "Start Supervisor service"
         command: |
           # Start supervisord directly (systemd doesn't work properly in LXC)
@@ -212,7 +224,7 @@ containers:
             echo "Waiting for Django... (attempt $i/30)"
             sleep 2
           done
-      
+
       - name: "Setup Nginx"
         command: |
           # Enable the Django site

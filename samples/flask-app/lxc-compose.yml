@@ -1,51 +1,24 @@
-# Minimal Flask Application with Redis - Single Alpine Container
-# Ultra-lightweight setup with Redis and Flask in one container
+# Flask Application with Redis
+# Multi-container setup following project standards
 
 version: '1.0'
 
 containers:
-  sample-flask-app:
+  sample-flask-datastore:
     template: alpine
     release: "3.19"
     
-    mounts:
-      - .:/app
-      - ./config/supervisord.conf:/etc/supervisord.conf
-      - ./config/redis.conf:/etc/redis.conf
-    
-    services:
-      flask:
-        command: /app/venv/bin/python /app/app.py
-        directory: /app
-        user: root
-        autostart: true
-        autorestart: true
-        priority: 20
-        stdout_logfile: /var/log/flask.log
-        stderr_logfile: /var/log/flask_err.log
-        startsecs: 10
-        stopwaitsecs: 600
-    
-    exposed_ports:
-      - 5000  # Flask app
-      - 6379  # Redis (optional external access)
-    
     packages:
       - redis
-      - python3
-      - py3-pip
-      - python3-dev
-      - gcc
-      - musl-dev
-      - linux-headers
-      - build-base
-      - libffi-dev
-      - supervisor
+
+    exposed_ports:
+      - 6379    # Redis
     
-    # Note: Environment variables from .env are automatically available
+    mounts:
+      - ./config/sample-flask-datastore/redis.conf:/etc/redis.conf
     
     post_install:
-      - name: "Setup and start Redis"
+      - name: "Setup Redis"
         command: |
           # Create Redis directories with proper ownership
           mkdir -p /var/lib/redis
@@ -61,22 +34,89 @@ containers:
           
           # Set permissions on redis config
           chmod 644 /etc/redis.conf
-          
+
+      - name: "Start Redis"
+        command: |
           # Start Redis directly (OpenRC might not work properly in LXC)
           /usr/bin/redis-server /etc/redis.conf --daemonize yes
-      
+          # Verify it's running
+          sleep 2
+          redis-cli ping || echo "Redis not responding yet"
+
+  sample-flask-app:
+    template: ubuntu-minimal
+    release: lts
+    
+    # Dependencies must exist before this container can start
+    depends_on:
+      - sample-flask-datastore
+    
+    mounts:
+      - .:/app
+      - ./config/sample-flask-app/supervisord.conf:/etc/supervisord.conf
+      - ./config/sample-flask-app/nginx.conf:/etc/nginx/sites-available/flask-app
+    
+    exposed_ports:
+      - 80    # Nginx (serves Flask app)
+    
+    packages:
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - build-essential
+      - nginx
+      - supervisor
+      - redis-tools
+      - curl
+    
+    # Note: Environment variables from .env are automatically available
+    
+    services:
+      flask:
+        command: /app/venv/bin/python /app/app.py
+        directory: /app
+        user: www-data
+        autostart: true
+        autorestart: true
+        priority: 20
+        stdout_logfile: /var/log/flask.log
+        stderr_logfile: /var/log/flask_err.log
+        startsecs: 10
+        stopwaitsecs: 600
+    
+    post_install:      
       - name: "Setup Python environment"
         command: |
           cd /app
           python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          ./venv/bin/pip install --upgrade pip setuptools wheel
+          ./venv/bin/pip install -r requirements.txt
       
       - name: "Create directories"
         command: |
           mkdir -p /var/log
           chmod 755 /var/log
+      
+      - name: "Wait for Redis"
+        command: |
+          # Wait for Redis to be ready
+          echo "Waiting for Redis to be ready..."
+          for i in $(seq 1 30); do
+            if redis-cli -h ${REDIS_HOST} ping > /dev/null 2>&1; then
+              echo "Redis is ready!"
+              break
+            fi
+            echo "Waiting for Redis... (attempt $i/30)"
+            sleep 2
+          done
+      
+      - name: "Set permissions"
+        command: |
+          # Create www-data user if it doesn't exist
+          id -u www-data &>/dev/null || useradd -r -s /bin/false www-data
+          chown -R www-data:www-data /app
+          chmod -R 755 /app
       
       - name: "Start Supervisor service"
         command: |
@@ -86,3 +126,32 @@ containers:
           sleep 5
           # Check status
           supervisorctl status
+          # Wait a bit more for Flask to start
+          sleep 5
+          # Test if Flask is responding
+          curl -I http://127.0.0.1:5000 || echo "Flask not responding yet"
+          # Wait for Flask to be ready
+          echo "Waiting for Flask to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000 | grep -q "200\|301\|302"; then
+              echo "Flask is ready!"
+              break
+            fi
+            echo "Waiting for Flask... (attempt $i/30)"
+            sleep 2
+          done
+      
+      - name: "Setup Nginx"
+        command: |
+          # Enable the Flask site
+          ln -sf /etc/nginx/sites-available/flask-app /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          # Test config
+          nginx -t
+          # Stop nginx if running (might have started during package install)
+          service nginx stop || true
+          # Start nginx with our config
+          service nginx start
+          # Verify it's running
+          sleep 2
+          service nginx status || true
