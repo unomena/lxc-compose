@@ -1,0 +1,177 @@
+# Django + Celery Application with PostgreSQL and Redis
+# Multi-container setup with proper dependencies
+
+version: '1.0'
+
+containers:
+  sample-datastore:
+    template: alpine
+    release: "3.19"
+    
+    packages:
+      - postgresql
+      - postgresql-client
+      - redis
+      - supervisor
+
+    exposed_ports:
+      - 5432    # PostgreSQL
+      - 6379    # Redis
+    
+    mounts:
+      - ./config/redis.conf:/etc/redis.conf
+      - ./config/datastore/supervisord.conf:/etc/supervisord.conf
+      - ./config/datastore/supervisor.d:/etc/supervisor.d
+      - ./datastore-startup.sh:/startup.sh
+    
+    post_install:
+      - name: "Setup PostgreSQL"
+        command: |
+          # Create PostgreSQL directories with proper ownership
+          mkdir -p /run/postgresql
+          mkdir -p /var/lib/postgresql/data
+          chown -R postgres:postgres /run/postgresql
+          chown -R postgres:postgres /var/lib/postgresql
+          
+          # Initialize PostgreSQL
+          su postgres -c "initdb -D /var/lib/postgresql/data"
+          
+          # Configure PostgreSQL
+          echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+          
+          # Start PostgreSQL temporarily for setup
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          sleep 5
+          
+          # Create database and user (using env vars from .env)
+          su postgres -c "createdb ${DB_NAME}"
+          su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
+          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
+          su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
+          
+          # Stop PostgreSQL (will be managed by supervisor if configured)
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
+
+      - name: "Setup Redis"
+        command: |
+          # Create Redis directories with proper ownership
+          mkdir -p /var/lib/redis
+          mkdir -p /var/log/redis
+          mkdir -p /run/redis
+          
+          # Create redis user if it doesn't exist
+          adduser -D -H -s /sbin/nologin redis 2>/dev/null || true
+          
+          chown -R redis:redis /var/lib/redis
+          chown -R redis:redis /var/log/redis
+          chown -R redis:redis /run/redis
+          
+          # Set permissions on redis config
+          chmod 644 /etc/redis.conf
+      
+      - name: "Start services with Supervisor"
+        command: |
+          # Ensure the startup script is executable
+          chmod +x /startup.sh
+          # Start supervisord in the background
+          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Give it a moment to start
+          sleep 5
+          # Check status
+          supervisorctl status
+
+  sample-django-app:
+    template: ubuntu
+    release: jammy
+    
+    # Dependencies must exist before this container can start
+    depends_on:
+      - sample-datastore
+    
+    mounts:
+      - .:/app
+      - ./config/supervisord.conf:/etc/supervisord.conf
+      - ./config/supervisor.d:/etc/supervisor.d
+      - ./config/nginx.conf:/etc/nginx/sites-available/django-app
+      - ./startup.sh:/startup.sh
+    
+    exposed_ports:
+      - 80    # Nginx
+      - 8000  # Django dev server
+    
+    packages:
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - build-essential
+      - libpq-dev
+      - nginx
+      - supervisor
+      - git
+      - redis-tools
+      - postgresql-client
+    
+    # Note: Environment variables from .env are automatically available
+    
+    post_install:      
+      - name: "Setup Python environment"
+        command: |
+          cd /app
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+      
+      - name: "Create directories"
+        command: |
+          mkdir -p /var/log/django /var/log/celery /run/django
+          mkdir -p /app/static /app/media
+          mkdir -p /var/log/nginx
+      
+      - name: "Run migrations"
+        command: |
+          cd /app/src
+          source ../venv/bin/activate
+          # Environment variables are already available from .env
+          python manage.py makemigrations api tasks
+          python manage.py migrate
+          python manage.py collectstatic --noinput
+      
+      - name: "Create superuser"
+        command: |
+          cd /app/src
+          source ../venv/bin/activate
+          # Using env vars from .env
+          python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | python manage.py shell
+      
+      - name: "Setup Nginx"
+        command: |
+          # Enable the Django site
+          ln -sf /etc/nginx/sites-available/django-app /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          # Test config
+          nginx -t
+          # Start nginx
+          service nginx start
+      
+      - name: "Set permissions"
+        command: |
+          # Create www-data user if it doesn't exist
+          id -u www-data &>/dev/null || useradd -r -s /bin/false www-data
+          chown -R www-data:www-data /app
+          chmod -R 755 /app
+          chmod -R 775 /app/media /app/static /var/log/django /var/log/celery
+      
+      - name: "Start services with Supervisor"
+        command: |
+          # Ensure the startup script is executable
+          chmod +x /startup.sh
+          # Start supervisord in the background
+          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Give it a moment to start
+          sleep 5
+          # Check status
+          supervisorctl status
