@@ -1383,18 +1383,31 @@ def logs(container_name, log_name, file, follow, lines):
     
     # Execute the command
     try:
-        result = subprocess.run(tail_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            if "No such file or directory" in result.stderr:
-                click.echo(f"{YELLOW}⚠{NC} Log file not found: {log_path}")
-            else:
-                click.echo(f"{RED}✗{NC} Error reading log: {result.stderr}")
+        if follow:
+            # For continuous streaming, use Popen to stream output in real-time
+            process = subprocess.Popen(tail_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                # Stream output line by line
+                for line in process.stdout:
+                    click.echo(line, nl=False)
+            except KeyboardInterrupt:
+                # Clean exit on Ctrl+C
+                process.terminate()
+                click.echo(f"\n{GREEN}✓{NC} Log streaming stopped")
         else:
-            # Print the output
-            if result.stdout:
-                click.echo(result.stdout, nl=False)
+            # For non-follow mode, use run() as before
+            result = subprocess.run(tail_cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                if "No such file or directory" in result.stderr:
+                    click.echo(f"{YELLOW}⚠{NC} Log file not found: {log_path}")
+                else:
+                    click.echo(f"{RED}✗{NC} Error reading log: {result.stderr}")
             else:
-                click.echo(f"{YELLOW}⚠{NC} No log content to display")
+                # Print the output
+                if result.stdout:
+                    click.echo(result.stdout, nl=False)
+                else:
+                    click.echo(f"{YELLOW}⚠{NC} No log content to display")
     except KeyboardInterrupt:
         # Clean exit on Ctrl+C
         pass
