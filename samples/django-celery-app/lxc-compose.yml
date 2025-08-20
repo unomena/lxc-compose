@@ -69,15 +69,13 @@ containers:
           # Set permissions on redis config
           chmod 644 /etc/redis.conf
           
-          # Start Redis as a service (Alpine uses OpenRC)
-          rc-update add redis default
-          rc-service redis start || /usr/bin/redis-server /etc/redis.conf --daemonize yes
+          # Start Redis directly (OpenRC might not work properly in LXC)
+          /usr/bin/redis-server /etc/redis.conf --daemonize yes
       
       - name: "Start Supervisor service"
         command: |
-          # Start Supervisor as a service (Alpine uses OpenRC)
-          rc-update add supervisord default
-          rc-service supervisord start
+          # Start supervisord directly
+          /usr/bin/supervisord -c /etc/supervisord.conf
           # Give it a moment to start
           sleep 5
           # Check status
@@ -165,9 +163,8 @@ containers:
       
       - name: "Start Supervisor service"
         command: |
-          # Start Supervisor as a service (Ubuntu uses systemd)
-          systemctl enable supervisor
-          systemctl start supervisor
+          # Start supervisord directly (systemd doesn't work properly in LXC)
+          /usr/bin/supervisord -c /etc/supervisord.conf
           # Give it a moment to start
           sleep 5
           # Check status
