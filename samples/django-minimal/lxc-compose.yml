@@ -12,7 +12,6 @@ containers:
       - .:/app
       - ./config/supervisord.conf:/etc/supervisord.conf
       - ./config/supervisor.d:/etc/supervisor.d
-      - ./startup.sh:/startup.sh
     
     exposed_ports:
       - 8000  # Django dev server
@@ -97,8 +96,6 @@ containers:
       
       - name: "Start services with Supervisor"
         command: |
-          # Ensure the startup script is executable
-          chmod +x /startup.sh
           # Start supervisord in the background
           /usr/bin/supervisord -c /etc/supervisord.conf
           # Give it a moment to start

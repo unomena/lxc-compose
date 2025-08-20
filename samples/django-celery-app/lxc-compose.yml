@@ -19,10 +19,9 @@ containers:
       - 6379    # Redis
     
     mounts:
-      - ./config/redis.conf:/etc/redis.conf
-      - ./config/datastore/supervisord.conf:/etc/supervisord.conf
-      - ./config/datastore/supervisor.d:/etc/supervisor.d
-      - ./datastore-startup.sh:/startup.sh
+      - ./config/sample-datastore/redis.conf:/etc/redis.conf
+      - ./config/sample-datastore/supervisord.conf:/etc/supervisord.conf
+      - ./config/sample-datastore/supervisor.d:/etc/supervisor.d
     
     post_install:
       - name: "Setup PostgreSQL"
@@ -72,8 +71,6 @@ containers:
       
       - name: "Start services with Supervisor"
         command: |
-          # Ensure the startup script is executable
-          chmod +x /startup.sh
           # Start supervisord in the background
           /usr/bin/supervisord -c /etc/supervisord.conf
           # Give it a moment to start
@@ -91,10 +88,9 @@ containers:
     
     mounts:
       - .:/app
-      - ./config/supervisord.conf:/etc/supervisord.conf
-      - ./config/supervisor.d:/etc/supervisor.d
-      - ./config/nginx.conf:/etc/nginx/sites-available/django-app
-      - ./startup.sh:/startup.sh
+      - ./config/sample-django-app/supervisord.conf:/etc/supervisord.conf
+      - ./config/sample-django-app/supervisor.d:/etc/supervisor.d
+      - ./config/sample-django-app/nginx.conf:/etc/nginx/sites-available/django-app
     
     exposed_ports:
       - 80    # Nginx
@@ -167,8 +163,6 @@ containers:
       
       - name: "Start services with Supervisor"
         command: |
-          # Ensure the startup script is executable
-          chmod +x /startup.sh
           # Start supervisord in the background
           /usr/bin/supervisord -c /etc/supervisord.conf
           # Give it a moment to start
