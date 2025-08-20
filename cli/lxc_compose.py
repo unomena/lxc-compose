@@ -1346,6 +1346,33 @@ def logs(container_name, log_name, file, follow, lines):
                     click.echo(f"  {GREEN}•{NC} {name}")
                 sys.exit(1)
     
+    # First check if the log file exists
+    check_cmd = ['lxc', 'exec', container_name, '--', 'test', '-f', log_path]
+    check_result = subprocess.run(check_cmd, capture_output=True)
+    
+    if check_result.returncode != 0:
+        click.echo(f"{YELLOW}⚠{NC} Log file {log_path} does not exist yet on {container_name}")
+        click.echo(f"  The log file will be created when the service starts logging.")
+        
+        # Check if the directory exists
+        dir_path = '/'.join(log_path.split('/')[:-1])
+        dir_check_cmd = ['lxc', 'exec', container_name, '--', 'test', '-d', dir_path]
+        dir_result = subprocess.run(dir_check_cmd, capture_output=True)
+        if dir_result.returncode != 0:
+            click.echo(f"  Log directory {dir_path} also doesn't exist.")
+        
+        sys.exit(1)
+    
+    # Check if file is empty
+    size_cmd = ['lxc', 'exec', container_name, '--', 'stat', '-c', '%s', log_path]
+    size_result = subprocess.run(size_cmd, capture_output=True, text=True)
+    if size_result.returncode == 0 and size_result.stdout.strip() == '0':
+        click.echo(f"{YELLOW}⚠{NC} Log file {log_path} exists but is empty on {container_name}")
+        if follow:
+            click.echo(f"  Waiting for log output... (Ctrl+C to exit)")
+        else:
+            sys.exit(0)
+    
     # Build tail command
     if follow:
         tail_cmd = ['lxc', 'exec', container_name, '--', 'tail', '-f', '-n', str(lines), log_path]
@@ -1356,7 +1383,18 @@ def logs(container_name, log_name, file, follow, lines):
     
     # Execute the command
     try:
-        subprocess.run(tail_cmd)
+        result = subprocess.run(tail_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            if "No such file or directory" in result.stderr:
+                click.echo(f"{YELLOW}⚠{NC} Log file not found: {log_path}")
+            else:
+                click.echo(f"{RED}✗{NC} Error reading log: {result.stderr}")
+        else:
+            # Print the output
+            if result.stdout:
+                click.echo(result.stdout, nl=False)
+            else:
+                click.echo(f"{YELLOW}⚠{NC} No log content to display")
     except KeyboardInterrupt:
         # Clean exit on Ctrl+C
         pass
