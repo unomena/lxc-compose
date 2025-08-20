@@ -302,67 +302,6 @@ setup_network() {
     log "Network configured"
 }
 
-cache_container_images() {
-    info "Caching container images for faster first use..."
-    echo "  This will download Alpine and Ubuntu images to speed up future container creation."
-
-    local success=true
-
-    # Test 1: Create vanilla Alpine container
-    info "  Downloading Alpine image..."
-    lxc launch alpine/3.19 test-alpine-cache >/dev/null 2>&1
-    sleep 2
-    if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-alpine-cache$"; then
-        log "    ✓ Alpine image cached"
-        lxc delete test-alpine-cache --force >/dev/null 2>&1
-    else
-        warning "    ✗ Alpine container creation failed"
-        success=false
-    fi
-    
-    # Test 2: Create vanilla Ubuntu minimal container
-    info "  Downloading Ubuntu minimal image..."
-    lxc launch ubuntu-minimal:lts test-ubuntu-minimal-cache >/dev/null 2>&1
-    sleep 2
-    if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-minimal-cache$"; then
-        log "    ✓ Ubuntu minimal image cached"
-        lxc delete test-ubuntu-minimal-cache --force >/dev/null 2>&1
-    else
-        warning "    ✗ Ubuntu minimal container creation failed"
-        success=false
-    fi
-    
-    # Test 3: Create vanilla Ubuntu LTS container
-    info "  Downloading Ubuntu LTS image..."
-    lxc launch ubuntu:lts test-ubuntu-lts-cache >/dev/null 2>&1
-    sleep 2
-    if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-lts-cache$"; then
-        log "    ✓ Ubuntu LTS image cached"
-        lxc delete test-ubuntu-lts-cache --force >/dev/null 2>&1
-    else
-        warning "    ✗ Ubuntu LTS container creation failed"
-        success=false
-    fi
-        
-    # Test basic lxc-compose command
-    info "  Testing lxc-compose command..."
-    if $BIN_PATH list >/dev/null 2>&1; then
-        log "    ✓ lxc-compose command works"
-    else
-        warning "    ✗ lxc-compose command failed"
-        success=false
-    fi
-
-    # Summary
-    echo ""
-    if [ "$success" = true ]; then
-        log "  ✓ Installation successful! Images cached for faster container creation."
-    else
-        warning "  ⚠ Some components failed, but lxc-compose is installed."
-        warning "  You may need to manually download container images on first use."
-    fi
-}
-
 # Copy sample projects
 copy_sample_projects() {
     info "Sample projects available..."
@@ -402,7 +341,6 @@ main() {
     copy_files
     setup_cli
     setup_network
-    cache_container_images
     copy_sample_projects
     
     echo ""
