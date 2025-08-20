@@ -302,48 +302,213 @@ setup_network() {
     log "Network configured"
 }
 
-# Pre-download Ubuntu image
-download_base_image() {
-    info "Pre-downloading container images for faster first container creation..."
-    echo "  This may take a few minutes depending on your connection speed."
-    echo "  This is a one-time download that will make future containers launch quickly."
+# Run comprehensive post-installation tests
+run_installation_tests() {
+    info "Running post-installation verification tests..."
+    echo "  This will create test containers to ensure everything is working correctly."
+    echo "  All test containers will be automatically removed after verification."
     
-    # Ensure lxc command is available
-    if ! command -v lxc >/dev/null 2>&1; then
-        warning "  LXC command not found, skipping image download"
-        return 0
-    fi
+    local test_passed=0
+    local test_failed=0
     
-    info "  Checking for existing images..."
+    # Create a test directory
+    TEST_DIR="/tmp/lxc-compose-test-$$"
+    mkdir -p "$TEST_DIR"
     
-    # Check and download Ubuntu minimal
-    if lxc image list local: --format=csv 2>/dev/null | grep -q "ubuntu-minimal:22.04\|ubuntu:22.04"; then
-        log "  Ubuntu 22.04 already available"
-    else
-        info "  Downloading Ubuntu minimal 22.04 (~100MB)..."
-        # Try downloading without hiding output for better feedback
-        if lxc image copy ubuntu-minimal:22.04 local: --alias ubuntu-minimal:22.04 --quiet 2>/dev/null; then
-            log "  Ubuntu minimal 22.04 downloaded successfully"
-        elif lxc image copy images:ubuntu/22.04 local: --alias ubuntu:22.04 --quiet 2>/dev/null; then
-            log "  Ubuntu 22.04 downloaded successfully"
+    # Test 1: Alpine container with basic features
+    info "  Test 1/4: Alpine container with mounts and ports..."
+    cat > "$TEST_DIR/test-alpine.yml" << 'EOF'
+version: '1.0'
+containers:
+  test-alpine:
+    template: alpine
+    release: "3.19"
+    exposed_ports: [8080]
+    mounts:
+      - /tmp:/host-tmp
+    post_install:
+      - name: "Test setup"
+        command: |
+          echo "Alpine test successful" > /host-tmp/alpine-test.txt
+          echo "#!/bin/sh\necho 'Hello from Alpine'" > /tmp/test.sh
+          chmod +x /tmp/test.sh
+EOF
+    
+    if $BIN_PATH up -f "$TEST_DIR/test-alpine.yml" >/dev/null 2>&1; then
+        sleep 2
+        
+        # Test mount
+        if [ -f "/tmp/alpine-test.txt" ]; then
+            log "    ✓ Mount test passed"
+            rm -f /tmp/alpine-test.txt
+            ((test_passed++))
         else
-            warning "  Ubuntu download will happen on first container creation"
+            warning "    ✗ Mount test failed"
+            ((test_failed++))
         fi
-    fi
-    
-    # Check and download Alpine
-    if lxc image list local: --format=csv 2>/dev/null | grep -q "alpine:3.19"; then
-        log "  Alpine 3.19 already available"
-    else
-        info "  Downloading Alpine Linux 3.19 (~3MB)..."
-        if lxc image copy images:alpine/3.19 local: --alias alpine:3.19 --quiet 2>/dev/null; then
-            log "  Alpine 3.19 downloaded successfully"
+        
+        # Test container execution
+        if lxc exec test-alpine -- /tmp/test.sh 2>/dev/null | grep -q "Hello from Alpine"; then
+            log "    ✓ Container execution test passed"
+            ((test_passed++))
         else
-            warning "  Alpine download will happen on first container creation"
+            warning "    ✗ Container execution test failed"
+            ((test_failed++))
         fi
+        
+        # Clean up
+        $BIN_PATH destroy -f "$TEST_DIR/test-alpine.yml" >/dev/null 2>&1
+    else
+        warning "    ✗ Alpine container creation failed"
+        ((test_failed++))
     fi
     
-    log "Images ready"
+    # Test 2: Ubuntu container with networking
+    info "  Test 2/4: Ubuntu container with packages..."
+    cat > "$TEST_DIR/test-ubuntu.yml" << 'EOF'
+version: '1.0'
+containers:
+  test-ubuntu:
+    template: ubuntu
+    release: jammy
+    exposed_ports: [80]
+    packages:
+      - curl
+      - nginx
+EOF
+    
+    if $BIN_PATH up -f "$TEST_DIR/test-ubuntu.yml" >/dev/null 2>&1; then
+        sleep 3
+        
+        # Test package installation
+        if lxc exec test-ubuntu -- which curl >/dev/null 2>&1; then
+            log "    ✓ Package installation test passed"
+            ((test_passed++))
+        else
+            warning "    ✗ Package installation test failed"
+            ((test_failed++))
+        fi
+        
+        # Test networking
+        if lxc exec test-ubuntu -- curl -s -o /dev/null -w "%{http_code}" http://example.com 2>/dev/null | grep -q "200"; then
+            log "    ✓ Network connectivity test passed"
+            ((test_passed++))
+        else
+            warning "    ✗ Network connectivity test failed"
+            ((test_failed++))
+        fi
+        
+        # Test port forwarding
+        if iptables -t nat -L PREROUTING -n 2>/dev/null | grep -q "dpt:80.*test-ubuntu"; then
+            log "    ✓ Port forwarding test passed"
+            ((test_passed++))
+        else
+            warning "    ✗ Port forwarding test failed"
+            ((test_failed++))
+        fi
+        
+        # Clean up
+        $BIN_PATH destroy -f "$TEST_DIR/test-ubuntu.yml" >/dev/null 2>&1
+    else
+        warning "    ✗ Ubuntu container creation failed"
+        ((test_failed++))
+    fi
+    
+    # Test 3: Multi-container with dependencies and hosts file
+    info "  Test 3/4: Multi-container networking..."
+    cat > "$TEST_DIR/test-multi.yml" << 'EOF'
+version: '1.0'
+containers:
+  test-db:
+    template: alpine
+    release: "3.19"
+    post_install:
+      - name: "Create marker"
+        command: echo "DB Ready" > /tmp/db-ready.txt
+  test-app:
+    template: alpine  
+    release: "3.19"
+    depends_on:
+      - test-db
+    post_install:
+      - name: "Test connection"
+        command: |
+          # Test if we can resolve test-db hostname
+          if ping -c 1 test-db >/dev/null 2>&1; then
+            echo "success" > /tmp/connection-test.txt
+          else
+            echo "failed" > /tmp/connection-test.txt
+          fi
+EOF
+    
+    if $BIN_PATH up -f "$TEST_DIR/test-multi.yml" >/dev/null 2>&1; then
+        sleep 3
+        
+        # Test both containers are running
+        if lxc list --format=csv 2>/dev/null | grep -q "test-db.*RUNNING" && \
+           lxc list --format=csv 2>/dev/null | grep -q "test-app.*RUNNING"; then
+            log "    ✓ Multi-container creation test passed"
+            ((test_passed++))
+        else
+            warning "    ✗ Multi-container creation test failed"
+            ((test_failed++))
+        fi
+        
+        # Test hosts file entries
+        if grep -q "test-db" /srv/lxc-compose/etc/hosts 2>/dev/null && \
+           grep -q "test-app" /srv/lxc-compose/etc/hosts 2>/dev/null; then
+            log "    ✓ Hosts file test passed"
+            ((test_passed++))
+        else
+            warning "    ✗ Hosts file test failed"
+            ((test_failed++))
+        fi
+        
+        # Test container connectivity
+        result=$(lxc exec test-app -- cat /tmp/connection-test.txt 2>/dev/null || echo "failed")
+        if [ "$result" = "success" ]; then
+            log "    ✓ Container networking test passed"
+            ((test_passed++))
+        else
+            warning "    ✗ Container networking test failed"
+            ((test_failed++))
+        fi
+        
+        # Clean up
+        $BIN_PATH destroy -f "$TEST_DIR/test-multi.yml" >/dev/null 2>&1
+    else
+        warning "    ✗ Multi-container creation failed"
+        ((test_failed++))
+    fi
+    
+    # Test 4: List command functionality
+    info "  Test 4/4: Command functionality..."
+    
+    # Test list command with no containers
+    if $BIN_PATH list >/dev/null 2>&1; then
+        log "    ✓ List command test passed"
+        ((test_passed++))
+    else
+        warning "    ✗ List command test failed"
+        ((test_failed++))
+    fi
+    
+    # Clean up test directory
+    rm -rf "$TEST_DIR"
+    
+    # Summary
+    echo ""
+    info "Test Summary:"
+    log "  Passed: $test_passed tests"
+    if [ $test_failed -gt 0 ]; then
+        warning "  Failed: $test_failed tests"
+        warning "  Some tests failed. You may need to troubleshoot specific features."
+    else
+        log "  All tests passed! LXC Compose is fully operational."
+    fi
+    
+    # The test process will have downloaded and cached the images
+    info "  Container images have been cached during testing for faster future use."
 }
 
 # Create sample config
@@ -437,7 +602,7 @@ main() {
     copy_files
     setup_cli
     setup_network
-    download_base_image
+    run_installation_tests
     create_sample_config
     copy_sample_projects
     
