@@ -33,7 +33,7 @@ containers:
     # Note: Environment variables from .env are automatically available
     
     post_install:
-      - name: "Setup Redis"
+      - name: "Setup and start Redis"
         command: |
           # Create Redis directories with proper ownership
           mkdir -p /var/lib/redis
@@ -47,8 +47,12 @@ containers:
           chown -R redis:redis /var/log/redis
           chown -R redis:redis /run/redis
           
-          # Set permissions on redis config (mounted as read-only)
+          # Set permissions on redis config
           chmod 644 /etc/redis.conf
+          
+          # Start Redis as a service (Alpine uses OpenRC)
+          rc-update add redis default
+          rc-service redis start || /usr/bin/redis-server /etc/redis.conf --daemonize yes
       
       - name: "Setup Python environment"
         command: |
@@ -63,10 +67,11 @@ containers:
           mkdir -p /var/log
           chmod 755 /var/log
       
-      - name: "Start services with Supervisor"
+      - name: "Start Supervisor service"
         command: |
-          # Start supervisord in the background
-          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Start Supervisor as a service (Alpine uses OpenRC)
+          rc-update add supervisord default
+          rc-service supervisord start
           # Give it a moment to start
           sleep 5
           # Check status

@@ -94,10 +94,11 @@ containers:
           # Set password if user exists
           echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | python manage.py shell 2>/dev/null || true
       
-      - name: "Start services with Supervisor"
+      - name: "Start Supervisor service"
         command: |
-          # Start supervisord in the background
-          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Start Supervisor as a service (Alpine uses OpenRC)
+          rc-update add supervisord default
+          rc-service supervisord start
           # Give it a moment to start
           sleep 5
           # Check status

@@ -52,7 +52,7 @@ containers:
           # Stop PostgreSQL (will be managed by supervisor if configured)
           su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
 
-      - name: "Setup Redis"
+      - name: "Setup and start Redis"
         command: |
           # Create Redis directories with proper ownership
           mkdir -p /var/lib/redis
@@ -68,11 +68,16 @@ containers:
           
           # Set permissions on redis config
           chmod 644 /etc/redis.conf
+          
+          # Start Redis as a service (Alpine uses OpenRC)
+          rc-update add redis default
+          rc-service redis start || /usr/bin/redis-server /etc/redis.conf --daemonize yes
       
-      - name: "Start services with Supervisor"
+      - name: "Start Supervisor service"
         command: |
-          # Start supervisord in the background
-          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Start Supervisor as a service (Alpine uses OpenRC)
+          rc-update add supervisord default
+          rc-service supervisord start
           # Give it a moment to start
           sleep 5
           # Check status
@@ -161,10 +166,11 @@ containers:
           chmod -R 755 /app
           chmod -R 775 /app/media /app/static /var/log/django /var/log/celery
       
-      - name: "Start services with Supervisor"
+      - name: "Start Supervisor service"
         command: |
-          # Start supervisord in the background
-          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Start Supervisor as a service (Ubuntu uses systemd)
+          systemctl enable supervisor
+          systemctl start supervisor
           # Give it a moment to start
           sleep 5
           # Check status
