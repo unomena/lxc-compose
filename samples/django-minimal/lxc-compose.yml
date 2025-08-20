@@ -10,6 +10,9 @@ containers:
     
     mounts:
       - .:/app
+      - ./config/supervisord.conf:/etc/supervisord.conf:ro
+      - ./config/supervisor.d:/etc/supervisor.d:ro
+      - ./startup.sh:/startup.sh:ro
     
     exposed_ports:
       - 8000  # Django dev server
@@ -27,44 +30,9 @@ containers:
       - postgresql-dev
       - build-base
       - libffi-dev
+      - supervisor
     
     # Note: Environment variables from .env are automatically available
-    services:
-      postgresql:
-        type: system
-        config: |
-          # Initialize PostgreSQL if needed
-          if [ ! -d /var/lib/postgresql/data ]; then
-            mkdir -p /run/postgresql
-            chown postgres:postgres /run/postgresql
-            su postgres -c "initdb -D /var/lib/postgresql/data"
-            
-            # Configure PostgreSQL
-            echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
-            echo "host all all 10.0.3.0/24 md5" >> /var/lib/postgresql/data/pg_hba.conf
-            echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
-          fi
-          
-          # Start PostgreSQL
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
-          
-          # Wait for PostgreSQL to be ready
-          sleep 5
-          
-          # Create database and user if they don't exist (using env vars)
-          su postgres -c "createdb ${DB_NAME} 2>/dev/null || true"
-          su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\" 2>/dev/null || true"
-          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\" 2>/dev/null || true"
-          # PostgreSQL 15+ requires explicit schema permissions
-          su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\" 2>/dev/null || true"
-      
-      django:
-        command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
-        directory: /app/src
-        autostart: true
-        autorestart: true
-        stdout_logfile: /var/log/django.log
-        stderr_logfile: /var/log/django_err.log
     
     post_install:
       - name: "Setup PostgreSQL"
@@ -93,10 +61,8 @@ containers:
       - name: "Setup Python environment"
         command: |
           cd /app
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          pip3 install --upgrade pip
+          pip3 install -r requirements.txt
       
       - name: "Run migrations"
         command: |
@@ -105,33 +71,24 @@ containers:
           sleep 3
           
           cd /app/src
-          source ../venv/bin/activate
           # Environment variables are already available from .env
-          python manage.py migrate
-          python manage.py collectstatic --noinput || true
+          python3 manage.py migrate
+          python3 manage.py collectstatic --noinput || true
       
       - name: "Create superuser"
         command: |
           cd /app/src
-          source ../venv/bin/activate
           # Using env vars from .env
           # Try to create superuser, but don't fail if tables don't exist yet
-          python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} 2>/dev/null || true
+          python3 manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} 2>/dev/null || true
           # Set password if user exists
-          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | python manage.py shell 2>/dev/null || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | python3 manage.py shell 2>/dev/null || true
       
-      - name: "Create startup script"
+      - name: "Verify supervisor configuration"
         command: |
-          # Create a startup script to ensure PostgreSQL starts before Django
-          cat > /startup.sh << 'EOF'
-          #!/bin/sh
-          # Start PostgreSQL
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
-          sleep 3
-          
-          # Start Django (env vars already loaded system-wide)
-          cd /app/src
-          source ../venv/bin/activate
-          python manage.py runserver 0.0.0.0:8000
-          EOF
+          # Just ensure the startup script is executable
           chmod +x /startup.sh
+          # Log config file locations for debugging
+          echo "Supervisor config files mounted:"
+          ls -la /etc/supervisord.conf
+          ls -la /etc/supervisor.d/
