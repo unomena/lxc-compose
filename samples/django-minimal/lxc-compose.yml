@@ -37,9 +37,13 @@ containers:
     post_install:
       - name: "Setup PostgreSQL"
         command: |
-          # Initialize PostgreSQL
+          # Create PostgreSQL directories with proper ownership
           mkdir -p /run/postgresql
-          chown postgres:postgres /run/postgresql
+          mkdir -p /var/lib/postgresql/data
+          chown -R postgres:postgres /run/postgresql
+          chown -R postgres:postgres /var/lib/postgresql
+          
+          # Initialize PostgreSQL
           su postgres -c "initdb -D /var/lib/postgresql/data"
           
           # Configure PostgreSQL
@@ -47,7 +51,7 @@ containers:
           echo "host all all 10.0.3.0/24 md5" >> /var/lib/postgresql/data/pg_hba.conf
           echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
           
-          # Start PostgreSQL
+          # Start PostgreSQL temporarily for setup
           su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
           sleep 5
           
@@ -57,6 +61,9 @@ containers:
           su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
           # PostgreSQL 15+ requires explicit schema permissions
           su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
+          
+          # Stop PostgreSQL (supervisor will manage it)
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
       
       - name: "Setup Python environment"
         command: |
@@ -88,11 +95,13 @@ containers:
           # Set password if user exists
           echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | python manage.py shell 2>/dev/null || true
       
-      - name: "Verify supervisor configuration"
+      - name: "Start services with Supervisor"
         command: |
-          # Just ensure the startup script is executable
+          # Ensure the startup script is executable
           chmod +x /startup.sh
-          # Log config file locations for debugging
-          echo "Supervisor config files mounted:"
-          ls -la /etc/supervisord.conf
-          ls -la /etc/supervisor.d/
+          # Start supervisord in the background
+          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Give it a moment to start
+          sleep 5
+          # Check status
+          supervisorctl status
