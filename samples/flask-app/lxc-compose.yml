@@ -12,6 +12,7 @@ containers:
       - .:/app
       - ./config/supervisord.conf:/etc/supervisord.conf
       - ./config/supervisor.d:/etc/supervisor.d
+      - ./config/redis.conf:/etc/redis.conf
       - ./startup.sh:/startup.sh
     
     exposed_ports:
@@ -47,18 +48,8 @@ containers:
           chown -R redis:redis /var/log/redis
           chown -R redis:redis /run/redis
           
-          # Configure Redis
-          cat > /etc/redis.conf << 'EOF'
-          bind 0.0.0.0
-          protected-mode no
-          port 6379
-          dir /var/lib/redis
-          logfile /var/log/redis/redis.log
-          pidfile /run/redis/redis.pid
-          daemonize no
-          EOF
-          
-          chown redis:redis /etc/redis.conf
+          # Set permissions on redis config (mounted as read-only)
+          chmod 644 /etc/redis.conf
       
       - name: "Setup Python environment"
         command: |

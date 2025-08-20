@@ -21,6 +21,7 @@ flask-app/
 ├── startup.sh          # Container startup script
 ├── config/             # Configuration files
 │   ├── supervisord.conf        # Main supervisor config
+│   ├── redis.conf              # Redis configuration
 │   └── supervisor.d/           # Service configs
 │       ├── redis.ini           # Redis service
 │       └── flask.ini           # Flask service
