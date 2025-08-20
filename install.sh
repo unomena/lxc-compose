@@ -119,8 +119,26 @@ setup_directories() {
     mkdir -p "$INSTALL_DIR/cli"
     mkdir -p "$INSTALL_DIR/docs"
     mkdir -p "$INSTALL_DIR/samples"
+    mkdir -p "$INSTALL_DIR/etc"  # For shared hosts file
     mkdir -p "/etc/lxc-compose"
     mkdir -p "/var/log/lxc-compose"
+    
+    # Set proper permissions for shared hosts directory
+    chmod 755 "$INSTALL_DIR/etc"
+    
+    # Create initial hosts file if it doesn't exist
+    HOSTS_FILE="$INSTALL_DIR/etc/hosts"
+    if [[ ! -f "$HOSTS_FILE" ]]; then
+        cat > "$HOSTS_FILE" << 'EOF'
+# LXC Compose managed hosts file
+127.0.0.1	localhost
+::1	localhost ip6-localhost ip6-loopback
+
+# Container entries
+EOF
+        chmod 644 "$HOSTS_FILE"
+        log "Created shared hosts file"
+    fi
     
     log "Directories created"
 }

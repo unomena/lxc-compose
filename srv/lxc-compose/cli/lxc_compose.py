@@ -128,46 +128,96 @@ class LXCCompose:
     
     def init_hosts_file(self):
         """Initialize the shared hosts file with basic entries"""
-        os.makedirs(SHARED_HOSTS_DIR, exist_ok=True)
-        os.makedirs(DATA_DIR, exist_ok=True)
+        # Create directories with sudo if needed
+        try:
+            os.makedirs(SHARED_HOSTS_DIR, exist_ok=True)
+        except PermissionError:
+            # Try with sudo
+            subprocess.run(['sudo', 'mkdir', '-p', SHARED_HOSTS_DIR], check=True)
+            # Set permissions so we can write to it
+            subprocess.run(['sudo', 'chmod', '755', SHARED_HOSTS_DIR], check=True)
+        
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+        except PermissionError:
+            # Try with sudo
+            subprocess.run(['sudo', 'mkdir', '-p', DATA_DIR], check=True)
+            # Set permissions so we can write to it
+            subprocess.run(['sudo', 'chmod', '755', DATA_DIR], check=True)
         
         if not os.path.exists(SHARED_HOSTS_FILE):
-            with open(SHARED_HOSTS_FILE, 'w') as f:
-                f.write("# LXC Compose managed hosts file\n")
-                f.write("127.0.0.1\tlocalhost\n")
-                f.write("::1\tlocalhost ip6-localhost ip6-loopback\n")
-                f.write("\n# Container entries\n")
+            try:
+                with open(SHARED_HOSTS_FILE, 'w') as f:
+                    f.write("# LXC Compose managed hosts file\n")
+                    f.write("127.0.0.1\tlocalhost\n")
+                    f.write("::1\tlocalhost ip6-localhost ip6-loopback\n")
+                    f.write("\n# Container entries\n")
+            except PermissionError:
+                # Create with sudo and then write
+                content = """# LXC Compose managed hosts file
+127.0.0.1\tlocalhost
+::1\tlocalhost ip6-localhost ip6-loopback
+
+# Container entries
+"""
+                subprocess.run(['sudo', 'bash', '-c', f'echo "{content}" > {SHARED_HOSTS_FILE}'], check=True)
+                subprocess.run(['sudo', 'chmod', '644', SHARED_HOSTS_FILE], check=True)
     
     def update_hosts_file(self, action: str, name: str, ip: str = None):
         """Add or remove entry from shared hosts file"""
         if action == "add" and ip:
             # Check if entry already exists
-            with open(SHARED_HOSTS_FILE, 'r') as f:
-                existing = f.read()
-                if f"{ip}\t{name}" in existing or f" {name}\n" in existing:
-                    return  # Already exists
+            try:
+                with open(SHARED_HOSTS_FILE, 'r') as f:
+                    existing = f.read()
+                    if f"{ip}\t{name}" in existing or f" {name}\n" in existing:
+                        return  # Already exists
+            except FileNotFoundError:
+                # File doesn't exist yet, that's ok
+                existing = ""
             
             # Add new entry
-            with open(SHARED_HOSTS_FILE, 'a') as f:
-                f.write(f"{ip}\t{name}\n")
+            try:
+                with open(SHARED_HOSTS_FILE, 'a') as f:
+                    f.write(f"{ip}\t{name}\n")
+            except PermissionError:
+                # Use sudo to append
+                subprocess.run(['sudo', 'bash', '-c', f'echo "{ip}\t{name}" >> {SHARED_HOSTS_FILE}'], check=True)
             click.echo(f"  Added {name} ({ip}) to hosts file")
             
         elif action == "remove":
             # Remove entry containing the container name
             if os.path.exists(SHARED_HOSTS_FILE):
-                with open(SHARED_HOSTS_FILE, 'r') as f:
-                    lines = f.readlines()
-                
-                # Filter out lines with this container name
-                new_lines = []
-                for line in lines:
-                    # Skip lines that have this container name as a hostname
-                    if name in line.split():
-                        continue
-                    new_lines.append(line)
-                
-                with open(SHARED_HOSTS_FILE, 'w') as f:
-                    f.writelines(new_lines)
+                try:
+                    with open(SHARED_HOSTS_FILE, 'r') as f:
+                        lines = f.readlines()
+                    
+                    # Filter out lines with this container name
+                    new_lines = []
+                    for line in lines:
+                        # Skip lines that have this container name as a hostname
+                        if name in line.split():
+                            continue
+                        new_lines.append(line)
+                    
+                    with open(SHARED_HOSTS_FILE, 'w') as f:
+                        f.writelines(new_lines)
+                except PermissionError:
+                    # Read with cat, filter, and write back with sudo
+                    result = subprocess.run(['cat', SHARED_HOSTS_FILE], capture_output=True, text=True)
+                    lines = result.stdout.splitlines(keepends=True)
+                    
+                    # Filter out lines with this container name
+                    new_lines = []
+                    for line in lines:
+                        # Skip lines that have this container name as a hostname
+                        if name in line.split():
+                            continue
+                        new_lines.append(line)
+                    
+                    # Write back with sudo
+                    content = ''.join(new_lines)
+                    subprocess.run(['sudo', 'bash', '-c', f'echo "{content}" > {SHARED_HOSTS_FILE}'], check=True)
     
     def mount_hosts_file(self, name: str):
         """Mount the shared hosts file into the container"""
@@ -266,32 +316,63 @@ class LXCCompose:
         """Save container IP for later cleanup"""
         ips = {}
         if os.path.exists(CONTAINER_IPS_FILE):
-            with open(CONTAINER_IPS_FILE, 'r') as f:
-                ips = json.load(f)
+            try:
+                with open(CONTAINER_IPS_FILE, 'r') as f:
+                    ips = json.load(f)
+            except PermissionError:
+                # Read with sudo
+                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
+                if result.returncode == 0:
+                    ips = json.loads(result.stdout)
         
         ips[name] = ip
         
-        with open(CONTAINER_IPS_FILE, 'w') as f:
-            json.dump(ips, f, indent=2)
+        try:
+            with open(CONTAINER_IPS_FILE, 'w') as f:
+                json.dump(ips, f, indent=2)
+        except PermissionError:
+            # Write with sudo
+            content = json.dumps(ips, indent=2)
+            subprocess.run(['sudo', 'bash', '-c', f'echo \'{content}\' > {CONTAINER_IPS_FILE}'], check=True)
     
     def get_saved_container_ip(self, name: str) -> Optional[str]:
         """Get saved container IP"""
         if os.path.exists(CONTAINER_IPS_FILE):
-            with open(CONTAINER_IPS_FILE, 'r') as f:
-                ips = json.load(f)
-                return ips.get(name)
+            try:
+                with open(CONTAINER_IPS_FILE, 'r') as f:
+                    ips = json.load(f)
+                    return ips.get(name)
+            except PermissionError:
+                # Read with sudo
+                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
+                if result.returncode == 0:
+                    ips = json.loads(result.stdout)
+                    return ips.get(name)
         return None
     
     def remove_saved_container_ip(self, name: str):
         """Remove saved container IP"""
         if os.path.exists(CONTAINER_IPS_FILE):
-            with open(CONTAINER_IPS_FILE, 'r') as f:
-                ips = json.load(f)
+            try:
+                with open(CONTAINER_IPS_FILE, 'r') as f:
+                    ips = json.load(f)
+            except PermissionError:
+                # Read with sudo
+                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
+                if result.returncode == 0:
+                    ips = json.loads(result.stdout)
+                else:
+                    ips = {}
             
             if name in ips:
                 del ips[name]
-                with open(CONTAINER_IPS_FILE, 'w') as f:
-                    json.dump(ips, f, indent=2)
+                try:
+                    with open(CONTAINER_IPS_FILE, 'w') as f:
+                        json.dump(ips, f, indent=2)
+                except PermissionError:
+                    # Write with sudo
+                    content = json.dumps(ips, indent=2)
+                    subprocess.run(['sudo', 'bash', '-c', f'echo \'{content}\' > {CONTAINER_IPS_FILE}'], check=True)
     
     def get_all_containers(self) -> List[str]:
         """Get all containers on the system"""
