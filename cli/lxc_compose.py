@@ -312,27 +312,31 @@ class LXCCompose:
                     self.run_command(['sudo', 'iptables', '-D', 'FORWARD',
                                     str(rule_num)], check=False)
     
-    def save_container_ip(self, name: str, ip: str):
-        """Save container IP for later cleanup"""
-        ips = {}
+    def save_container_ip(self, name: str, ip: str, ports: List[int] = None):
+        """Save container IP and exposed ports for later cleanup"""
+        data = {}
         if os.path.exists(CONTAINER_IPS_FILE):
             try:
                 with open(CONTAINER_IPS_FILE, 'r') as f:
-                    ips = json.load(f)
+                    data = json.load(f)
             except PermissionError:
                 # Read with sudo
                 result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
                 if result.returncode == 0:
-                    ips = json.loads(result.stdout)
+                    data = json.loads(result.stdout)
         
-        ips[name] = ip
+        # Store both IP and ports
+        container_info = {'ip': ip}
+        if ports:
+            container_info['ports'] = ports
+        data[name] = container_info
         
         try:
             with open(CONTAINER_IPS_FILE, 'w') as f:
-                json.dump(ips, f, indent=2)
+                json.dump(data, f, indent=2)
         except PermissionError:
             # Write with sudo
-            content = json.dumps(ips, indent=2)
+            content = json.dumps(data, indent=2)
             subprocess.run(['sudo', 'bash', '-c', f'echo \'{content}\' > {CONTAINER_IPS_FILE}'], check=True)
     
     def get_saved_container_ip(self, name: str) -> Optional[str]:
@@ -340,38 +344,64 @@ class LXCCompose:
         if os.path.exists(CONTAINER_IPS_FILE):
             try:
                 with open(CONTAINER_IPS_FILE, 'r') as f:
-                    ips = json.load(f)
-                    return ips.get(name)
+                    data = json.load(f)
+                    container_info = data.get(name)
+                    if isinstance(container_info, dict):
+                        return container_info.get('ip')
+                    # Handle old format (just IP string)
+                    return container_info
             except PermissionError:
                 # Read with sudo
                 result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
                 if result.returncode == 0:
-                    ips = json.loads(result.stdout)
-                    return ips.get(name)
+                    data = json.loads(result.stdout)
+                    container_info = data.get(name)
+                    if isinstance(container_info, dict):
+                        return container_info.get('ip')
+                    return container_info
         return None
     
-    def remove_saved_container_ip(self, name: str):
-        """Remove saved container IP"""
+    def get_saved_container_ports(self, name: str) -> List[int]:
+        """Get saved container exposed ports"""
         if os.path.exists(CONTAINER_IPS_FILE):
             try:
                 with open(CONTAINER_IPS_FILE, 'r') as f:
-                    ips = json.load(f)
+                    data = json.load(f)
+                    container_info = data.get(name)
+                    if isinstance(container_info, dict):
+                        return container_info.get('ports', [])
             except PermissionError:
                 # Read with sudo
                 result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
                 if result.returncode == 0:
-                    ips = json.loads(result.stdout)
+                    data = json.loads(result.stdout)
+                    container_info = data.get(name)
+                    if isinstance(container_info, dict):
+                        return container_info.get('ports', [])
+        return []
+    
+    def remove_saved_container_ip(self, name: str):
+        """Remove saved container IP and ports"""
+        if os.path.exists(CONTAINER_IPS_FILE):
+            try:
+                with open(CONTAINER_IPS_FILE, 'r') as f:
+                    data = json.load(f)
+            except PermissionError:
+                # Read with sudo
+                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
                 else:
-                    ips = {}
+                    data = {}
             
-            if name in ips:
-                del ips[name]
+            if name in data:
+                del data[name]
                 try:
                     with open(CONTAINER_IPS_FILE, 'w') as f:
-                        json.dump(ips, f, indent=2)
+                        json.dump(data, f, indent=2)
                 except PermissionError:
                     # Write with sudo
-                    content = json.dumps(ips, indent=2)
+                    content = json.dumps(data, indent=2)
                     subprocess.run(['sudo', 'bash', '-c', f'echo \'{content}\' > {CONTAINER_IPS_FILE}'], check=True)
     
     def get_all_containers(self) -> List[str]:
@@ -438,8 +468,8 @@ class LXCCompose:
             return
         
         try:
-            # Save IP for later cleanup
-            self.save_container_ip(name, ip)
+            # Save IP and ports for later cleanup
+            self.save_container_ip(name, ip, exposed_ports)
             
             # Update hosts file
             self.update_hosts_file("add", name, ip)
@@ -675,7 +705,7 @@ class LXCCompose:
                 ip = self.wait_for_network(dep, timeout=30)
                 if ip and not self.get_saved_container_ip(dep):
                     # Dependency wasn't properly setup, just add to hosts
-                    self.save_container_ip(dep, ip)
+                    self.save_container_ip(dep, ip, [])
                     self.update_hosts_file("add", dep, ip)
     
     def up(self):
@@ -886,10 +916,12 @@ class LXCCompose:
             # Check if in config
             in_config = '✓' if name in config_containers else ''
             
-            # Get exposed ports from saved iptables rules or config
-            ports = '-'
-            # For now, we'll just show a dash since we don't have config loaded
-            # TODO: Could parse iptables rules to show forwarded ports
+            # Get exposed ports from saved data
+            saved_ports = self.get_saved_container_ports(name)
+            if saved_ports:
+                ports = ','.join(str(p) for p in saved_ports)
+            else:
+                ports = '-'
             
             table_data.append({
                 'name': name,
