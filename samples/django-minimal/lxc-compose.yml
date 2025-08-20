@@ -15,6 +15,9 @@ containers:
     exposed_ports:
       - 5432    # PostgreSQL
     
+    logs:
+      - postgres:/var/lib/postgresql/logfile
+    
     post_install:
       - name: "Setup PostgreSQL"
         command: |
@@ -68,6 +71,13 @@ containers:
     
     exposed_ports:
       - 80    # Nginx (serves Django app)
+    
+    logs:
+      - django:/var/log/django.log
+      - django-error:/var/log/django_err.log
+      - nginx-access:/var/log/nginx/access.log
+      - nginx-error:/var/log/nginx/error.log
+      - supervisor:/var/log/supervisord.log
     
     packages:
       - python3

@@ -14,6 +14,9 @@ containers:
     exposed_ports:
       - 6379    # Redis
     
+    logs:
+      - redis:/var/log/redis/redis.log
+    
     mounts:
       - ./config/sample-flask-datastore/redis.conf:/etc/redis.conf
     
@@ -58,6 +61,13 @@ containers:
     
     exposed_ports:
       - 80    # Nginx (serves Flask app)
+    
+    logs:
+      - flask:/var/log/flask.log
+      - flask-error:/var/log/flask_err.log
+      - nginx-access:/var/log/nginx/access.log
+      - nginx-error:/var/log/nginx/error.log
+      - supervisor:/var/log/supervisord.log
     
     packages:
       - python3

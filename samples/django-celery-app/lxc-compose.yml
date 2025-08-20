@@ -21,7 +21,7 @@ containers:
       - ./config/sample-datastore/redis.conf:/etc/redis.conf
 
     logs:
-      - postgres:/var/log/postgresql/postgresql.log
+      - postgres:/var/lib/postgresql/logfile
       - redis:/var/log/redis/redis.log
 
     post_install:
@@ -104,6 +104,11 @@ containers:
       - django-error:/var/log/django/django_err.log
       - celery:/var/log/celery/celery.log
       - celery-error:/var/log/celery/celery_err.log
+      - celery-beat:/var/log/celery/celery-beat.log
+      - celery-beat-error:/var/log/celery/celery-beat_err.log
+      - nginx:/var/log/nginx/access.log
+      - nginx-error:/var/log/nginx/error.log
+      - supervisor:/var/log/supervisord.log
 
     packages:
       - python3

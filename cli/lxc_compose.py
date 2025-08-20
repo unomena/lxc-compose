@@ -1255,5 +1255,111 @@ def ssh(container_name, command):
         click.echo(f"{RED}✗{NC} Failed to connect: {e}")
         sys.exit(1)
 
+@cli.command()
+@click.argument('container_name')
+@click.argument('log_name', required=False)
+@click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
+@click.option('--follow', '-F', is_flag=True, help='Follow log output (like tail -f)')
+@click.option('--lines', '-n', default=100, help='Number of lines to show')
+def logs(container_name, log_name, file, follow, lines):
+    """View container logs
+    
+    Examples:
+        lxc-compose logs sample-django-app django
+        lxc-compose logs sample-django-app celery --follow
+        lxc-compose logs sample-datastore postgres -n 50
+    """
+    # Check if container exists
+    result = subprocess.run(['lxc', 'list', container_name, '--format=json'], 
+                          capture_output=True, text=True)
+    if result.returncode != 0:
+        click.echo(f"{RED}✗{NC} Failed to check container: {result.stderr}")
+        sys.exit(1)
+    
+    containers = json.loads(result.stdout)
+    if not containers:
+        click.echo(f"{RED}✗{NC} Container '{container_name}' not found")
+        sys.exit(1)
+    
+    container = containers[0]
+    if container.get('status') != 'Running':
+        click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' is not running")
+        sys.exit(1)
+    
+    # Load config to get logs definitions
+    compose = LXCCompose(file)
+    compose.load_config()
+    
+    # Find container in config
+    container_config = None
+    for c in compose.containers:
+        if c.get('name') == container_name:
+            container_config = c
+            break
+    
+    if not container_config:
+        click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' not found in config file")
+        # Try to continue anyway if user specified a full path
+        if log_name and '/' in log_name:
+            log_path = log_name
+        else:
+            click.echo(f"{RED}✗{NC} Please specify the full log path")
+            sys.exit(1)
+    else:
+        # Get logs from config
+        logs_config = container_config.get('logs', [])
+        
+        if not logs_config:
+            click.echo(f"{YELLOW}⚠{NC} No logs configured for container '{container_name}'")
+            if log_name and '/' in log_name:
+                log_path = log_name
+            else:
+                sys.exit(1)
+        else:
+            # Parse logs configuration
+            log_map = {}
+            for log_entry in logs_config:
+                if isinstance(log_entry, str) and ':' in log_entry:
+                    # Format: "name:/path/to/log"
+                    name, path = log_entry.split(':', 1)
+                    log_map[name] = path
+            
+            if not log_name:
+                # Show available logs
+                click.echo(f"\nAvailable logs for {container_name}:")
+                for name, path in log_map.items():
+                    click.echo(f"  {GREEN}•{NC} {name}: {path}")
+                click.echo(f"\nUsage: lxc-compose logs {container_name} <log_name>")
+                return
+            
+            if log_name in log_map:
+                log_path = log_map[log_name]
+            elif '/' in log_name:
+                # User specified full path
+                log_path = log_name
+            else:
+                click.echo(f"{RED}✗{NC} Log '{log_name}' not found. Available logs:")
+                for name in log_map.keys():
+                    click.echo(f"  {GREEN}•{NC} {name}")
+                sys.exit(1)
+    
+    # Build tail command
+    if follow:
+        tail_cmd = ['lxc', 'exec', container_name, '--', 'tail', '-f', '-n', str(lines), log_path]
+        click.echo(f"Following {log_path} on {container_name} (Ctrl+C to exit)...")
+    else:
+        tail_cmd = ['lxc', 'exec', container_name, '--', 'tail', '-n', str(lines), log_path]
+        click.echo(f"Showing last {lines} lines of {log_path} on {container_name}...")
+    
+    # Execute the command
+    try:
+        subprocess.run(tail_cmd)
+    except KeyboardInterrupt:
+        # Clean exit on Ctrl+C
+        pass
+    except Exception as e:
+        click.echo(f"{RED}✗{NC} Failed to read log: {e}")
+        sys.exit(1)
+
 if __name__ == '__main__':
     cli()
