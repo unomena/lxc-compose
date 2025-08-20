@@ -1261,9 +1261,9 @@ def ssh(container_name, command):
 @cli.command()
 @click.argument('container_name')
 @click.argument('log_name', required=False)
-@click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
-@click.option('--follow', '-F', is_flag=True, help='Follow log output (like tail -f)')
-@click.option('--lines', '-n', default=100, help='Number of lines to show')
+@click.option('-c', '--config', 'file', default=DEFAULT_CONFIG, help='Config file')
+@click.option('-f', '--follow', is_flag=True, help='Follow log output (like tail -f)')
+@click.option('-n', '--lines', default=100, help='Number of lines to show')
 def logs(container_name, log_name, file, follow, lines):
     """View container logs
     
