@@ -163,6 +163,87 @@ class LXCCompose:
                 subprocess.run(['sudo', 'bash', '-c', f'echo "{content}" > {SHARED_HOSTS_FILE}'], check=True)
                 subprocess.run(['sudo', 'chmod', '644', SHARED_HOSTS_FILE], check=True)
     
+    def update_host_machine_hosts(self, action: str, name: str, ip: str = None):
+        """Add or remove entry from host machine's /etc/hosts"""
+        hosts_file = '/etc/hosts'
+        marker_start = '# BEGIN lxc-compose managed section'
+        marker_end = '# END lxc-compose managed section'
+        
+        if action == "add" and ip:
+            # Read current hosts file
+            try:
+                with open(hosts_file, 'r') as f:
+                    content = f.read()
+            except:
+                content = ""
+            
+            # Check if our section exists
+            if marker_start not in content:
+                # Add our section at the end
+                new_section = f"\n{marker_start}\n{ip}\t{name}\n{marker_end}\n"
+                subprocess.run(['sudo', 'bash', '-c', f'echo "{new_section}" >> {hosts_file}'], check=True)
+            else:
+                # Update existing section
+                lines = content.split('\n')
+                new_lines = []
+                in_section = False
+                entry_exists = False
+                
+                for line in lines:
+                    if line == marker_start:
+                        in_section = True
+                        new_lines.append(line)
+                    elif line == marker_end:
+                        if not entry_exists:
+                            # Add the new entry before the end marker
+                            new_lines.append(f"{ip}\t{name}")
+                        in_section = False
+                        new_lines.append(line)
+                    elif in_section:
+                        # Check if this line is for our container
+                        if name in line.split():
+                            # Update existing entry
+                            new_lines.append(f"{ip}\t{name}")
+                            entry_exists = True
+                        else:
+                            new_lines.append(line)
+                    else:
+                        new_lines.append(line)
+                
+                # Write back
+                new_content = '\n'.join(new_lines)
+                subprocess.run(['sudo', 'bash', '-c', f'cat > {hosts_file} << "EOF"\n{new_content}\nEOF'], check=True)
+            
+            click.echo(f"  Added {name} ({ip}) to host machine's /etc/hosts")
+            
+        elif action == "remove":
+            # Remove entry from host machine's hosts file
+            try:
+                with open(hosts_file, 'r') as f:
+                    lines = f.readlines()
+            except:
+                return
+            
+            new_lines = []
+            in_section = False
+            
+            for line in lines:
+                if marker_start in line:
+                    in_section = True
+                    new_lines.append(line)
+                elif marker_end in line:
+                    in_section = False
+                    new_lines.append(line)
+                elif in_section and name in line.split():
+                    # Skip this line (removing the entry)
+                    continue
+                else:
+                    new_lines.append(line)
+            
+            # Write back
+            new_content = ''.join(new_lines)
+            subprocess.run(['sudo', 'bash', '-c', f'cat > {hosts_file} << "EOF"\n{new_content}EOF'], check=True)
+    
     def update_hosts_file(self, action: str, name: str, ip: str = None):
         """Add or remove entry from shared hosts file"""
         if action == "add" and ip:
@@ -471,8 +552,9 @@ class LXCCompose:
             # Save IP and ports for later cleanup
             self.save_container_ip(name, ip, exposed_ports)
             
-            # Update hosts file
+            # Update both shared and host machine hosts files
             self.update_hosts_file("add", name, ip)
+            self.update_host_machine_hosts("add", name, ip)
             
             # Mount shared hosts file to container
             self.mount_hosts_file(name)
@@ -500,8 +582,9 @@ class LXCCompose:
         if not ip:
             ip = self.get_container_ip(name)
         
-        # Remove from hosts file
+        # Remove from both hosts files
         self.update_hosts_file("remove", name)
+        self.update_host_machine_hosts("remove", name)
         
         # Remove iptables rules if we have an IP
         if ip:
