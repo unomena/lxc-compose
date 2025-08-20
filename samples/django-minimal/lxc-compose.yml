@@ -87,6 +87,8 @@ containers:
           su postgres -c "createdb ${DB_NAME}"
           su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
           su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
+          # PostgreSQL 15+ requires explicit schema permissions
+          su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
       
       - name: "Setup Python environment"
         command: |
@@ -113,8 +115,10 @@ containers:
           cd /app/src
           source ../venv/bin/activate
           # Using env vars from .env
-          python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
-          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u, _ = User.objects.get_or_create(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | python manage.py shell
+          # Try to create superuser, but don't fail if tables don't exist yet
+          python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} 2>/dev/null || true
+          # Set password if user exists
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | python manage.py shell 2>/dev/null || true
       
       - name: "Create startup script"
         command: |
