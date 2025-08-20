@@ -1,85 +1,65 @@
-# Flask Application with Redis
-# Following the reference project format - expects source files to exist
+# Minimal Flask Application with Redis - Single Alpine Container
+# Ultra-lightweight setup with Redis and Flask in one container
 
 version: '1.0'
 
 containers:
-  flask-redis:
-    template: ubuntu
-    release: jammy
-    
-    packages:
-      - redis-server
-    
-    services:
-      redis:
-        type: system
-        config: |
-          # Configure Redis
-          sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/g' /etc/redis/redis.conf
-          sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
-          systemctl restart redis-server
-
-  flask-app:
-    template: ubuntu
-    release: jammy
-    
-    depends_on:
-      - flask-redis
+  sample-flask-app:
+    template: alpine
+    release: "3.19"
     
     mounts:
-      - .:/app  # Mount current directory containing Flask app
+      - .:/app
+      - ./config/supervisord.conf:/etc/supervisord.conf
+      - ./config/supervisor.d:/etc/supervisor.d
+      - ./startup.sh:/startup.sh
     
     exposed_ports:
-      - 5000  # Flask dev server
-      - 80    # Nginx
+      - 5000  # Flask app
+      - 6379  # Redis (optional external access)
     
     packages:
+      - redis
       - python3
-      - python3-pip
-      - python3-venv
+      - py3-pip
       - python3-dev
-      - nginx
+      - gcc
+      - musl-dev
+      - linux-headers
+      - build-base
+      - libffi-dev
       - supervisor
-      - redis-tools
     
-    services:
-      flask:
-        command: /app/venv/bin/python /app/app.py
-        directory: /app
-        autostart: true
-        autorestart: true
-        user: www-data
-        stdout_logfile: /var/log/flask/flask.log
-        stderr_logfile: /var/log/flask/flask_err.log
-        # Environment variables from .env are automatically available
-      
-      nginx:
-        type: system
-        config: |
-          cat > /etc/nginx/sites-available/flask-app <<'EOF'
-          server {
-              listen 80;
-              server_name _;
-              
-              location /static/ {
-                  alias /app/static/;
-              }
-              
-              location / {
-                  proxy_pass http://127.0.0.1:5000;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-              }
-          }
-          EOF
-          ln -sf /etc/nginx/sites-available/flask-app /etc/nginx/sites-enabled/
-          rm -f /etc/nginx/sites-enabled/default
-          nginx -t && systemctl restart nginx
+    # Note: Environment variables from .env are automatically available
     
     post_install:
+      - name: "Setup Redis"
+        command: |
+          # Create Redis directories with proper ownership
+          mkdir -p /var/lib/redis
+          mkdir -p /var/log/redis
+          mkdir -p /run/redis
+          
+          # Create redis user if it doesn't exist
+          adduser -D -H -s /sbin/nologin redis 2>/dev/null || true
+          
+          chown -R redis:redis /var/lib/redis
+          chown -R redis:redis /var/log/redis
+          chown -R redis:redis /run/redis
+          
+          # Configure Redis
+          cat > /etc/redis.conf << 'EOF'
+          bind 0.0.0.0
+          protected-mode no
+          port 6379
+          dir /var/lib/redis
+          logfile /var/log/redis/redis.log
+          pidfile /run/redis/redis.pid
+          daemonize no
+          EOF
+          
+          chown redis:redis /etc/redis.conf
+      
       - name: "Setup Python environment"
         command: |
           cd /app
@@ -90,17 +70,16 @@ containers:
       
       - name: "Create directories"
         command: |
-          mkdir -p /var/log/flask
-          mkdir -p /app/static
+          mkdir -p /var/log
+          chmod 755 /var/log
       
-      - name: "Set permissions"
+      - name: "Start services with Supervisor"
         command: |
-          chown -R www-data:www-data /app
-          chmod -R 755 /app
-          chmod -R 775 /var/log/flask
-      
-      - name: "Restart services"
-        command: |
-          supervisorctl reread
-          supervisorctl update
-          supervisorctl restart all || true
+          # Ensure the startup script is executable
+          chmod +x /startup.sh
+          # Start supervisord in the background
+          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Give it a moment to start
+          sleep 5
+          # Check status
+          supervisorctl status
