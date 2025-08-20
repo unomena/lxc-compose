@@ -12,7 +12,6 @@ containers:
       - postgresql
       - postgresql-client
       - redis
-      - supervisor
 
     exposed_ports:
       - 5432    # PostgreSQL
@@ -20,21 +19,6 @@ containers:
     
     mounts:
       - ./config/sample-datastore/redis.conf:/etc/redis.conf
-      - ./config/sample-datastore/supervisord.conf:/etc/supervisord.conf
-    
-    services:
-      postgresql:
-        command: /usr/bin/postgres -D /var/lib/postgresql/data
-        user: postgres
-        autostart: true
-        autorestart: true
-        priority: 10
-        stdout_logfile: /var/log/postgresql.log
-        stderr_logfile: /var/log/postgresql_err.log
-        stderr_logfile_maxbytes: 10MB
-        stdout_logfile_maxbytes: 10MB
-        stopsignal: INT
-        stopwaitsecs: 30
     
     post_install:
       - name: "Setup PostgreSQL"
@@ -61,6 +45,17 @@ containers:
           su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
           su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
           su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
+          
+          # Stop PostgreSQL to restart it as a daemon
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
+          
+      - name: "Start PostgreSQL"
+        command: |
+          # Start PostgreSQL as a daemon
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          # Verify it's running
+          sleep 2
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
 
       - name: "Setup and start Redis"
         command: |

@@ -13,19 +13,6 @@ containers:
       - ./config/supervisord.conf:/etc/supervisord.conf
     
     services:
-      postgresql:
-        command: /usr/bin/postgres -D /var/lib/postgresql/data
-        user: postgres
-        autostart: true
-        autorestart: true
-        priority: 10
-        stdout_logfile: /var/log/postgresql.log
-        stderr_logfile: /var/log/postgresql_err.log
-        stderr_logfile_maxbytes: 10MB
-        stdout_logfile_maxbytes: 10MB
-        stopsignal: INT
-        stopwaitsecs: 30
-      
       django:
         command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
         directory: /app/src
@@ -86,8 +73,7 @@ containers:
           # PostgreSQL 15+ requires explicit schema permissions
           su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
           
-          # Stop PostgreSQL (supervisor will manage it)
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
+          # PostgreSQL continues running as a daemon
       
       - name: "Setup Python environment"
         command: |
