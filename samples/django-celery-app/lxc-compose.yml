@@ -85,7 +85,7 @@ containers:
 
   sample-django-app:
     template: ubuntu
-    release: jammy
+    release: lts
     
     # Dependencies must exist before this container can start
     depends_on:
