@@ -92,50 +92,113 @@ install_dependencies() {
     # Initialize LXD if not already initialized
     if command -v lxd >/dev/null 2>&1; then
         if ! lxd waitready --timeout=5 2>/dev/null; then
-            info "Initializing LXD..."
-            lxd init --auto \
-                --network-address=[::]  \
-                --network-port=8443 \
-                --storage-backend=dir
+            info "Initializing LXD with minimal config..."
+            # Use minimal init to avoid YAML issues
+            cat <<EOF | lxd init --preseed
+config: {}
+networks: []
+storage_pools:
+- config:
+    source: /var/snap/lxd/common/lxd/storage-pools/default
+  description: ""
+  name: default
+  driver: dir
+profiles:
+- config: {}
+  description: ""
+  devices:
+    root:
+      path: /
+      pool: default
+      type: disk
+  name: default
+projects: []
+cluster: null
+EOF
         else
-            # LXD is running, check if storage pool exists
-            if ! lxc storage list --format=csv | grep -q "^default,"; then
-                info "Creating default storage pool..."
-                lxc storage create default dir || true
+            # LXD is running, check if it's properly initialized
+            if ! lxc storage list --format=csv 2>/dev/null | grep -q "default"; then
+                info "LXD needs initialization. Running minimal setup..."
+                # Try preseed initialization for existing LXD
+                cat <<EOF | lxd init --preseed 2>/dev/null || true
+storage_pools:
+- config: {}
+  description: ""
+  name: default
+  driver: dir
+EOF
+                # If preseed fails, try direct creation
+                if ! lxc storage list --format=csv 2>/dev/null | grep -q "default"; then
+                    info "Creating default storage pool directly..."
+                    lxc storage create default dir 2>&1 | grep -v "yaml:" || true
+                fi
             fi
         fi
     elif command -v /snap/bin/lxd >/dev/null 2>&1; then
         if ! /snap/bin/lxd waitready --timeout=5 2>/dev/null; then
-            info "Initializing LXD..."
-            /snap/bin/lxd init --auto \
-                --network-address=[::]  \
-                --network-port=8443 \
-                --storage-backend=dir
+            info "Initializing LXD with minimal config..."
+            # Use minimal init to avoid YAML issues
+            cat <<EOF | /snap/bin/lxd init --preseed
+config: {}
+networks: []
+storage_pools:
+- config:
+    source: /var/snap/lxd/common/lxd/storage-pools/default
+  description: ""
+  name: default
+  driver: dir
+profiles:
+- config: {}
+  description: ""
+  devices:
+    root:
+      path: /
+      pool: default
+      type: disk
+  name: default
+projects: []
+cluster: null
+EOF
         else
-            # LXD is running, check if storage pool exists
-            if ! lxc storage list --format=csv | grep -q "^default,"; then
-                info "Creating default storage pool..."
-                lxc storage create default dir || true
+            # LXD is running, check if it's properly initialized
+            if ! lxc storage list --format=csv 2>/dev/null | grep -q "default"; then
+                info "LXD needs initialization. Running minimal setup..."
+                # Try preseed initialization for existing LXD
+                cat <<EOF | /snap/bin/lxd init --preseed 2>/dev/null || true
+storage_pools:
+- config: {}
+  description: ""
+  name: default
+  driver: dir
+EOF
+                # If preseed fails, try direct creation
+                if ! lxc storage list --format=csv 2>/dev/null | grep -q "default"; then
+                    info "Creating default storage pool directly..."
+                    lxc storage create default dir 2>&1 | grep -v "yaml:" || true
+                fi
             fi
         fi
     fi
     
     # Ensure network bridge exists
-    if ! lxc network list --format=csv | grep -q "^lxdbr0,"; then
+    if ! lxc network list --format=csv 2>/dev/null | grep -q "^lxdbr0,"; then
         info "Creating network bridge..."
-        lxc network create lxdbr0 || true
+        lxc network create lxdbr0 2>/dev/null || true
+        if lxc network list --format=csv 2>/dev/null | grep -q "^lxdbr0,"; then
+            log "Network bridge created successfully"
+        fi
     fi
     
     # Ensure default profile has root disk
-    if ! lxc profile device show default | grep -q "root:"; then
+    if ! lxc profile device show default 2>/dev/null | grep -q "root:"; then
         info "Adding root disk to default profile..."
-        lxc profile device add default root disk path=/ pool=default || true
+        lxc profile device add default root disk path=/ pool=default 2>/dev/null || true
     fi
     
     # Ensure default profile has network device
-    if ! lxc profile device show default | grep -q "eth0:"; then
+    if ! lxc profile device show default 2>/dev/null | grep -q "eth0:"; then
         info "Adding network device to default profile..."
-        lxc profile device add default eth0 nic name=eth0 network=lxdbr0 || true
+        lxc profile device add default eth0 nic name=eth0 network=lxdbr0 2>/dev/null || true
     fi
     
     log "Dependencies installed"

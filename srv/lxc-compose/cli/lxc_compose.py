@@ -506,12 +506,23 @@ class LXCCompose:
         
         # Check if storage pool exists before creating container
         storage_check = self.run_command(['lxc', 'storage', 'list', '--format=csv'], check=False)
-        if storage_check.returncode == 0 and not storage_check.stdout.strip():
-            click.echo(f"  {YELLOW}⚠ No storage pool found. Creating default storage pool...{NC}")
-            self.run_command(['lxc', 'storage', 'create', 'default', 'dir'])
-            # Also ensure default profile has root disk
-            self.run_command(['lxc', 'profile', 'device', 'add', 'default', 'root', 
-                            'disk', 'path=/', 'pool=default'], check=False)
+        if storage_check.returncode == 0:
+            # Check if 'default' storage pool exists
+            if 'default,' not in storage_check.stdout:
+                click.echo(f"  {YELLOW}⚠ No default storage pool found. Creating...{NC}")
+                # Try to create storage pool, suppressing YAML errors
+                create_result = self.run_command(['lxc', 'storage', 'create', 'default', 'dir'], check=False)
+                if create_result.returncode != 0 and 'yaml:' not in create_result.stderr:
+                    # Only show error if it's not a YAML warning
+                    click.echo(f"  {RED}Warning: {create_result.stderr}{NC}")
+                
+                # Verify it was created
+                verify = self.run_command(['lxc', 'storage', 'list', '--format=csv'], check=False)
+                if 'default,' in verify.stdout:
+                    click.echo(f"  {GREEN}✓ Storage pool created{NC}")
+                    # Also ensure default profile has root disk
+                    self.run_command(['lxc', 'profile', 'device', 'add', 'default', 'root', 
+                                    'disk', 'path=/', 'pool=default'], check=False)
         
         # Create container
         click.echo(f"  Creating from {image}...")
