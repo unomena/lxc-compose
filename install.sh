@@ -266,7 +266,7 @@ setup_cli() {
     # Create simple wrapper script
     cat > "$BIN_PATH" << 'EOF'
 #!/bin/bash
-exec python3 /cli/lxc_compose.py "$@"
+exec python3 /srv/lxc-compose/cli/lxc_compose.py "$@"
 EOF
     
     chmod +x "$BIN_PATH"
