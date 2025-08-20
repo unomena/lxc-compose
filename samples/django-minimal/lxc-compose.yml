@@ -55,6 +55,8 @@ containers:
           su postgres -c "createdb ${DB_NAME} 2>/dev/null || true"
           su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\" 2>/dev/null || true"
           su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\" 2>/dev/null || true"
+          # PostgreSQL 15+ requires explicit schema permissions
+          su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\" 2>/dev/null || true"
       
       django:
         command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
