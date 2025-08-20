@@ -12,7 +12,6 @@ containers:
       - postgresql
       - postgresql-client
       - redis
-      - supervisor
 
     exposed_ports:
       - 5432    # PostgreSQL
@@ -20,8 +19,6 @@ containers:
     
     mounts:
       - ./config/sample-datastore/redis.conf:/etc/redis.conf
-      - ./config/sample-datastore/supervisord.conf:/etc/supervisord.conf
-      - ./config/sample-datastore/supervisor.d:/etc/supervisor.d
     
     post_install:
       - name: "Setup PostgreSQL"
@@ -48,9 +45,6 @@ containers:
           su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
           su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
           su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
-          
-          # Stop PostgreSQL (will be managed by supervisor if configured)
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
 
       - name: "Setup and start Redis"
         command: |
@@ -71,15 +65,6 @@ containers:
           
           # Start Redis directly (OpenRC might not work properly in LXC)
           /usr/bin/redis-server /etc/redis.conf --daemonize yes
-      
-      - name: "Start Supervisor service"
-        command: |
-          # Start supervisord directly
-          /usr/bin/supervisord -c /etc/supervisord.conf
-          # Give it a moment to start
-          sleep 5
-          # Check status
-          supervisorctl status
 
   sample-django-app:
     template: ubuntu
@@ -131,6 +116,16 @@ containers:
       - name: "Run migrations"
         command: |
           cd /app/src
+          # Wait for PostgreSQL to be ready
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in $(seq 1 30); do
+            if PGPASSWORD=${DB_PASSWORD} psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME} -c "SELECT 1" > /dev/null 2>&1; then
+              echo "PostgreSQL is ready!"
+              break
+            fi
+            echo "Waiting for PostgreSQL... (attempt $i/30)"
+            sleep 2
+          done
           # Environment variables are already available from .env
           ../venv/bin/python manage.py makemigrations api tasks
           ../venv/bin/python manage.py migrate
@@ -142,21 +137,6 @@ containers:
           # Using env vars from .env
           ../venv/bin/python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
           echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | ../venv/bin/python manage.py shell
-      
-      - name: "Setup Nginx"
-        command: |
-          # Enable the Django site
-          ln -sf /etc/nginx/sites-available/django-app /etc/nginx/sites-enabled/
-          rm -f /etc/nginx/sites-enabled/default
-          # Test config
-          nginx -t
-          # Stop nginx if running (might have started during package install)
-          service nginx stop || true
-          # Start nginx with our config
-          service nginx start
-          # Verify it's running
-          sleep 2
-          service nginx status || true
       
       - name: "Set permissions"
         command: |
@@ -178,3 +158,28 @@ containers:
           sleep 5
           # Test if Django is responding
           curl -I http://127.0.0.1:8000 || echo "Django not responding yet"
+          # Wait for Django to be ready
+          echo "Waiting for Django to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000 | grep -q "200\|301\|302"; then
+              echo "Django is ready!"
+              break
+            fi
+            echo "Waiting for Django... (attempt $i/30)"
+            sleep 2
+          done
+      
+      - name: "Setup Nginx"
+        command: |
+          # Enable the Django site
+          ln -sf /etc/nginx/sites-available/django-app /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          # Test config
+          nginx -t
+          # Stop nginx if running (might have started during package install)
+          service nginx stop || true
+          # Start nginx with our config
+          service nginx start
+          # Verify it's running
+          sleep 2
+          service nginx status || true
