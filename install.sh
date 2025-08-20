@@ -304,112 +304,7 @@ setup_network() {
 
 # Cache container images for faster first use
 cache_container_images() {
-    info "Caching container images for faster first use..."
-    echo "  This will download Alpine and Ubuntu images to speed up future container creation."
-    
-    local success=true
-    
-    # Test 1: Create vanilla Alpine container
-    info "  Downloading Alpine image..."
-    if lxc launch images:alpine/3.19 test-alpine-cache >/dev/null 2>&1; then
-        sleep 2
-        if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-alpine-cache$"; then
-            log "    ✓ Alpine image cached"
-            lxc delete test-alpine-cache --force >/dev/null 2>&1
-        else
-            warning "    ✗ Alpine container creation failed"
-            success=false
-        fi
-    else
-        warning "    ✗ Failed to download Alpine image"
-        success=false
-    fi
-    
-    # Test 2: Create vanilla Ubuntu minimal container
-    info "  Downloading Ubuntu minimal image..."
-    if lxc launch images:ubuntu-minimal/jammy test-ubuntu-cache >/dev/null 2>&1; then
-        sleep 2
-        if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-cache$"; then
-            log "    ✓ Ubuntu minimal image cached"
-            lxc delete test-ubuntu-cache --force >/dev/null 2>&1
-        else
-            warning "    ✗ Ubuntu minimal container creation failed"
-            success=false
-        fi
-    else
-        warning "    ✗ Failed to download Ubuntu minimal image"
-        success=false
-    fi
-    
-    # Test basic lxc-compose command
-    info "  Testing lxc-compose command..."
-    if $BIN_PATH list >/dev/null 2>&1; then
-        log "    ✓ lxc-compose command works"
-    else
-        warning "    ✗ lxc-compose command failed"
-        success=false
-    fi
-    
-    # Summary
-    echo ""
-    if [ "$success" = true ]; then
-        log "  ✓ Installation successful! Images cached for faster container creation."
-    else
-        warning "  ⚠ Some components failed, but lxc-compose is installed."
-        warning "  You may need to manually download container images on first use."
-    fi
-}
-
-# Create sample config
-create_sample_config() {
-    info "Creating sample configuration..."
-    
-    cat > "$INSTALL_DIR/lxc-compose.yml.example" << 'EOF'
-# LXC Compose Configuration Example
-# Place this file as lxc-compose.yml in your project directory
-
-containers:
-  # Example 1: Ubuntu minimal container (~100MB)
-  - name: app-server
-    image: ubuntu-minimal:22.04  # Options: ubuntu-minimal:22.04 (~100MB), ubuntu:22.04 (~400MB)
-    ip: 10.0.3.10
-    ports:
-      - "8080:80"
-      - "8443:443"
-    mounts:
-      - ./app:/var/www/app
-    services:
-      - name: nginx
-        command: apt-get update && apt-get install -y nginx && nginx -g 'daemon off;'
-  
-  # Example 2: Alpine Linux container (ultra-minimal ~8MB)
-  - name: web-alpine
-    image: alpine:3.19  # Ultra-lightweight, uses apk instead of apt
-    ip: 10.0.3.12
-    ports:
-      - "3000:3000"
-    services:
-      - name: node-app
-        command: |
-          apk add --no-cache nodejs npm
-          cd /app && npm start
-        
-  # Example 3: Database with Ubuntu minimal
-  - name: database
-    image: ubuntu-minimal:22.04
-    ip: 10.0.3.11
-    ports:
-      - "5432:5432"
-    mounts:
-      - ./data:/var/lib/postgresql
-    services:
-      - name: postgresql
-        command: |
-          apt-get update && apt-get install -y postgresql
-          service postgresql start
-EOF
-    
-    log "Sample config created at $INSTALL_DIR/lxc-compose.yml.example"
+    ./cache_container_images.sh
 }
 
 # Copy sample projects
@@ -452,25 +347,28 @@ main() {
     setup_cli
     setup_network
     cache_container_images
-    create_sample_config
     copy_sample_projects
     
-    echo
-    echo -e "${GREEN}${BOLD}Installation complete!${NC}"
-    echo
-    echo "Usage:"
+    echo ""
+    echo -e "${GREEN}${BOLD}✓ Installation complete!${NC}"
+    echo ""
+    echo "Quick start:"
     echo "  1. Create a lxc-compose.yml file in your project"
-    echo "  2. Run: lxc-compose up"
-    echo
-    echo "Commands:"
+    echo "  2. Add a .env file for environment variables (optional)"
+    echo "  3. Run: lxc-compose up"
+    echo ""
+    echo "Sample projects available in: ~/lxc-samples/"
+    echo "Try one:"
+    echo "  cd ~/lxc-samples/django-minimal"
+    echo "  lxc-compose up"
+    echo ""
+    echo "Available commands:"
     echo "  lxc-compose up       - Create and start containers"
     echo "  lxc-compose down     - Stop containers"
-    echo "  lxc-compose start    - Start stopped containers"
-    echo "  lxc-compose stop     - Stop running containers"
-    echo "  lxc-compose list     - List containers and status"
-    echo "  lxc-compose destroy  - Destroy containers"
-    echo
-    echo "Example config: $INSTALL_DIR/lxc-compose.yml.example"
+    echo "  lxc-compose list     - List containers and their status"
+    echo "  lxc-compose destroy  - Stop and remove containers"
+    echo ""
+    echo "Documentation: https://github.com/unomena/lxc-compose"
 }
 
 # Run main function
