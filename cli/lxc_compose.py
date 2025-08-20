@@ -673,6 +673,10 @@ class LXCCompose:
         if 'packages' in container:
             self.install_packages(name, container['packages'])
         
+        # Setup services (generate supervisor configs)
+        if 'services' in container:
+            self.setup_services(name, container['services'])
+        
         # Run post-install commands (with environment variables)
         if 'post_install' in container:
             self.run_post_install(name, container['post_install'])
@@ -765,6 +769,41 @@ class LXCCompose:
                     # Single line command with environment
                     full_command = f"{env_prefix}{command}" if env_prefix else command
                     self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', full_command])
+    
+    def setup_services(self, name: str, services: Dict):
+        """Setup services by generating supervisor configs"""
+        click.echo(f"  Setting up services...")
+        
+        # Create supervisor.d directory if it doesn't exist
+        self.run_command(['lxc', 'exec', name, '--', 'mkdir', '-p', '/etc/supervisor.d'], check=False)
+        
+        for service_name, service_config in services.items():
+            click.echo(f"    Creating supervisor config for {service_name}...")
+            
+            # Generate supervisor ini config
+            ini_content = f"[program:{service_name}]\n"
+            
+            # Add all service config options
+            for key, value in service_config.items():
+                # Convert underscore to no underscore for supervisor options
+                supervisor_key = key.replace('_', '')
+                if key == 'stdout_logfile':
+                    ini_content += f"stdout_logfile={value}\n"
+                elif key == 'stderr_logfile':
+                    ini_content += f"stderr_logfile={value}\n"
+                else:
+                    ini_content += f"{key}={value}\n"
+            
+            # If environment variables are set, add them to the service
+            if self.env_vars:
+                env_list = ','.join([f'{k}="{v}"' for k, v in self.env_vars.items()])
+                ini_content += f"environment={env_list}\n"
+            
+            # Write the config file to the container
+            config_path = f"/etc/supervisor.d/{service_name}.ini"
+            escaped_content = ini_content.replace("'", "'\\''")
+            self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', 
+                            f"echo '{escaped_content}' > {config_path}"])
     
     def handle_dependencies(self, container: Dict):
         """Handle container dependencies"""

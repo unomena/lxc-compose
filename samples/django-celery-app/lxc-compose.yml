@@ -12,6 +12,7 @@ containers:
       - postgresql
       - postgresql-client
       - redis
+      - supervisor
 
     exposed_ports:
       - 5432    # PostgreSQL
@@ -19,6 +20,21 @@ containers:
     
     mounts:
       - ./config/sample-datastore/redis.conf:/etc/redis.conf
+      - ./config/sample-datastore/supervisord.conf:/etc/supervisord.conf
+    
+    services:
+      postgresql:
+        command: /usr/bin/postgres -D /var/lib/postgresql/data
+        user: postgres
+        autostart: true
+        autorestart: true
+        priority: 10
+        stdout_logfile: /var/log/postgresql.log
+        stderr_logfile: /var/log/postgresql_err.log
+        stderr_logfile_maxbytes: 10MB
+        stdout_logfile_maxbytes: 10MB
+        stopsignal: INT
+        stopwaitsecs: 30
     
     post_install:
       - name: "Setup PostgreSQL"
@@ -77,7 +93,6 @@ containers:
     mounts:
       - .:/app
       - ./config/sample-django-app/supervisord.conf:/etc/supervisord.conf
-      - ./config/sample-django-app/supervisor.d:/etc/supervisor.d
       - ./config/sample-django-app/nginx.conf:/etc/nginx/sites-available/django-app
     
     exposed_ports:
@@ -98,6 +113,40 @@ containers:
       - curl
     
     # Note: Environment variables from .env are automatically available
+
+    services:
+      django:
+        command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
+        directory: /app/src
+        user: www-data
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/django/django.log
+        stderr_logfile: /var/log/django/django_err.log
+        startsecs: 10
+        stopwaitsecs: 600
+      
+      celery:
+        command: /app/venv/bin/celery -A config worker -l info
+        directory: /app/src
+        user: www-data
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/celery/celery.log
+        stderr_logfile: /var/log/celery/celery_err.log
+        startsecs: 10
+        stopwaitsecs: 600
+      
+      celery-beat:
+        command: /app/venv/bin/celery -A config beat -l info
+        directory: /app/src
+        user: www-data
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/celery/celery-beat.log
+        stderr_logfile: /var/log/celery/celery-beat_err.log
+        startsecs: 10
+        stopwaitsecs: 600
     
     post_install:      
       - name: "Setup Python environment"

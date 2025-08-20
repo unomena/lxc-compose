@@ -11,8 +11,20 @@ containers:
     mounts:
       - .:/app
       - ./config/supervisord.conf:/etc/supervisord.conf
-      - ./config/supervisor.d:/etc/supervisor.d
       - ./config/redis.conf:/etc/redis.conf
+    
+    services:
+      flask:
+        command: /app/venv/bin/python /app/app.py
+        directory: /app
+        user: root
+        autostart: true
+        autorestart: true
+        priority: 20
+        stdout_logfile: /var/log/flask.log
+        stderr_logfile: /var/log/flask_err.log
+        startsecs: 10
+        stopwaitsecs: 600
     
     exposed_ports:
       - 5000  # Flask app

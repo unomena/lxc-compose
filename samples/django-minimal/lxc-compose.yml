@@ -11,7 +11,32 @@ containers:
     mounts:
       - .:/app
       - ./config/supervisord.conf:/etc/supervisord.conf
-      - ./config/supervisor.d:/etc/supervisor.d
+    
+    services:
+      postgresql:
+        command: /usr/bin/postgres -D /var/lib/postgresql/data
+        user: postgres
+        autostart: true
+        autorestart: true
+        priority: 10
+        stdout_logfile: /var/log/postgresql.log
+        stderr_logfile: /var/log/postgresql_err.log
+        stderr_logfile_maxbytes: 10MB
+        stdout_logfile_maxbytes: 10MB
+        stopsignal: INT
+        stopwaitsecs: 30
+      
+      django:
+        command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
+        directory: /app/src
+        user: root
+        autostart: true
+        autorestart: true
+        priority: 20
+        stdout_logfile: /var/log/django.log
+        stderr_logfile: /var/log/django_err.log
+        startsecs: 10
+        stopwaitsecs: 600
     
     exposed_ports:
       - 8000  # Django dev server
