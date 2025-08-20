@@ -1,17 +1,23 @@
 # Node.js Application with MongoDB
-# Following the reference project format
+# Multi-container setup following project standards
 
 version: '1.0'
 
 containers:
-  sample-nodejs-mongo:
-    template: ubuntu
-    release: jammy
+  sample-nodejs-datastore:
+    template: ubuntu-minimal
+    release: lts
     
     packages:
       - wget
       - curl
       - gnupg
+    
+    exposed_ports:
+      - 27017    # MongoDB
+    
+    logs:
+      - mongodb:/var/log/mongodb/mongod.log
     
     post_install:
       - name: "Install MongoDB"
@@ -25,90 +31,142 @@ containers:
           # Configure MongoDB for container
           sed -i 's/bindIp: 127.0.0.1/bindIp: 0.0.0.0/g' /etc/mongod.conf
           
+          # Create MongoDB data directory
+          mkdir -p /data/db
+          chown -R mongodb:mongodb /data/db
+          
           # Start MongoDB
           systemctl daemon-reload
           systemctl enable mongod
           systemctl start mongod
+          
+          # Wait for MongoDB to be ready
+          sleep 5
+          
+          # Create database and user (using env vars from .env)
+          mongosh --eval "use ${MONGO_DB}" --eval "db.createUser({user: '${MONGO_USER}', pwd: '${MONGO_PASSWORD}', roles: [{role: 'readWrite', db: '${MONGO_DB}'}]})" || true
 
   sample-nodejs-app:
-    template: ubuntu
-    release: jammy
+    template: ubuntu-minimal
+    release: lts
     
     depends_on:
-      - sample-nodejs-mongo
+      - sample-nodejs-datastore
     
     mounts:
       - .:/app
+      - ./config/sample-nodejs-app/supervisord.conf:/etc/supervisord.conf
+      - ./config/sample-nodejs-app/nginx.conf:/etc/nginx/sites-available/nodejs-app
     
     exposed_ports:
-      - 3000  # Node.js app
-      - 80    # Nginx
+      - 80    # Nginx (serves Node.js app)
+    
+    logs:
+      - nodejs:/var/log/nodejs.log
+      - nodejs-error:/var/log/nodejs_err.log
+      - nginx-access:/var/log/nginx/access.log
+      - nginx-error:/var/log/nginx/error.log
+      - supervisor:/var/log/supervisord.log
     
     packages:
       - curl
       - nginx
       - supervisor
+      - build-essential
+    
+    # Note: Environment variables from .env are automatically available
     
     services:
       nodejs:
-        command: /usr/bin/node /app/server.js
+        command: /usr/local/bin/node /app/src/server.js
         directory: /app
+        user: www-data
         autostart: true
         autorestart: true
-        stdout_logfile: /var/log/nodejs/app.log
-        stderr_logfile: /var/log/nodejs/app_err.log
-        # Environment variables from .env are automatically available
-        # MONGO_URL constructed from env vars
-        environment:
-          MONGO_URL: "mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}"
-      
-      nginx:
-        type: system
-        config: |
-          cat > /etc/nginx/sites-available/nodejs-app <<'EOF'
-          server {
-              listen 80;
-              server_name _;
-              
-              location / {
-                  proxy_pass http://127.0.0.1:3000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_cache_bypass $http_upgrade;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-              }
-          }
-          EOF
-          ln -sf /etc/nginx/sites-available/nodejs-app /etc/nginx/sites-enabled/
-          rm -f /etc/nginx/sites-enabled/default
-          nginx -t && systemctl restart nginx
+        stdout_logfile: /var/log/nodejs.log
+        stderr_logfile: /var/log/nodejs_err.log
+        startsecs: 10
+        stopwaitsecs: 600
     
     post_install:
       - name: "Install Node.js"
         command: |
-          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          # Install Node.js 18.x from NodeSource
+          curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
           apt-get install -y nodejs
-      
-      - name: "Install dependencies"
-        command: |
-          cd /app
-          npm install
+          
+          # Verify installation
+          node --version
+          npm --version
       
       - name: "Create directories"
         command: |
-          mkdir -p /var/log/nodejs
+          mkdir -p /var/log/nginx
+          mkdir -p /var/log
+          chmod 755 /var/log
+      
+      - name: "Setup Node.js application"
+        command: |
+          cd /app
+          # Install dependencies
+          npm install
+          # Build if needed
+          npm run build || true
+      
+      - name: "Wait for MongoDB"
+        command: |
+          # Wait for MongoDB to be ready
+          echo "Waiting for MongoDB to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s ${MONGO_HOST}:27017 > /dev/null 2>&1; then
+              echo "MongoDB is ready!"
+              break
+            fi
+            echo "Waiting for MongoDB... (attempt $i/30)"
+            sleep 2
+          done
       
       - name: "Set permissions"
         command: |
+          # Create www-data user if it doesn't exist
+          id -u www-data &>/dev/null || useradd -r -s /bin/false www-data
+          chown -R www-data:www-data /app
           chmod -R 755 /app
-          chmod -R 775 /var/log/nodejs
       
-      - name: "Restart services"
+      - name: "Start Supervisor service"
         command: |
-          supervisorctl reread
-          supervisorctl update
-          supervisorctl restart all || true
+          # Start supervisord directly
+          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Give it a moment to start
+          sleep 5
+          # Check status
+          supervisorctl status
+          # Wait a bit more for Node.js to start
+          sleep 5
+          # Test if Node.js is responding
+          curl -I http://127.0.0.1:3000 || echo "Node.js not responding yet"
+          # Wait for Node.js to be ready
+          echo "Waiting for Node.js to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 | grep -q "200\|301\|302"; then
+              echo "Node.js is ready!"
+              break
+            fi
+            echo "Waiting for Node.js... (attempt $i/30)"
+            sleep 2
+          done
+      
+      - name: "Setup Nginx"
+        command: |
+          # Enable the Node.js site
+          ln -sf /etc/nginx/sites-available/nodejs-app /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          # Test config
+          nginx -t
+          # Stop nginx if running (might have started during package install)
+          service nginx stop || true
+          # Start nginx with our config
+          service nginx start
+          # Verify it's running
+          sleep 2
+          service nginx status || true
