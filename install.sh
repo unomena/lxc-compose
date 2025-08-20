@@ -97,6 +97,12 @@ install_dependencies() {
                 --network-address=[::]  \
                 --network-port=8443 \
                 --storage-backend=dir
+        else
+            # LXD is running, check if storage pool exists
+            if ! lxc storage list --format=csv | grep -q "^default,"; then
+                info "Creating default storage pool..."
+                lxc storage create default dir || true
+            fi
         fi
     elif command -v /snap/bin/lxd >/dev/null 2>&1; then
         if ! /snap/bin/lxd waitready --timeout=5 2>/dev/null; then
@@ -105,7 +111,31 @@ install_dependencies() {
                 --network-address=[::]  \
                 --network-port=8443 \
                 --storage-backend=dir
+        else
+            # LXD is running, check if storage pool exists
+            if ! lxc storage list --format=csv | grep -q "^default,"; then
+                info "Creating default storage pool..."
+                lxc storage create default dir || true
+            fi
         fi
+    fi
+    
+    # Ensure network bridge exists
+    if ! lxc network list --format=csv | grep -q "^lxdbr0,"; then
+        info "Creating network bridge..."
+        lxc network create lxdbr0 || true
+    fi
+    
+    # Ensure default profile has root disk
+    if ! lxc profile device show default | grep -q "root:"; then
+        info "Adding root disk to default profile..."
+        lxc profile device add default root disk path=/ pool=default || true
+    fi
+    
+    # Ensure default profile has network device
+    if ! lxc profile device show default | grep -q "eth0:"; then
+        info "Adding network device to default profile..."
+        lxc profile device add default eth0 nic name=eth0 network=lxdbr0 || true
     fi
     
     log "Dependencies installed"

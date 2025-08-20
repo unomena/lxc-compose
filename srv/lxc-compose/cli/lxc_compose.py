@@ -499,9 +499,29 @@ class LXCCompose:
         else:
             image = 'ubuntu:22.04'
         
+        # Check if storage pool exists before creating container
+        storage_check = self.run_command(['lxc', 'storage', 'list', '--format=csv'], check=False)
+        if storage_check.returncode == 0 and not storage_check.stdout.strip():
+            click.echo(f"  {YELLOW}⚠ No storage pool found. Creating default storage pool...{NC}")
+            self.run_command(['lxc', 'storage', 'create', 'default', 'dir'])
+            # Also ensure default profile has root disk
+            self.run_command(['lxc', 'profile', 'device', 'add', 'default', 'root', 
+                            'disk', 'path=/', 'pool=default'], check=False)
+        
         # Create container
         click.echo(f"  Creating from {image}...")
-        self.run_command(['lxc', 'launch', image, name])
+        result = self.run_command(['lxc', 'launch', image, name], check=False)
+        if result.returncode != 0:
+            if "No root device could be found" in result.stderr:
+                click.echo(f"  {YELLOW}⚠ Fixing storage configuration...{NC}")
+                # Try to add root disk to default profile
+                self.run_command(['lxc', 'profile', 'device', 'add', 'default', 'root', 
+                                'disk', 'path=/', 'pool=default'], check=False)
+                # Retry container creation
+                self.run_command(['lxc', 'launch', image, name])
+            else:
+                raise subprocess.CalledProcessError(result.returncode, result.args, 
+                                                   result.stdout, result.stderr)
         
         # Wait for network
         ip = self.wait_for_network(name)
@@ -755,91 +775,185 @@ class LXCCompose:
             
             click.echo(f"\n{GREEN}✓{NC} All containers destroyed")
     
-    def list_containers(self):
+    def list_containers(self, status_filter=None, config_containers=None, config_file=None, output_json=False):
         """List containers and their status"""
-        if self.all_containers:
-            click.echo(f"{BOLD}All containers on system:{NC}")
-            result = self.run_command(['lxc', 'list', '--format=json'])
-            containers = json.loads(result.stdout)
+        if status_filter is None:
+            status_filter = {'running': False, 'stopped': False}
+        
+        if config_containers is None:
+            config_containers = []
             
-            if not containers:
-                click.echo(f"{YELLOW}No containers found{NC}")
-                return
+        # Get all containers
+        result = self.run_command(['lxc', 'list', '--format=json'])
+        containers = json.loads(result.stdout)
+        
+        # Filter by status if requested
+        filtered_containers = []
+        for container in containers:
+            status = container.get('status', 'Unknown')
             
-            click.echo("\n" + "=" * 60)
-            for container in containers:
+            # Apply status filter
+            if status_filter['running'] and status != 'Running':
+                continue
+            if status_filter['stopped'] and status != 'Stopped':
+                continue
+            
+            filtered_containers.append(container)
+        
+        # If JSON output requested, output and return
+        if output_json:
+            # Add additional info to each container
+            output_data = []
+            for container in filtered_containers:
                 name = container['name']
                 status = container.get('status', 'Unknown')
                 
-                # Color code status
-                if status == 'Running':
-                    status_color = GREEN
-                elif status == 'Stopped':
-                    status_color = YELLOW
-                else:
-                    status_color = RED
+                # Create simplified output
+                container_info = {
+                    'name': name,
+                    'status': status.lower(),
+                    'in_config': name in config_containers
+                }
                 
-                click.echo(f"  {name}: {status_color}{status}{NC}")
-                
-                # Show IP if running
+                # Add IP if running
                 if status == 'Running':
                     ip = self.get_container_ip(name)
                     if ip:
-                        click.echo(f"    IP: {ip}")
-                        
-                        # Check if this container has saved exposed ports
-                        # (We don't have config for --all, so we can't show exposed ports)
-        else:
-            click.echo(f"{BOLD}Containers from {self.config_file}:{NC}")
+                        container_info['ip'] = ip
+                
+                output_data.append(container_info)
             
-            # Show loaded environment variables
-            if self.env_vars:
-                click.echo(f"\n  Environment variables loaded from .env:")
-                for key in self.env_vars:
-                    click.echo(f"    {key}")
-            
-            click.echo("\n" + "=" * 60)
-            for container in self.containers:
-                name = container['name']
-                
-                # Get container status
-                result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
-                if result.returncode != 0:
-                    click.echo(f"  {name}: {RED}Not Found{NC}")
-                    continue
-                
-                containers = json.loads(result.stdout)
-                if not containers:
-                    click.echo(f"  {name}: {RED}Not Found{NC}")
-                    continue
-                
-                info = containers[0]
-                status = info.get('status', 'Unknown')
-                
-                # Color code status
-                if status == 'Running':
-                    status_color = GREEN
-                elif status == 'Stopped':
-                    status_color = YELLOW
-                else:
-                    status_color = RED
-                
-                click.echo(f"  {name}: {status_color}{status}{NC}")
-                
-                # Show IP if running
-                if status == 'Running':
-                    ip = self.get_container_ip(name)
-                    if ip:
-                        click.echo(f"    IP: {ip}")
-                
-                # Show exposed ports from config
-                exposed_ports = container.get('exposed_ports', [])
-                if exposed_ports:
-                    if isinstance(exposed_ports, int):
-                        exposed_ports = [exposed_ports]
-                    click.echo(f"    Exposed ports: {', '.join(map(str, exposed_ports))}")
+            # Output as JSON
+            click.echo(json.dumps(output_data, indent=2))
+            return
         
-        click.echo("=" * 60)
+        # Regular text output - Table format
+        if not filtered_containers:
+            if status_filter['running']:
+                click.echo(f"{YELLOW}No running containers found{NC}")
+            elif status_filter['stopped']:
+                click.echo(f"{YELLOW}No stopped containers found{NC}")
+            else:
+                click.echo(f"{YELLOW}No containers found{NC}")
+            return
+        
+        # Prepare table data
+        table_data = []
+        for container in filtered_containers:
+            name = container['name']
+            status = container.get('status', 'Unknown')
+            container_type = container.get('type', 'CONTAINER')
+            
+            # Get IP addresses
+            ipv4 = '-'
+            ipv6 = '-'
+            if status == 'Running':
+                # Get IPv4
+                ip = self.get_container_ip(name)
+                if ip:
+                    ipv4 = ip
+                
+                # Get IPv6 if available
+                state = container.get('state', {})
+                network = state.get('network', {})
+                for iface_name, iface_data in network.items():
+                    if iface_name != 'lo':
+                        addresses = iface_data.get('addresses', [])
+                        for addr in addresses:
+                            if addr.get('family') == 'inet6' and addr.get('scope') == 'global':
+                                ipv6 = addr.get('address', '-')
+                                break
+                        if ipv6 != '-':
+                            break
+            
+            # Check if in config
+            in_config = '✓' if name in config_containers else ''
+            
+            # Get exposed ports from saved iptables rules or config
+            ports = '-'
+            # For now, we'll just show a dash since we don't have config loaded
+            # TODO: Could parse iptables rules to show forwarded ports
+            
+            table_data.append({
+                'name': name,
+                'status': status,
+                'ipv4': ipv4,
+                'ipv6': ipv6[:16] + '...' if len(ipv6) > 16 and ipv6 != '-' else ipv6,
+                'type': container_type,
+                'config': in_config,
+                'ports': ports
+            })
+        
+        # Calculate column widths
+        col_widths = {
+            'name': max(len('NAME'), max(len(r['name']) for r in table_data)),
+            'status': max(len('STATE'), max(len(r['status']) for r in table_data)),
+            'ipv4': max(len('IPV4'), max(len(r['ipv4']) for r in table_data)),
+            'ipv6': max(len('IPV6'), max(len(r['ipv6']) for r in table_data)),
+            'type': max(len('TYPE'), max(len(r['type']) for r in table_data)),
+            'ports': max(len('PORTS'), max(len(r['ports']) for r in table_data))
+        }
+        
+        # Add padding
+        for key in col_widths:
+            col_widths[key] += 2
+        
+        # Print header
+        header_line = "+"
+        for key in ['name', 'status', 'ipv4', 'ipv6', 'type', 'ports']:
+            header_line += "-" * (col_widths[key] + 1) + "+"
+        
+        click.echo(header_line)
+        
+        # Print column headers
+        header = "|"
+        header += f" {'NAME'.center(col_widths['name'])}|"
+        header += f" {'STATE'.center(col_widths['status'])}|"
+        header += f" {'IPV4'.center(col_widths['ipv4'])}|"
+        header += f" {'IPV6'.center(col_widths['ipv6'])}|"
+        header += f" {'TYPE'.center(col_widths['type'])}|"
+        header += f" {'PORTS'.center(col_widths['ports'])}|"
+        click.echo(header)
+        
+        click.echo(header_line)
+        
+        # Print data rows
+        for row in table_data:
+            # Color code status
+            status = row['status']
+            if status == 'Running':
+                status_color = GREEN
+                status_display = f"{status_color}{status.upper()}{NC}"
+            elif status == 'Stopped':
+                status_color = YELLOW
+                status_display = f"{status_color}{status.upper()}{NC}"
+            else:
+                status_color = RED
+                status_display = f"{status_color}{status.upper()}{NC}"
+            
+            # Build row
+            data_row = "|"
+            data_row += f" {row['name'].ljust(col_widths['name'])}|"
+            data_row += f" {status_display.ljust(col_widths['status'] + len(status_color) + len(NC))}|"
+            data_row += f" {row['ipv4'].center(col_widths['ipv4'])}|"
+            data_row += f" {row['ipv6'].center(col_widths['ipv6'])}|"
+            data_row += f" {row['type'].center(col_widths['type'])}|"
+            data_row += f" {row['ports'].center(col_widths['ports'])}|"
+            
+            click.echo(data_row)
+        
+        click.echo(header_line)
+        
+        # Show filter info if applicable
+        if status_filter['running'] or status_filter['stopped'] or config_file:
+            filter_info = []
+            if status_filter['running']:
+                filter_info.append("showing running only")
+            elif status_filter['stopped']:
+                filter_info.append("showing stopped only")
+            if config_file:
+                filter_info.append(f"config: {config_file}")
+            click.echo(f"\n{BLUE}Filter: {', '.join(filter_info)}{NC}")
 
 # Confirmation helper
 def confirm_all_operation(operation: str):
@@ -878,12 +992,34 @@ def down(file, all_containers):
     compose.down()
 
 @cli.command('list')
-@click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
-@click.option('--all', 'all_containers', is_flag=True, help='List ALL containers on system')
-def list_cmd(file, all_containers):
-    """List containers and status"""
-    compose = LXCCompose(file if not all_containers else None, all_containers)
-    compose.list_containers()
+@click.option('-f', '--file', default=None, help='Highlight containers from this config file')
+@click.option('--running', is_flag=True, help='Show only running containers')
+@click.option('--stopped', is_flag=True, help='Show only stopped containers')
+@click.option('--json', 'output_json', is_flag=True, help='Output in JSON format')
+def list_cmd(file, running, stopped, output_json):
+    """List all containers with optional status filtering"""
+    # Create a minimal compose object just for listing
+    compose = LXCCompose(None, True)  # Always show all containers
+    
+    # Load config file if provided (for highlighting/additional info)
+    config_containers = []
+    if file and os.path.exists(file):
+        try:
+            with open(file, 'r') as f:
+                config = yaml.safe_load(f)
+                containers = config.get('containers', {})
+                if isinstance(containers, dict):
+                    config_containers = [name for name in containers.keys()]
+                elif isinstance(containers, list):
+                    config_containers = [c.get('name', '') for c in containers if 'name' in c]
+        except:
+            pass
+    
+    # Pass filter options to list method
+    compose.list_containers(status_filter={'running': running, 'stopped': stopped}, 
+                           config_containers=config_containers,
+                           config_file=file,
+                           output_json=output_json)
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
