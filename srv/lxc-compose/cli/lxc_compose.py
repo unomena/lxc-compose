@@ -224,7 +224,7 @@ class LXCCompose:
         click.echo(f"  Mounting shared hosts file...")
         self.run_command(['lxc', 'config', 'device', 'add', name, 'hosts',
                          'disk', f'source={SHARED_HOSTS_FILE}', 
-                         'path=/etc/hosts'])
+                         'path=/etc/hosts', 'shift=true'])
     
     def mount_env_file(self, name: str):
         """Mount the .env file into the container if it exists"""
@@ -235,7 +235,7 @@ class LXCCompose:
             click.echo(f"  Mounting .env file...")
             self.run_command(['lxc', 'config', 'device', 'add', name, 'envfile',
                              'disk', f'source={env_file}', 
-                             'path=/app/.env'])
+                             'path=/app/.env', 'shift=true'])
     
     def setup_container_environment(self, name: str):
         """Setup system-wide environment variables in container"""
@@ -595,10 +595,11 @@ class LXCCompose:
                 os.makedirs(source, exist_ok=True)
                 click.echo(f"    Created directory: {source}")
             
-            # Add mount to container
+            # Add mount to container with UID/GID shifting for unprivileged containers
             device_name = target.replace('/', '-').strip('-') or 'root'
+            # Use shift=true to handle UID/GID mapping for unprivileged containers
             self.run_command(['lxc', 'config', 'device', 'add', name, device_name, 
-                            'disk', f'source={source}', f'path={target}'])
+                            'disk', f'source={source}', f'path={target}', 'shift=true'])
             click.echo(f"    Mounted {source} -> {target}")
     
     def install_packages(self, name: str, packages: List[str]):
