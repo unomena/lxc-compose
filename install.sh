@@ -244,7 +244,7 @@ copy_files() {
     SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     
     # Copy CLI files
-    cp -r "$SCRIPT_DIR/srv/lxc-compose/cli/"* "$INSTALL_DIR/cli/" 2>/dev/null || true
+    cp -r "$SCRIPT_DIR/cli/"* "$INSTALL_DIR/cli/" 2>/dev/null || true
     
     # Copy docs
     cp -r "$SCRIPT_DIR/docs/"* "$INSTALL_DIR/docs/" 2>/dev/null || true
@@ -266,7 +266,7 @@ setup_cli() {
     # Create simple wrapper script
     cat > "$BIN_PATH" << 'EOF'
 #!/bin/bash
-exec python3 /srv/lxc-compose/cli/lxc_compose.py "$@"
+exec python3 /cli/lxc_compose.py "$@"
 EOF
     
     chmod +x "$BIN_PATH"
