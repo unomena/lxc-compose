@@ -1036,5 +1036,58 @@ def destroy(file, all_containers):
     compose = LXCCompose(file if not all_containers else None, all_containers)
     compose.destroy()
 
+@cli.command()
+@click.argument('container_name')
+@click.option('--command', '-c', default=None, help='Command to execute instead of shell')
+def ssh(container_name, command):
+    """SSH into a container (opens interactive shell)"""
+    # Check if container exists
+    result = subprocess.run(['lxc', 'list', container_name, '--format=json'], 
+                          capture_output=True, text=True)
+    if result.returncode != 0:
+        click.echo(f"{RED}✗{NC} Failed to check container: {result.stderr}")
+        sys.exit(1)
+    
+    containers = json.loads(result.stdout)
+    if not containers:
+        click.echo(f"{RED}✗{NC} Container '{container_name}' not found")
+        sys.exit(1)
+    
+    container = containers[0]
+    if container.get('status') != 'Running':
+        click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' is not running")
+        sys.exit(1)
+    
+    # Detect the OS type to determine which shell to use
+    shell = 'bash'  # Default to bash
+    
+    # Get container config to check the OS
+    config = container.get('config', {})
+    image_os = config.get('image.os', '').lower()
+    image_description = config.get('image.description', '').lower()
+    
+    # Check if it's Alpine (Alpine doesn't have bash by default)
+    if 'alpine' in image_os or 'alpine' in image_description:
+        shell = 'sh'
+    
+    # If user specified a command, execute it directly
+    if command:
+        # Pass the command to the shell to handle pipes, redirects, etc properly
+        exec_cmd = ['lxc', 'exec', container_name, '--', shell, '-c', command]
+    else:
+        # Interactive shell
+        click.echo(f"Connecting to {container_name} ({shell})...")
+        exec_cmd = ['lxc', 'exec', container_name, '--', shell]
+    
+    # Execute the command interactively
+    try:
+        subprocess.run(exec_cmd)
+    except KeyboardInterrupt:
+        # Clean exit on Ctrl+C
+        pass
+    except Exception as e:
+        click.echo(f"{RED}✗{NC} Failed to connect: {e}")
+        sys.exit(1)
+
 if __name__ == '__main__':
     cli()
