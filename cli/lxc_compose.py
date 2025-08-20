@@ -608,6 +608,9 @@ class LXCCompose:
             elif template == 'ubuntu':
                 # Ubuntu images use ubuntu: prefix
                 image = f"ubuntu:{release}"
+            elif template == 'ubuntu-minimal':
+                # Ubuntu minimal images use ubuntu-minimal: prefix
+                image = f"ubuntu-minimal:{release}"
             elif template == 'debian':
                 # Debian images use debian: prefix
                 image = f"debian:{release}"

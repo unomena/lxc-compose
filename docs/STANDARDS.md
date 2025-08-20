@@ -31,11 +31,15 @@ project/
 ### 2. Base Images
 - **Alpine Linux** (`alpine:3.19`) for lightweight containers with:
   - PostgreSQL, Redis, or other system services
-  - Small footprint requirements
+  - Smallest footprint requirements (~150MB)
 - **Ubuntu Minimal** (`ubuntu-minimal:lts`) for:
-  - Complex Python/Node applications
-  - When broader package compatibility is needed
-  - Production-like environments
+  - Python/Node applications requiring Ubuntu compatibility
+  - Smaller footprint than full Ubuntu (~300MB)
+  - Good balance between size and compatibility
+- **Ubuntu** (`ubuntu:lts`) for:
+  - Complex applications needing full Ubuntu environment
+  - When all standard Ubuntu packages are needed
+  - Development environments that mirror production
 
 ### 3. Services Configuration
 Services should be defined inline in `lxc-compose.yml` using the `services:` section:
