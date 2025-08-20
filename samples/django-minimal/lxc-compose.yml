@@ -61,8 +61,10 @@ containers:
       - name: "Setup Python environment"
         command: |
           cd /app
-          pip3 install --upgrade pip
-          pip3 install -r requirements.txt
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
       
       - name: "Run migrations"
         command: |
@@ -71,18 +73,20 @@ containers:
           sleep 3
           
           cd /app/src
+          source ../venv/bin/activate
           # Environment variables are already available from .env
-          python3 manage.py migrate
-          python3 manage.py collectstatic --noinput || true
+          python manage.py migrate
+          python manage.py collectstatic --noinput || true
       
       - name: "Create superuser"
         command: |
           cd /app/src
+          source ../venv/bin/activate
           # Using env vars from .env
           # Try to create superuser, but don't fail if tables don't exist yet
-          python3 manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} 2>/dev/null || true
+          python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} 2>/dev/null || true
           # Set password if user exists
-          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | python3 manage.py shell 2>/dev/null || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | python manage.py shell 2>/dev/null || true
       
       - name: "Verify supervisor configuration"
         command: |

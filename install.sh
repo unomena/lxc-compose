@@ -207,6 +207,8 @@ EOF
 # Setup directories
 setup_directories() {
     info "Setting up directories..."
+
+    rm -Rf "$INSTALL_DIR"
     
     # Create required directories
     mkdir -p "$INSTALL_DIR/cli"
@@ -321,6 +323,7 @@ copy_sample_projects() {
     fi
     
     # Copy samples
+    rm -Rf "$USER_HOME/lxc-samples"
     cp -r "$SCRIPT_DIR/samples" "$USER_HOME/lxc-samples"
     chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/lxc-samples"
     
