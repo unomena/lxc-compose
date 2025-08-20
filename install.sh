@@ -302,11 +302,6 @@ setup_network() {
     log "Network configured"
 }
 
-# Cache container images for faster first use
-cache_container_images() {
-    ./cache_container_images.sh
-}
-
 # Copy sample projects
 copy_sample_projects() {
     info "Sample projects available..."
@@ -346,7 +341,7 @@ main() {
     copy_files
     setup_cli
     setup_network
-    cache_container_images
+    ./cache_container_images.sh
     copy_sample_projects
     
     echo ""
