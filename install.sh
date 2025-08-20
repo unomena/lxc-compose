@@ -310,7 +310,7 @@ cache_container_images() {
 
     # Test 1: Create vanilla Alpine container
     info "  Downloading Alpine image..."
-    lxc launch alpine/3.19 test-alpine-cache
+    lxc launch alpine/3.19 test-alpine-cache >/dev/null 2>&1
     sleep 2
     if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-alpine-cache$"; then
         log "    ✓ Alpine image cached"
@@ -322,7 +322,7 @@ cache_container_images() {
     
     # Test 2: Create vanilla Ubuntu minimal container
     info "  Downloading Ubuntu minimal image..."
-    lxc launch ubuntu-minimal:lts test-ubuntu-minimal-cache
+    lxc launch ubuntu-minimal:lts test-ubuntu-minimal-cache >/dev/null 2>&1
     sleep 2
     if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-minimal-cache$"; then
         log "    ✓ Ubuntu minimal image cached"
@@ -334,7 +334,7 @@ cache_container_images() {
     
     # Test 3: Create vanilla Ubuntu LTS container
     info "  Downloading Ubuntu LTS image..."
-    lxc launch ubuntu:lts test-ubuntu-lts-cache
+    lxc launch ubuntu:lts test-ubuntu-lts-cache >/dev/null 2>&1
     sleep 2
     if lxc list --format=csv -c n 2>/dev/null | grep -q "^test-ubuntu-lts-cache$"; then
         log "    ✓ Ubuntu LTS image cached"
