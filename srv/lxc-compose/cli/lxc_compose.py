@@ -492,9 +492,14 @@ class LXCCompose:
             release = container.get('release', 'latest')
             if template == 'alpine':
                 image = f"images:alpine/{release}"
-            elif template in ['ubuntu', 'debian']:
-                image = f"images:{template}/{release}"
+            elif template == 'ubuntu':
+                # Ubuntu images use ubuntu: prefix
+                image = f"ubuntu:{release}"
+            elif template == 'debian':
+                # Debian images use debian: prefix
+                image = f"debian:{release}"
             else:
+                # Generic images use images: prefix
                 image = f"images:{template}/{release}"
         else:
             image = 'ubuntu:22.04'
@@ -520,8 +525,8 @@ class LXCCompose:
                 # Retry container creation
                 self.run_command(['lxc', 'launch', image, name])
             else:
-                raise subprocess.CalledProcessError(result.returncode, result.args, 
-                                                   result.stdout, result.stderr)
+                click.echo(f"{RED}✗ Failed to create container: {result.stderr}{NC}")
+                sys.exit(1)
         
         # Wait for network
         ip = self.wait_for_network(name)
