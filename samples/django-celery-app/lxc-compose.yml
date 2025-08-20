@@ -121,9 +121,8 @@ containers:
         command: |
           cd /app
           python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip setuptools wheel
-          pip install -r requirements.txt
+          ./venv/bin/pip install --upgrade pip setuptools wheel
+          ./venv/bin/pip install -r requirements.txt
       
       - name: "Create directories"
         command: |
@@ -134,19 +133,17 @@ containers:
       - name: "Run migrations"
         command: |
           cd /app/src
-          source ../venv/bin/activate
           # Environment variables are already available from .env
-          python manage.py makemigrations api tasks
-          python manage.py migrate
-          python manage.py collectstatic --noinput
+          ../venv/bin/python manage.py makemigrations api tasks
+          ../venv/bin/python manage.py migrate
+          ../venv/bin/python manage.py collectstatic --noinput
       
       - name: "Create superuser"
         command: |
           cd /app/src
-          source ../venv/bin/activate
           # Using env vars from .env
-          python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
-          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | python manage.py shell
+          ../venv/bin/python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | ../venv/bin/python manage.py shell
       
       - name: "Setup Nginx"
         command: |
