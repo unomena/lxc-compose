@@ -96,8 +96,7 @@ containers:
       - ./config/sample-django-app/nginx.conf:/etc/nginx/sites-available/django-app
     
     exposed_ports:
-      - 80    # Nginx
-      - 8000  # Django dev server
+      - 80    # Nginx (serves Django app)
     
     packages:
       - python3
