@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   rabbitmq:
-    image: ubuntu-minimal:24.04
+    template: ubuntu-minimal-24.04
     
     exposed_ports:
       - 5672

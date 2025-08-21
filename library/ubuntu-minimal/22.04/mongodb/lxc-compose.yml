@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   mongodb:
-    image: ubuntu-minimal:22.04
+    template: ubuntu-minimal-22.04
     
     exposed_ports:
       - 27017

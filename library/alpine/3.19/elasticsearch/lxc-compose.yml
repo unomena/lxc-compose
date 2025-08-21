@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   elasticsearch:
-    image: images:alpine/3.19
+    template: alpine-3.19
     
     exposed_ports:
       - 9200

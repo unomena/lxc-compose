@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   grafana:
-    image: images:debian/11
+    template: debian-11
     
     exposed_ports:
       - 3000

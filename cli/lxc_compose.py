@@ -14,6 +14,15 @@ import subprocess
 import re
 from typing import Dict, Any, Optional, List
 
+# Import template handler
+try:
+    from template_handler import TemplateHandler
+except ImportError:
+    # Fallback if module not in path
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from template_handler import TemplateHandler
+
 # Terminal colors
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
@@ -44,6 +53,7 @@ class LXCCompose:
         self.all_containers = all_containers
         self.config_file = config_file
         self.env_vars = {}
+        self.template_handler = TemplateHandler()
         
         if not all_containers:
             if not config_file or not os.path.exists(config_file):
@@ -55,6 +65,8 @@ class LXCCompose:
             
             # Load and parse config
             self.config = self.load_config()
+            # Process templates before parsing containers
+            self.config = self.template_handler.process_compose_file(self.config)
             self.containers = self.parse_containers()
         else:
             self.config = {}
@@ -597,28 +609,8 @@ class LXCCompose:
         """Create a single container"""
         name = container['name']
         
-        # Determine base image
-        if 'image' in container:
-            image = container['image']
-        elif 'template' in container:
-            template = container['template']
-            release = container.get('release', 'latest')
-            if template == 'alpine':
-                image = f"images:alpine/{release}"
-            elif template == 'ubuntu':
-                # Ubuntu images use ubuntu: prefix
-                image = f"ubuntu:{release}"
-            elif template == 'ubuntu-minimal':
-                # Ubuntu minimal images use ubuntu-minimal: prefix
-                image = f"ubuntu-minimal:{release}"
-            elif template == 'debian':
-                # Debian images use debian: prefix
-                image = f"debian:{release}"
-            else:
-                # Generic images use images: prefix
-                image = f"images:{template}/{release}"
-        else:
-            image = 'ubuntu:22.04'
+        # Get base image (template processing already done)
+        image = container.get('image', 'ubuntu:24.04')  # Default to latest LTS
         
         # Check if storage pool exists before creating container
         storage_check = self.run_command(['lxc', 'storage', 'list', '--format=csv'], check=False)

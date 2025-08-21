@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   rabbitmq:
-    image: images:debian/12
+    template: debian-12
     
     exposed_ports:
       - 5672

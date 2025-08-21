@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   prometheus:
-    image: ubuntu:24.04
+    template: ubuntu-24.04
     
     exposed_ports:
       - 9090

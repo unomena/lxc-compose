@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   haproxy:
-    image: images:debian/12
+    template: debian-12
     
     exposed_ports:
       - 80

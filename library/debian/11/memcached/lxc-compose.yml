@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   memcached:
-    image: images:debian/11
+    template: debian-11
     
     exposed_ports:
       - 11211
