@@ -1,12 +1,56 @@
 # LXC Compose Service Library
 
-Pre-configured, production-ready services that can be deployed instantly with LXC Compose. Each service follows Docker conventions with minimal configuration.
+Production-ready services organized by base image. Each service is optimized for its specific base image and includes tests.
 
-## Quick Deploy
+## Directory Structure
+
+```
+library/
+├── alpine/
+│   └── 3.19/           # Alpine Linux 3.19 (minimal, ~150MB)
+│       ├── postgresql/
+│       ├── redis/
+│       ├── nginx/
+│       ├── haproxy/
+│       └── memcached/
+│
+├── ubuntu/
+│   ├── 22.04/          # Ubuntu 22.04 LTS (full systemd, ~500MB)
+│   │   ├── postgresql/
+│   │   ├── mysql/
+│   │   ├── mongodb/
+│   │   ├── redis/
+│   │   ├── nginx/
+│   │   ├── rabbitmq/
+│   │   ├── elasticsearch/
+│   │   ├── grafana/
+│   │   └── prometheus/
+│   │
+│   └── 24.04/          # Ubuntu 24.04 LTS (Noble)
+│       └── postgresql/
+│
+├── ubuntu-minimal/
+│   ├── 22.04/          # Ubuntu Minimal 22.04 (lightweight, ~300MB)
+│   │   └── postgresql/
+│   │
+│   └── 24.04/          # Ubuntu Minimal 24.04
+│
+└── debian/
+    ├── 11/             # Debian 11 (Bullseye)
+    └── 12/             # Debian 12 (Bookworm)
+        └── postgresql/
+```
+
+## Quick Start
+
+### Deploy a Service
 
 ```bash
-# Copy service to your project
-cp -r library/postgresql ~/myproject/
+# Copy the service you need
+cp -r library/alpine/3.19/postgresql ~/myproject/
+
+# Or for Ubuntu
+cp -r library/ubuntu/22.04/mysql ~/myproject/
 
 # Deploy
 cd ~/myproject/postgresql
@@ -16,223 +60,122 @@ lxc-compose up
 lxc-compose test
 ```
 
-## Available Services
+## Image Selection Guide
 
-### Databases
+### Alpine Linux 3.19
+- **Size**: ~150MB
+- **Best for**: Microservices, databases, caching
+- **Pros**: Minimal size, fast startup, secure
+- **Cons**: musl libc compatibility, limited packages
+- **Services**: PostgreSQL, Redis, Nginx, HAProxy, Memcached
 
-#### PostgreSQL
-- **Image**: Alpine 3.19
-- **Port**: 5432
-- **Env**: `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_USER`
-- **Use for**: Relational data, ACID compliance
+### Ubuntu 22.04 LTS
+- **Size**: ~500MB
+- **Best for**: Complex applications, full-featured services
+- **Pros**: systemd, wide package support, familiar
+- **Cons**: Larger size, more overhead
+- **Services**: All services available
 
-#### MySQL
-- **Image**: Ubuntu 22.04
-- **Port**: 3306
-- **Env**: `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`
-- **Use for**: Web applications, WordPress, legacy apps
+### Ubuntu 24.04 LTS
+- **Size**: ~500MB
+- **Best for**: Latest Ubuntu features
+- **Pros**: Newest packages, long-term support
+- **Services**: PostgreSQL, Redis, Nginx (more coming)
 
-#### MongoDB
-- **Image**: Ubuntu 22.04
-- **Port**: 27017
-- **Env**: `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`
-- **Use for**: Document storage, NoSQL, flexible schemas
+### Ubuntu Minimal
+- **Size**: ~300MB
+- **Best for**: Applications, web services
+- **Pros**: Ubuntu compatibility, smaller size
+- **Cons**: No systemd by default
+- **Services**: PostgreSQL, Redis, web apps
 
-### Caching
+### Debian
+- **Size**: ~400MB
+- **Best for**: Stable production systems
+- **Pros**: Very stable, predictable
+- **Services**: PostgreSQL, MySQL, web services
 
-#### Redis
-- **Image**: Alpine 3.19
-- **Port**: 6379
-- **Env**: `REDIS_PASSWORD` (optional)
-- **Use for**: Caching, sessions, pub/sub, queues
+## Service Compatibility Matrix
 
-#### Memcached
-- **Image**: Alpine 3.19
-- **Port**: 11211
-- **Env**: `MEMCACHED_MEMORY`, `MEMCACHED_CONNECTIONS`
-- **Use for**: Simple key-value caching, sessions
+| Service | Alpine 3.19 | Ubuntu 22.04 | Ubuntu 24.04 | Ubuntu Minimal | Debian 12 |
+|---------|-------------|--------------|--------------|----------------|-----------|
+| PostgreSQL | ✅ | ✅ | ✅ | ✅ | ✅ |
+| MySQL | ❌ | ✅ | 🚧 | 🚧 | 🚧 |
+| MongoDB | ❌ | ✅ | 🚧 | ❌ | 🚧 |
+| Redis | ✅ | ✅ | 🚧 | 🚧 | 🚧 |
+| Nginx | ✅ | ✅ | 🚧 | 🚧 | 🚧 |
+| HAProxy | ✅ | 🚧 | 🚧 | 🚧 | 🚧 |
+| Memcached | ✅ | 🚧 | 🚧 | 🚧 | 🚧 |
+| RabbitMQ | ❌ | ✅ | 🚧 | ❌ | 🚧 |
+| Elasticsearch | ❌ | ✅ | 🚧 | ❌ | 🚧 |
+| Grafana | ❌ | ✅ | 🚧 | ❌ | 🚧 |
+| Prometheus | ❌ | ✅ | 🚧 | ❌ | 🚧 |
 
-### Web/Proxy
-
-#### Nginx
-- **Image**: Alpine 3.19
-- **Ports**: 80, 443
-- **Mounts**: `./html`, `./conf.d`
-- **Use for**: Static sites, reverse proxy, load balancing
-
-#### HAProxy
-- **Image**: Alpine 3.19
-- **Ports**: 80, 443, 8404 (stats)
-- **Mount**: `./haproxy.cfg`
-- **Use for**: Load balancing, high availability
-
-### Message Queues
-
-#### RabbitMQ
-- **Image**: Ubuntu 22.04
-- **Ports**: 5672 (AMQP), 15672 (Management)
-- **Env**: `RABBITMQ_DEFAULT_USER`, `RABBITMQ_DEFAULT_PASS`
-- **Use for**: Message queuing, task distribution, microservices
-
-### Monitoring/Search
-
-#### Elasticsearch
-- **Image**: Ubuntu 22.04
-- **Ports**: 9200 (HTTP), 9300 (Transport)
-- **Use for**: Full-text search, log analysis, analytics
-
-#### Grafana
-- **Image**: Ubuntu 22.04
-- **Port**: 3000
-- **Env**: `GF_SECURITY_ADMIN_PASSWORD`
-- **Use for**: Metrics visualization, dashboards
-
-#### Prometheus
-- **Image**: Ubuntu 22.04
-- **Port**: 9090
-- **Mount**: `./prometheus.yml`
-- **Use for**: Metrics collection, alerting
-
-## Service Categories
-
-### Lightweight Services (Alpine-based)
-- PostgreSQL, Redis, Nginx, HAProxy, Memcached
-- Small footprint (~150-200MB)
-- Fast startup
-- Good for microservices
-
-### Full-Featured Services (Ubuntu-based)
-- MySQL, MongoDB, RabbitMQ, Elasticsearch, Grafana, Prometheus
-- Larger footprint (~500MB+)
-- Full system utilities
-- Better for complex requirements
+Legend:
+- ✅ Available and tested
+- 🚧 In development
+- ❌ Not recommended for this image
 
 ## Environment Variables
 
-All services follow Docker conventions for environment variables:
+All services follow Docker conventions:
 
-```bash
-# PostgreSQL
-POSTGRES_PASSWORD=secret lxc-compose up
+### PostgreSQL
+- `POSTGRES_PASSWORD` - Required
+- `POSTGRES_DB` - Optional database to create
+- `POSTGRES_USER` - Optional user to create
 
-# MySQL
-MYSQL_ROOT_PASSWORD=secret lxc-compose up
+### MySQL
+- `MYSQL_ROOT_PASSWORD` - Required
+- `MYSQL_DATABASE` - Optional
+- `MYSQL_USER` - Optional
+- `MYSQL_PASSWORD` - Optional
 
-# MongoDB
-MONGO_INITDB_ROOT_USERNAME=admin \
-MONGO_INITDB_ROOT_PASSWORD=secret \
-lxc-compose up
-```
+### Redis
+- `REDIS_PASSWORD` - Optional
+
+### MongoDB
+- `MONGO_INITDB_ROOT_USERNAME` - Optional
+- `MONGO_INITDB_ROOT_PASSWORD` - Optional
+- `MONGO_INITDB_DATABASE` - Optional
+
+## Package Name Differences
+
+| Package | Alpine | Ubuntu/Debian |
+|---------|--------|---------------|
+| PostgreSQL | postgresql15 | postgresql |
+| MySQL | mariadb | mysql-server |
+| Redis | redis | redis-server |
+| Python | python3, py3-pip | python3, python3-pip |
+| Node.js | nodejs, npm | nodejs, npm |
 
 ## Testing
 
-Every service includes comprehensive tests:
+Every service includes tests:
 
 ```bash
-# Run all tests
+# Test a service
 lxc-compose test
 
-# Run specific test
-lxc-compose test <container-name> external
+# Specific test type
+lxc-compose test postgres external
 ```
 
-Tests verify:
-- Port connectivity
-- Service health
-- Basic operations (CRUD where applicable)
-- API endpoints (where available)
+## Contributing
 
-## Customization
+To add a new service variant:
 
-### Modify Configuration
-1. Copy service to your project
-2. Edit `lxc-compose.yml`
-3. Adjust environment variables in `.env`
-4. Add custom mounts or packages
+1. Copy existing service as template
+2. Adjust for target image:
+   - Package names
+   - Init system (systemd vs OpenRC)
+   - File paths
+3. Test thoroughly
+4. Update compatibility matrix
 
-### Extend Services
-```yaml
-# Add to existing service
-containers:
-  postgresql:
-    image: images:alpine/3.19
-    packages:
-      - postgresql15
-      - postgresql15-contrib  # Add extensions
-    mounts:
-      - ./custom-config:/etc/postgresql  # Custom configs
-```
+## Notes
 
-## Best Practices
-
-1. **Use .env files** for sensitive data
-2. **Mount data directories** for persistence
-3. **Run tests** after deployment
-4. **Check logs** for issues: `lxc-compose logs <service>`
-5. **Use appropriate images**:
-   - Alpine for simple services
-   - Ubuntu for complex requirements
-
-## Connection Examples
-
-### From Application Containers
-
-```python
-# Python - PostgreSQL
-import psycopg2
-conn = psycopg2.connect(
-    host="postgresql",  # Container name
-    database="myapp",
-    user="postgres",
-    password="secret"
-)
-
-# Python - Redis
-import redis
-r = redis.Redis(host='redis', port=6379)
-```
-
-```javascript
-// Node.js - MongoDB
-const MongoClient = require('mongodb').MongoClient;
-const url = 'mongodb://mongodb:27017/myapp';
-
-// Node.js - MySQL
-const mysql = require('mysql2');
-const connection = mysql.createConnection({
-  host: 'mysql',
-  user: 'root',
-  password: 'secret'
-});
-```
-
-## Networking
-
-All services are accessible:
-- **Between containers**: Use container name as hostname
-- **From host**: Use container IP (get with `lxc list`)
-- **From outside**: Configure port forwarding if needed
-
-## Troubleshooting
-
-### Service Won't Start
-```bash
-# Check logs
-lxc-compose logs <service>
-
-# Check process
-lxc exec <service> -- ps aux
-
-# Check ports
-lxc exec <service> -- netstat -tln
-```
-
-### Connection Refused
-- Verify service is running
-- Check IP binding (should be 0.0.0.0, not 127.0.0.1)
-- Verify firewall rules
-
-### Performance Issues
-- Increase memory/CPU limits
-- Check logs for errors
-- Monitor with `lxc info <container>`
+- Alpine services start faster but may have compatibility issues
+- Ubuntu services have better compatibility but use more resources
+- Debian services are most stable for production
+- Ubuntu Minimal is good for applications but not complex services

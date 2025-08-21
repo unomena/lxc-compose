@@ -1,0 +1,39 @@
+# Redis Server (Docker-style) - Ubuntu 22.04
+# Redis on Ubuntu 22.04 with systemd
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  redis:
+    image: ubuntu:22.04
+    
+    exposed_ports:
+      - 6379
+    
+    packages:
+      - redis-server
+    
+    tests:
+      external:
+        - operations:/tests/test.sh
+    
+    post_install:
+      - name: "Setup Redis"
+        command: |
+          # Configure Redis for network access
+          sed -i 's/^bind 127.0.0.1 ::1/bind 0.0.0.0/' /etc/redis/redis.conf
+          sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
+          
+          # Set password if provided
+          if [ -n "${REDIS_PASSWORD}" ]; then
+            echo "requirepass ${REDIS_PASSWORD}" >> /etc/redis/redis.conf
+          fi
+          
+          # Restart Redis
+          systemctl restart redis-server
+          sleep 2
+          
+          # Verify it's running
+          redis-cli ping
+          echo "Redis is ready!"

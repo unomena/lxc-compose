@@ -1,0 +1,48 @@
+# Nginx Web Server (Docker-style) - Ubuntu 22.04
+# Nginx on Ubuntu 22.04 with systemd
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  nginx:
+    image: ubuntu:22.04
+    
+    exposed_ports:
+      - 80
+      - 443
+    
+    packages:
+      - nginx
+    
+    mounts:
+      # Mount config and content directories
+      - ./html:/usr/share/nginx/html
+      - ./conf.d:/etc/nginx/conf.d
+    
+    tests:
+      external:
+        - nginx:/tests/nginx.sh
+    
+    post_install:
+      - name: "Setup Nginx"
+        command: |
+          # Create default index.html if not mounted
+          mkdir -p /usr/share/nginx/html
+          if [ ! -f /usr/share/nginx/html/index.html ]; then
+            cat > /usr/share/nginx/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>Welcome to nginx!</title></head>
+          <body>
+          <h1>Welcome to nginx on Ubuntu!</h1>
+          <p>If you see this page, nginx is successfully installed and working.</p>
+          </body>
+          </html>
+          EOF
+          fi
+          
+          # Start nginx
+          systemctl enable nginx
+          systemctl start nginx
+          echo "Nginx is ready!"

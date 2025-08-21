@@ -1,0 +1,60 @@
+# PostgreSQL Server (Docker-style) - Debian 12
+# PostgreSQL on Debian 12 (Bookworm)
+# Usage: POSTGRES_PASSWORD=mysecret lxc-compose up
+
+version: '1.0'
+
+containers:
+  postgres:
+    image: debian:12
+    
+    exposed_ports:
+      - 5432
+    
+    packages:
+      - postgresql
+      - postgresql-client
+      - postgresql-contrib
+    
+    tests:
+      external:
+        - crud:/tests/test.sh
+    
+    post_install:
+      - name: "Setup PostgreSQL"
+        command: |
+          # Start PostgreSQL service
+          service postgresql start
+          sleep 3
+          
+          # Get PostgreSQL version
+          PG_VERSION=$(ls /etc/postgresql/)
+          
+          # Set password from environment (Docker-style)
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD '$POSTGRES_PASSWORD';"
+          
+          # Allow remote connections
+          echo "host all all 0.0.0.0/0 md5" >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf
+          sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
+          
+          # Create database if specified
+          POSTGRES_DB=${POSTGRES_DB:-}
+          if [ -n "$POSTGRES_DB" ] && [ "$POSTGRES_DB" != "postgres" ]; then
+            sudo -u postgres createdb $POSTGRES_DB
+          fi
+          
+          # Create user if specified  
+          POSTGRES_USER=${POSTGRES_USER:-}
+          if [ -n "$POSTGRES_USER" ] && [ "$POSTGRES_USER" != "postgres" ]; then
+            sudo -u postgres psql -c "CREATE USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';"
+            if [ -n "$POSTGRES_DB" ]; then
+              sudo -u postgres psql -c "GRANT ALL ON DATABASE $POSTGRES_DB TO $POSTGRES_USER;"
+            fi
+          fi
+          
+          # Restart PostgreSQL with new config
+          service postgresql restart
+          
+          echo "PostgreSQL is ready!"
+          sudo -u postgres psql -l
