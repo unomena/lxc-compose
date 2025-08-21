@@ -7,11 +7,9 @@ containers:
   # Example 1: Simple template usage
   myapp:
     template: ubuntu-24.04  # Uses Ubuntu 24.04 LTS template
-    packages:
+    includes:
       - nginx
       - python3
-    exposed_ports:
-      - 80
     post_install:
       - name: "Configure app"
         command: |
@@ -21,29 +19,23 @@ containers:
   # Example 2: Using an alias template
   cache:
     template: alpine  # Resolves to alpine-3.19
-    packages:
+    includes:
       - redis
-    exposed_ports:
-      - 6379
   
   # Example 3: Database with Debian template
   database:
     template: debian-bookworm  # Resolves to debian-12
-    packages:
+    includes:
       - postgresql
-    exposed_ports:
-      - 5432
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
   
   # Example 4: Minimal Ubuntu for microservice
   api:
     template: ubuntu-minimal-lts  # Resolves to ubuntu-minimal-24.04
-    packages:
+    includes:
       - python3
       - python3-pip
-    exposed_ports:
-      - 8000
     post_install:
       - name: "Install Python app"
         command: |

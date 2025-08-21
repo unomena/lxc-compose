@@ -1,0 +1,74 @@
+# Example demonstrating the includes system
+# Shows how to compose containers from library services
+
+version: '1.0'
+
+containers:
+  # Example 1: Simple web server from library
+  webserver:
+    template: alpine-3.19
+    includes:
+      - nginx  # Includes nginx service from library/alpine/3.19/nginx/
+    environment:
+      NGINX_PORT: 8080
+    post_install:
+      - name: "Add custom site"
+        command: |
+          echo "server { listen 8080; root /var/www; }" > /etc/nginx/sites-enabled/mysite
+  
+  # Example 2: Database with library PostgreSQL
+  database:
+    template: debian-12
+    includes:
+      - postgresql  # Includes from library/debian/12/postgresql/
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: myapp
+  
+  # Example 3: Cache server
+  cache:
+    template: alpine
+    includes:
+      - redis  # Includes from library/alpine/3.19/redis/
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  
+  # Example 4: Multiple includes (if service doesn't exist, treated as package)
+  app:
+    template: ubuntu-24.04
+    includes:
+      - nginx        # Library service
+      - python3      # Package (no library service for python3)
+      - python3-pip  # Package
+    exposed_ports:
+      - 8000
+    post_install:
+      - name: "Install FastAPI app"
+        command: |
+          pip3 install fastapi uvicorn
+          # Nginx config already set up by library include
+  
+  # Example 5: Load balancer from library
+  loadbalancer:
+    template: ubuntu-lts
+    includes:
+      - haproxy  # Includes from library/ubuntu/24.04/haproxy/
+    post_install:
+      - name: "Configure backends"
+        command: |
+          echo "backend servers" >> /etc/haproxy/haproxy.cfg
+          echo "  server web1 webserver:80" >> /etc/haproxy/haproxy.cfg
+
+# How it works:
+# 1. Template provides base OS image and configuration
+# 2. Includes pull in complete service configurations from library
+# 3. Library service's packages, ports, and setup commands are merged
+# 4. Your local configuration is applied last (overrides/additions)
+#
+# Inheritance order:
+# Template -> Library includes -> Local config
+#
+# Command execution order:
+# 1. [Template] init commands
+# 2. [service-name] library service setup
+# 3. [Local] your post_install commands

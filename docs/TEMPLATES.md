@@ -2,7 +2,7 @@
 
 ## Overview
 
-The LXC Compose template system allows you to extend base operating system configurations, similar to Docker's FROM directive but with more flexibility. Templates provide pre-configured base images with common packages, environment variables, and initialization commands.
+The LXC Compose template system allows you to extend base operating system configurations and include pre-configured services from the library. This provides a powerful composition model similar to Docker's FROM directive but with more flexibility through library includes.
 
 ## Using Templates
 
@@ -70,18 +70,45 @@ For convenience, these aliases point to specific versions:
 | `debian-bookworm` | `debian-12` | Debian 12 |
 | `debian-bullseye` | `debian-11` | Debian 11 |
 
-## Template Inheritance
+## Library Includes
 
-When you use a template, your container inherits:
+The `includes:` field allows you to pull in complete service configurations from the library. This enables composition of containers from pre-built, tested components.
 
-1. **Base image** - The underlying LXC image
-2. **Base packages** - Common packages for that distro
-3. **Environment variables** - Default environment setup
-4. **Init commands** - Initialization steps for the OS
+### How Includes Work
+
+```yaml
+containers:
+  myapp:
+    template: ubuntu-24.04  # Base OS
+    includes:
+      - nginx    # Pull in nginx service from library/ubuntu/24.04/nginx/
+      - redis    # Pull in redis service from library/ubuntu/24.04/redis/
+    post_install:
+      - name: "Configure my app"
+        command: "echo 'custom config'"
+```
+
+When you include a library service:
+1. The service is loaded from `library/{template-path}/{service}/lxc-compose.yml`
+2. All service configuration (packages, ports, setup commands) is merged
+3. Your local configuration is applied last
+
+### Include Resolution
+
+- **Library service**: If `library/{template}/{service}/` exists, it's included
+- **Package name**: If no library service exists, treated as a package to install
+
+## Template and Include Inheritance
+
+The complete inheritance chain is:
+
+1. **Template** - Base OS configuration (image, base packages, init commands)
+2. **Includes** - Library services (packages, ports, setup commands)  
+3. **Local config** - Your additions/overrides
 
 ### Inheritance Order
 
-Template attributes are applied BEFORE your container configuration:
+Attributes are applied in this order:
 
 ```yaml
 # Template provides:
@@ -106,13 +133,29 @@ Results in:
 
 ## Example Configurations
 
-### Web Application
+### Using Includes for Service Composition
 
 ```yaml
 containers:
+  # Complete web stack using library services
   webapp:
     template: ubuntu-lts
-    packages:
+    includes:
+      - nginx      # Full nginx setup from library
+    post_install:
+      - name: "Deploy application"
+        command: |
+          # Nginx already configured by library include
+          cp -r /app/dist/* /usr/share/nginx/html/
+```
+
+### Traditional Package Installation
+
+```yaml
+containers:
+  webapp_traditional:
+    template: ubuntu-lts
+    packages:      # Manual package list (no library include)
       - nginx
       - python3
       - python3-pip
@@ -122,33 +165,51 @@ containers:
     post_install:
       - name: "Install app"
         command: |
+          # Must configure nginx yourself
           pip3 install -r requirements.txt
 ```
 
-### Database Server
+### Database Server with Includes
 
 ```yaml
 containers:
   database:
     template: debian-bookworm
-    packages:
-      - postgresql
-    exposed_ports:
-      - 5432
+    includes:
+      - postgresql  # Complete PostgreSQL from library
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: production
 ```
 
-### Redis Cache
+### Redis Cache with Includes
 
 ```yaml
 containers:
   cache:
     template: alpine  # Minimal footprint
-    packages:
-      - redis
+    includes:
+      - redis  # Redis with all configuration from library
+```
+
+### Multi-Service Application
+
+```yaml
+containers:
+  # API server with multiple includes
+  api:
+    template: ubuntu-24.04
+    includes:
+      - nginx        # Library service
+      - python3      # Falls back to package
+      - python3-pip  # Falls back to package
     exposed_ports:
-      - 6379
+      - 8000
+    post_install:
+      - name: "Install API"
+        command: |
+          pip3 install fastapi uvicorn
+          # Nginx reverse proxy already configured by include
 ```
 
 ### Microservice

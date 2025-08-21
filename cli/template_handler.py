@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Template handler for LXC Compose
-Handles loading and merging template configurations
+Handles loading and merging template configurations and library includes
 """
 
 import os
@@ -9,14 +9,21 @@ import yaml
 from typing import Dict, Any, List
 
 class TemplateHandler:
-    def __init__(self, templates_dir: str = '/srv/lxc-compose/templates'):
-        """Initialize template handler with templates directory"""
+    def __init__(self, templates_dir: str = '/srv/lxc-compose/templates', 
+                 library_dir: str = '/srv/lxc-compose/library'):
+        """Initialize template handler with templates and library directories"""
         self.templates_dir = templates_dir
-        # Fallback to local templates if system templates not found
+        self.library_dir = library_dir
+        
+        # Fallback to local directories if system directories not found
         if not os.path.exists(self.templates_dir):
             # Try relative path from CLI directory
             cli_dir = os.path.dirname(os.path.abspath(__file__))
             self.templates_dir = os.path.join(os.path.dirname(cli_dir), 'templates')
+        
+        if not os.path.exists(self.library_dir):
+            cli_dir = os.path.dirname(os.path.abspath(__file__))
+            self.library_dir = os.path.join(os.path.dirname(cli_dir), 'library')
     
     def load_template(self, template_name: str) -> Dict[str, Any]:
         """Load a template configuration file"""
@@ -40,81 +47,195 @@ class TemplateHandler:
         
         return template_config['template']
     
-    def merge_with_template(self, container_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Merge container configuration with its template"""
+    def resolve_template_to_path(self, template_name: str) -> str:
+        """Resolve a template name to its library path"""
+        # Map template names to library paths
+        template_to_path = {
+            'alpine-3.19': 'alpine/3.19',
+            'alpine': 'alpine/3.19',  # alias
+            'ubuntu-24.04': 'ubuntu/24.04',
+            'ubuntu-22.04': 'ubuntu/22.04',
+            'ubuntu-lts': 'ubuntu/24.04',  # alias
+            'ubuntu-noble': 'ubuntu/24.04',  # alias
+            'ubuntu-jammy': 'ubuntu/22.04',  # alias
+            'ubuntu-minimal-24.04': 'ubuntu-minimal/24.04',
+            'ubuntu-minimal-22.04': 'ubuntu-minimal/22.04',
+            'ubuntu-minimal-lts': 'ubuntu-minimal/24.04',  # alias
+            'ubuntu-minimal-noble': 'ubuntu-minimal/24.04',  # alias
+            'ubuntu-minimal-jammy': 'ubuntu-minimal/22.04',  # alias
+            'debian-12': 'debian/12',
+            'debian-11': 'debian/11',
+            'debian-bookworm': 'debian/12',  # alias
+            'debian-bullseye': 'debian/11',  # alias
+        }
         
-        # If no template specified, return as-is (uses image directly)
-        if 'template' not in container_config:
-            return container_config
+        return template_to_path.get(template_name, '')
+    
+    def load_library_service(self, template_name: str, service_name: str) -> Dict[str, Any]:
+        """Load a service configuration from the library"""
+        # Resolve template to library path
+        template_path = self.resolve_template_to_path(template_name)
+        if not template_path:
+            raise ValueError(f"Unknown template for library lookup: {template_name}")
         
-        # Load the template
-        template_name = container_config['template']
-        template = self.load_template(template_name)
+        # Build path to service config
+        service_file = os.path.join(self.library_dir, template_path, service_name, 'lxc-compose.yml')
         
-        # Create merged configuration
-        merged = {}
+        if not os.path.exists(service_file):
+            # Try looking for common variations
+            # Some services might be python3 in includes but python in library
+            alternatives = {
+                'python3': 'python',
+                'python3-pip': 'python',
+            }
+            
+            if service_name in alternatives:
+                alt_name = alternatives[service_name]
+                service_file = os.path.join(self.library_dir, template_path, alt_name, 'lxc-compose.yml')
+            
+            if not os.path.exists(service_file):
+                # Not a library service, treat as a package name
+                return None
         
-        # Start with the image from the template
-        if 'image' in template:
-            merged['image'] = template['image']
+        # Load the service configuration
+        with open(service_file, 'r') as f:
+            service_config = yaml.safe_load(f)
         
-        # Copy container name and remove template reference
-        if 'name' in container_config:
-            merged['name'] = container_config['name']
+        # Extract the container configuration
+        if 'containers' in service_config:
+            containers = service_config['containers']
+            if isinstance(containers, dict):
+                # Return the first container (library services typically have one)
+                return list(containers.values())[0]
+            elif isinstance(containers, list) and len(containers) > 0:
+                return containers[0]
         
-        # Don't include the template field in the final config
-        container_config_copy = container_config.copy()
-        if 'template' in container_config_copy:
-            del container_config_copy['template']
+        return None
+    
+    def merge_configs(self, base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge two configurations with proper ordering"""
+        merged = base.copy()
         
-        # Merge packages: template's base_packages first, then container's packages
-        packages = []
-        if 'base_packages' in template:
-            packages.extend(template['base_packages'])
-        if 'packages' in container_config:
-            # Add container packages that aren't already in the list
-            for pkg in container_config.get('packages', []):
-                if pkg not in packages:
-                    packages.append(pkg)
-        if packages:
-            merged['packages'] = packages
+        # Handle packages - combine and deduplicate
+        if 'packages' in overlay:
+            base_packages = merged.get('packages', [])
+            for pkg in overlay['packages']:
+                if pkg not in base_packages:
+                    base_packages.append(pkg)
+            merged['packages'] = base_packages
         
-        # Merge environment variables: template first, then container (container overrides)
-        env = {}
-        if 'environment' in template:
-            env.update(template['environment'])
-        if 'environment' in container_config:
-            env.update(container_config['environment'])
-        if env:
-            merged['environment'] = env
+        # Handle environment - overlay overrides base
+        if 'environment' in overlay:
+            if 'environment' not in merged:
+                merged['environment'] = {}
+            merged['environment'].update(overlay['environment'])
         
-        # Merge post_install commands: template's init_commands first, then container's post_install
-        post_install = []
+        # Handle post_install - append overlay to base
+        if 'post_install' in overlay:
+            if 'post_install' not in merged:
+                merged['post_install'] = []
+            merged['post_install'].extend(overlay['post_install'])
         
-        # Add template's init commands first
-        if 'init_commands' in template:
-            for cmd in template['init_commands']:
-                post_install.append({
-                    'name': f"[Template] {cmd.get('name', 'Init command')}",
-                    'command': cmd.get('command', '')
-                })
-        
-        # Add container's post_install commands
-        if 'post_install' in container_config:
-            post_install.extend(container_config['post_install'])
-        
-        if post_install:
-            merged['post_install'] = post_install
-        
-        # Copy all other container fields (they override or add to template)
-        for key, value in container_config_copy.items():
-            if key not in ['packages', 'environment', 'post_install', 'name']:
+        # Handle other fields - overlay overrides base
+        for key, value in overlay.items():
+            if key not in ['packages', 'environment', 'post_install', 'template', 'includes']:
                 merged[key] = value
         
         return merged
     
+    def merge_with_template_and_includes(self, container_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge container configuration with its template and includes"""
+        
+        # Start with empty merged config
+        merged = {}
+        
+        # Store the container name if present
+        if 'name' in container_config:
+            merged['name'] = container_config['name']
+        
+        # Step 1: Apply template if specified
+        if 'template' in container_config:
+            template_name = container_config['template']
+            template = self.load_template(template_name)
+            
+            # Start with the image from the template
+            if 'image' in template:
+                merged['image'] = template['image']
+            
+            # Add template's base packages
+            if 'base_packages' in template:
+                merged['packages'] = template['base_packages'].copy()
+            
+            # Add template's environment
+            if 'environment' in template:
+                merged['environment'] = template['environment'].copy()
+            
+            # Add template's init commands as post_install
+            if 'init_commands' in template:
+                merged['post_install'] = []
+                for cmd in template['init_commands']:
+                    merged['post_install'].append({
+                        'name': f"[Template] {cmd.get('name', 'Init command')}",
+                        'command': cmd.get('command', '')
+                    })
+        elif 'image' in container_config:
+            # If no template, use image directly
+            merged['image'] = container_config['image']
+        
+        # Step 2: Apply includes (library services)
+        if 'includes' in container_config and 'template' in container_config:
+            for include in container_config['includes']:
+                # Load the library service for this template
+                library_service = self.load_library_service(container_config['template'], include)
+                
+                if library_service:
+                    # This is a library service - merge it
+                    # Mark included commands for clarity
+                    if 'post_install' in library_service:
+                        marked_post_install = []
+                        for cmd in library_service['post_install']:
+                            marked_cmd = cmd.copy()
+                            marked_cmd['name'] = f"[{include}] {cmd.get('name', 'Setup')}"
+                            marked_post_install.append(marked_cmd)
+                        library_service = library_service.copy()
+                        library_service['post_install'] = marked_post_install
+                    
+                    # Remove template/image from library service to avoid conflicts
+                    if 'template' in library_service:
+                        del library_service['template']
+                    if 'image' in library_service:
+                        del library_service['image']
+                    
+                    merged = self.merge_configs(merged, library_service)
+                else:
+                    # Not a library service, treat as a package name
+                    if 'packages' not in merged:
+                        merged['packages'] = []
+                    if include not in merged['packages']:
+                        merged['packages'].append(include)
+        
+        # Step 3: Apply local configuration (excluding template and includes)
+        local_config = container_config.copy()
+        for key in ['template', 'includes', 'name']:
+            if key in local_config:
+                del local_config[key]
+        
+        # Mark local post_install commands
+        if 'post_install' in local_config:
+            marked_post_install = []
+            for cmd in local_config['post_install']:
+                marked_cmd = cmd.copy()
+                if not cmd.get('name', '').startswith('['):
+                    marked_cmd['name'] = f"[Local] {cmd.get('name', 'Setup')}"
+                marked_post_install.append(marked_cmd)
+            local_config['post_install'] = marked_post_install
+        
+        merged = self.merge_configs(merged, local_config)
+        
+        return merged
+    
     def process_compose_file(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Process an entire compose file, expanding templates for all containers"""
+        """Process an entire compose file, expanding templates and includes for all containers"""
         
         if 'containers' not in config:
             return config
@@ -130,14 +251,14 @@ class TemplateHandler:
                 if 'name' not in container:
                     container['name'] = name
                 
-                # Merge with template if needed
-                processed_containers[name] = self.merge_with_template(container)
+                # Merge with template and includes
+                processed_containers[name] = self.merge_with_template_and_includes(container)
         
         elif isinstance(containers, list):
             # Convert list to dict format after processing
             for container in containers:
                 name = container.get('name', f'container_{len(processed_containers)}')
-                processed_containers[name] = self.merge_with_template(container)
+                processed_containers[name] = self.merge_with_template_and_includes(container)
         
         processed_config['containers'] = processed_containers
         return processed_config
