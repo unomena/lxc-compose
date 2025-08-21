@@ -102,10 +102,9 @@ containers:
     mounts:
       - .:/app
       - ./config/sample-django-app/supervisord.conf:/etc/supervisord.conf
-      - ./config/sample-django-app/nginx.conf:/etc/nginx/sites-available/django-app
 
     exposed_ports:
-      - 80 # Nginx (serves Django app)
+      - 8000 # Django development server
 
     logs:
       - django:/var/log/django/django.log
@@ -114,8 +113,6 @@ containers:
       - celery-error:/var/log/celery/celery_err.log
       - celery-beat:/var/log/celery/celery-beat.log
       - celery-beat-error:/var/log/celery/celery-beat_err.log
-      - nginx:/var/log/nginx/access.log
-      - nginx-error:/var/log/nginx/error.log
       - supervisor:/var/log/supervisord.log
     
     tests:
@@ -133,7 +130,6 @@ containers:
       - python3-dev
       - build-essential
       - libpq-dev
-      - nginx
       - supervisor
       - git
       - redis-tools
@@ -250,17 +246,3 @@ containers:
             sleep 2
           done
 
-      - name: "Setup Nginx"
-        command: |
-          # Enable the Django site
-          ln -sf /etc/nginx/sites-available/django-app /etc/nginx/sites-enabled/
-          rm -f /etc/nginx/sites-enabled/default
-          # Test config
-          nginx -t
-          # Stop nginx if running (might have started during package install)
-          service nginx stop || true
-          # Start nginx with our config
-          service nginx start
-          # Verify it's running
-          sleep 2
-          service nginx status || true
