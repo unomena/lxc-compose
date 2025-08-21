@@ -4,17 +4,19 @@
 version: '1.0'
 
 containers:
-  # Example 1: Simple template usage
+  # Example 1: Simple template usage with includes and packages
   myapp:
     template: ubuntu-24.04  # Uses Ubuntu 24.04 LTS template
     includes:
-      - nginx
-      - python3
+      - nginx       # Library service from library/ubuntu/24.04/nginx/
+    packages:
+      - python3     # Additional packages to install
+      - python3-pip
     post_install:
       - name: "Configure app"
         command: |
           echo "Setting up my application..."
-          # Template's init commands run first, then these
+          # Template's init commands run first, then nginx setup, then these
   
   # Example 2: Using an alias template
   cache:
@@ -33,8 +35,8 @@ containers:
   # Example 4: Minimal Ubuntu for microservice
   api:
     template: ubuntu-minimal-lts  # Resolves to ubuntu-minimal-24.04
-    includes:
-      - python3
+    packages:
+      - python3      # Packages to install (not library services)
       - python3-pip
     post_install:
       - name: "Install Python app"

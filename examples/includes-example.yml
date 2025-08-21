@@ -33,13 +33,14 @@ containers:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
   
-  # Example 4: Multiple includes (if service doesn't exist, treated as package)
+  # Example 4: Combining includes with packages
   app:
     template: ubuntu-24.04
     includes:
-      - nginx        # Library service
-      - python3      # Package (no library service for python3)
-      - python3-pip  # Package
+      - nginx        # Library service from library/ubuntu/24.04/nginx/
+    packages:
+      - python3      # Additional packages to install
+      - python3-pip
     exposed_ports:
       - 8000
     post_install:

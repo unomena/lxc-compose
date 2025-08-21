@@ -82,20 +82,8 @@ class TemplateHandler:
         service_file = os.path.join(self.library_dir, template_path, service_name, 'lxc-compose.yml')
         
         if not os.path.exists(service_file):
-            # Try looking for common variations
-            # Some services might be python3 in includes but python in library
-            alternatives = {
-                'python3': 'python',
-                'python3-pip': 'python',
-            }
-            
-            if service_name in alternatives:
-                alt_name = alternatives[service_name]
-                service_file = os.path.join(self.library_dir, template_path, alt_name, 'lxc-compose.yml')
-            
-            if not os.path.exists(service_file):
-                # Not a library service, treat as a package name
-                return None
+            # Service not found in library
+            return None
         
         # Load the service configuration
         with open(service_file, 'r') as f:
@@ -208,15 +196,22 @@ class TemplateHandler:
                     
                     merged = self.merge_configs(merged, library_service)
                 else:
-                    # Not a library service, treat as a package name
-                    if 'packages' not in merged:
-                        merged['packages'] = []
-                    if include not in merged['packages']:
-                        merged['packages'].append(include)
+                    # Library service not found - this is an error
+                    print(f"Warning: Library service '{include}' not found for template '{container_config['template']}'")
+                    # Could raise an error here if we want to be strict
+                    # raise ValueError(f"Library service '{include}' not found in library/{self.resolve_template_to_path(container_config['template'])}/")
         
-        # Step 3: Apply local configuration (excluding template and includes)
+        # Step 3: Apply packages if specified (separate from includes)
+        if 'packages' in container_config:
+            if 'packages' not in merged:
+                merged['packages'] = []
+            for pkg in container_config['packages']:
+                if pkg not in merged['packages']:
+                    merged['packages'].append(pkg)
+        
+        # Step 4: Apply local configuration (excluding template, includes, and packages which were already handled)
         local_config = container_config.copy()
-        for key in ['template', 'includes', 'name']:
+        for key in ['template', 'includes', 'packages', 'name']:
             if key in local_config:
                 del local_config[key]
         

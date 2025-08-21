@@ -83,6 +83,9 @@ containers:
     includes:
       - nginx    # Pull in nginx service from library/ubuntu/24.04/nginx/
       - redis    # Pull in redis service from library/ubuntu/24.04/redis/
+    packages:
+      - python3  # Additional packages to install
+      - curl
     post_install:
       - name: "Configure my app"
         command: "echo 'custom config'"
@@ -91,12 +94,13 @@ containers:
 When you include a library service:
 1. The service is loaded from `library/{template-path}/{service}/lxc-compose.yml`
 2. All service configuration (packages, ports, setup commands) is merged
-3. Your local configuration is applied last
+3. Your local packages are added to the package list
+4. Your local configuration is applied last
 
-### Include Resolution
+### Includes vs Packages
 
-- **Library service**: If `library/{template}/{service}/` exists, it's included
-- **Package name**: If no library service exists, treated as a package to install
+- **`includes:`** - References to library services (must exist in library)
+- **`packages:`** - Package names to install via package manager
 
 ## Template and Include Inheritance
 
@@ -196,13 +200,14 @@ containers:
 
 ```yaml
 containers:
-  # API server with multiple includes
+  # API server with includes and packages
   api:
     template: ubuntu-24.04
     includes:
       - nginx        # Library service
-      - python3      # Falls back to package
-      - python3-pip  # Falls back to package
+    packages:
+      - python3      # Package to install
+      - python3-pip  # Package to install
     exposed_ports:
       - 8000
     post_install:
