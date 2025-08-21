@@ -6,8 +6,7 @@ version: '1.0'
 
 containers:
   redis:
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     
     exposed_ports:
       - 6379

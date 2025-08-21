@@ -200,8 +200,7 @@ version: "1.0"
 
 containers:
   myapp:
-    template: ubuntu         # Base template (ubuntu, ubuntu-minimal, alpine)
-    release: jammy           # Release version (jammy, focal, 3.19, lts)
+    image: ubuntu:jammy      # Base OS image (ubuntu:22.04, images:alpine/3.19, etc.)
     packages:                # Packages to install
       - nginx
       - python3

@@ -18,7 +18,7 @@ This guide helps you migrate existing Docker Compose applications to LXC Compose
 
 | Docker Compose | LXC Compose | Notes |
 |---------------|-------------|-------|
-| `image:` | `template:` + `release:` | Use base OS instead of app image |
+| `image:` | `image:` | Use base OS image (e.g., `images:alpine/3.19`) |
 | `build:` | `packages:` + `post_install:` | Install packages and run setup |
 | `ports:` | `exposed_ports:` | Only list ports, no mapping syntax |
 | `volumes:` | `mounts:` | Similar syntax, different behavior |
@@ -81,8 +81,7 @@ services:
 version: "1.0"
 containers:
   web:
-    template: ubuntu-minimal
-    release: lts
+    image: ubuntu-minimal:lts
     packages:
       - python3
       - python3-pip
@@ -137,8 +136,7 @@ volumes:
 version: "1.0"
 containers:
   db:
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     packages:
       - postgresql
     mounts:
@@ -153,8 +151,7 @@ containers:
           su postgres -c "psql -c \"ALTER USER user PASSWORD 'pass'\""
   
   web:
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     depends_on:
       - db
     packages:
@@ -223,8 +220,7 @@ version: "1.0"
 containers:
   # Data services container
   data:
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     packages:
       - postgresql
       - redis
@@ -241,8 +237,7 @@ containers:
   
   # Application container (web + worker + nginx)
   app:
-    template: ubuntu-minimal
-    release: lts
+    image: ubuntu-minimal:lts
     depends_on:
       - data
     packages:

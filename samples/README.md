@@ -69,8 +69,7 @@ version: '1.0'
 
 containers:
   container-name:
-    template: ubuntu        # Base template (ubuntu, alpine, etc.)
-    release: jammy          # Release version
+    image: ubuntu:jammy     # Base OS image (ubuntu:22.04, images:alpine/3.19, etc.)
     
     depends_on:             # Container dependencies
       - other-container
@@ -78,8 +77,8 @@ containers:
     mounts:                 # Directory mounts
       - .:/app              # Mount current dir to /app
     
-    ports:                  # Port mappings
-      - 8000:8000          # host:container
+    exposed_ports:          # Exposed ports
+      - 8000                # Port accessible from host
     
     packages:               # APT packages to install
       - python3

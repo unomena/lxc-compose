@@ -5,8 +5,7 @@ version: '1.0'
 
 containers:
   sample-nodejs-datastore:
-    template: ubuntu-minimal
-    release: lts
+    image: ubuntu-minimal:lts
     
     packages:
       - wget
@@ -55,8 +54,7 @@ containers:
           mongosh --eval "use ${MONGO_DB}" --eval "db.createUser({user: '${MONGO_USER}', pwd: '${MONGO_PASSWORD}', roles: [{role: 'readWrite', db: '${MONGO_DB}'}]})" || true
 
   sample-nodejs-app:
-    template: ubuntu-minimal
-    release: lts
+    image: ubuntu-minimal:lts
     
     depends_on:
       - sample-nodejs-datastore

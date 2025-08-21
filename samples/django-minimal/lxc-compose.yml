@@ -5,8 +5,7 @@ version: '1.0'
 
 containers:
   sample-django-minimal-database:
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     
     packages:
       - postgresql
@@ -65,8 +64,7 @@ containers:
           su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
 
   sample-django-app:
-    template: ubuntu-minimal
-    release: lts
+    image: ubuntu-minimal:lts
     
     # Dependencies must exist before this container can start
     depends_on:

@@ -5,8 +5,7 @@ version: '1.0'
 
 containers:
   sample-flask-datastore:
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     
     packages:
       - redis
@@ -55,8 +54,7 @@ containers:
           redis-cli ping || echo "Redis not responding yet"
 
   sample-flask-app:
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     
     # Dependencies must exist before this container can start
     depends_on:

@@ -4,8 +4,7 @@ containers:
   # Documentation server container
   lxc-docs:
     # Use Alpine for minimal footprint (~200MB total with Python)
-    template: alpine
-    release: "3.19"
+    image: images:alpine/3.19
     
     # Install required packages
     packages:
