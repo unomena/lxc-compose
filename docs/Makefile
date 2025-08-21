@@ -84,7 +84,7 @@ init: ## Initialize MkDocs configuration
 	fi
 
 _create_config:
-	@cat > mkdocs.yml <<EOF
+	@cat > mkdocs.yml <<'EOF'
 site_name: LXC Compose Documentation
 site_description: Docker Compose-like orchestration for LXC containers
 site_author: LXC Compose Team
@@ -92,6 +92,10 @@ site_url: https://github.com/unomena/lxc-compose
 repo_url: https://github.com/unomena/lxc-compose
 repo_name: unomena/lxc-compose
 edit_uri: edit/main/docs/
+
+# Documentation files are in current directory
+docs_dir: .
+site_dir: site
 
 theme:
   name: material

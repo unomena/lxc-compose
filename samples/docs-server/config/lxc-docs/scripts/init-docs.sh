@@ -45,6 +45,8 @@ fi
 
 # Build documentation
 echo "Building documentation..."
+# MkDocs expects to be run from the directory containing mkdocs.yml
+# The docs are in the current directory, not in a subdirectory
 .venv/bin/mkdocs build --clean
 echo "Documentation built successfully"
 

@@ -6,6 +6,10 @@ repo_url: https://github.com/unomena/lxc-compose
 repo_name: unomena/lxc-compose
 edit_uri: edit/main/docs/
 
+# Tell MkDocs that the markdown files are in the current directory, not in a 'docs' subdirectory
+docs_dir: .
+site_dir: site
+
 theme:
   name: material
   language: en
