@@ -17,6 +17,10 @@ containers:
     mounts:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     
+    tests:
+      external:
+        - prometheus:/tests/prometheus.sh
+    
     post_install:
       - name: "Install Prometheus"
         command: |

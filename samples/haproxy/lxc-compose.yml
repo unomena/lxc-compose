@@ -19,6 +19,10 @@ containers:
     mounts:
       - ./haproxy.cfg:/etc/haproxy/haproxy.cfg
     
+    tests:
+      external:
+        - haproxy:/tests/haproxy.sh
+    
     post_install:
       - name: "Setup HAProxy"
         command: |

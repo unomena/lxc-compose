@@ -18,6 +18,10 @@ containers:
       - apt-transport-https
       - default-jdk
     
+    tests:
+      external:
+        - elasticsearch:/tests/elasticsearch.sh
+    
     post_install:
       - name: "Install Elasticsearch"
         command: |

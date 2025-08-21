@@ -20,6 +20,10 @@ containers:
       - ./html:/usr/share/nginx/html
       - ./conf.d:/etc/nginx/conf.d
     
+    tests:
+      external:
+        - nginx:/tests/nginx.sh
+    
     post_install:
       - name: "Setup Nginx"
         command: |

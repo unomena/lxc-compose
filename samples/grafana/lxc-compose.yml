@@ -17,6 +17,10 @@ containers:
       - apt-transport-https
       - software-properties-common
     
+    tests:
+      external:
+        - grafana:/tests/grafana.sh
+    
     post_install:
       - name: "Install Grafana"
         command: |

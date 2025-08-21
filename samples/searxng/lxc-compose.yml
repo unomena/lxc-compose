@@ -5,7 +5,7 @@ version: '1.0'
 
 containers:
   sample-searxng-app:
-    image: ubuntu-minimal:lts
+    image: ubuntu-minimal:24.04
     
     mounts:
       - ./config/sample-searxng-app/settings.yml:/etc/searxng/settings.yml

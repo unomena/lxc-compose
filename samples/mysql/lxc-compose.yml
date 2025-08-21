@@ -15,6 +15,10 @@ containers:
       - mysql-server
       - mysql-client
     
+    tests:
+      external:
+        - mysql:/tests/mysql.sh
+    
     post_install:
       - name: "Setup MySQL"
         command: |

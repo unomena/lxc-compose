@@ -16,6 +16,10 @@ containers:
       - gnupg
       - lsb-release
     
+    tests:
+      external:
+        - mongodb:/tests/mongodb.sh
+    
     post_install:
       - name: "Install MongoDB"
         command: |
