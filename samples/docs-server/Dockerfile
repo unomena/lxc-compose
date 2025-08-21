@@ -33,11 +33,8 @@ RUN if [ -f requirements.txt ]; then \
         .venv/bin/pip install mkdocs mkdocs-material pymdown-extensions; \
     fi
 
-# Move markdown files to docs subdirectory where MkDocs expects them
-RUN echo "=== Reorganizing documentation structure ===" && \
-    mkdir -p docs && \
-    mv *.md docs/ 2>/dev/null || true && \
-    echo "=== Building docs ===" && \
+# Build documentation (markdown files are already in docs/docs/)
+RUN echo "=== Building docs ===" && \
     .venv/bin/mkdocs build --clean && \
     echo "=== Documentation built successfully ===" && \
     ls -la site/ | head -10

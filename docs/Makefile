@@ -77,118 +77,12 @@ watch: install ## Watch for changes and rebuild automatically
 # Create initial MkDocs configuration if it doesn't exist
 init: ## Initialize MkDocs configuration
 	@if [ ! -f mkdocs.yml ]; then \
-		echo "Creating mkdocs.yml configuration..."; \
-		$(MAKE) _create_config; \
+		echo "Error: mkdocs.yml not found. Please create it first."; \
+		exit 1; \
 	else \
 		echo "mkdocs.yml already exists"; \
 	fi
 
-_create_config:
-	@cat > mkdocs.yml <<'EOF'
-site_name: LXC Compose Documentation
-site_description: Docker Compose-like orchestration for LXC containers
-site_author: LXC Compose Team
-site_url: https://github.com/unomena/lxc-compose
-repo_url: https://github.com/unomena/lxc-compose
-repo_name: unomena/lxc-compose
-edit_uri: edit/main/docs/
-
-theme:
-  name: material
-  language: en
-  palette:
-    - scheme: default
-      primary: blue
-      accent: light-blue
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-    - scheme: slate
-      primary: blue
-      accent: light-blue
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
-  features:
-    - navigation.instant
-    - navigation.tracking
-    - navigation.tabs
-    - navigation.sections
-    - navigation.expand
-    - navigation.top
-    - navigation.footer
-    - search.suggest
-    - search.highlight
-    - content.code.copy
-    - content.code.annotate
-    - toc.follow
-
-plugins:
-  - search
-  - mermaid2
-
-markdown_extensions:
-  - abbr
-  - admonition
-  - attr_list
-  - def_list
-  - footnotes
-  - meta
-  - md_in_html
-  - tables
-  - toc:
-      permalink: true
-  - pymdownx.arithmatex:
-      generic: true
-  - pymdownx.betterem:
-      smart_enable: all
-  - pymdownx.caret
-  - pymdownx.details
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.inlinehilite
-  - pymdownx.keys
-  - pymdownx.mark
-  - pymdownx.smartsymbols
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-  - pymdownx.tabbed:
-      alternate_style: true
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - pymdownx.tilde
-
-nav:
-  - Home:
-    - Overview: index.md
-    - Getting Started: getting-started.md
-  - Reference:
-    - Configuration: configuration.md
-    - Commands: commands.md
-    - Standards: standards.md
-  - Guides:
-    - Networking: networking.md
-    - Testing: testing.md
-    - Docker Migration: docker-compose-migration.md
-    - Troubleshooting: troubleshooting.md
-
-extra:
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/unomena/lxc-compose
-  analytics:
-    provider: google
-    property: UA-XXXXXXXX-X
-
-copyright: Copyright &copy; 2024 LXC Compose Team
-EOF
-	@echo "Created mkdocs.yml configuration"
 
 # Quick start for new users
 quickstart: init install dev ## Quick start: initialize, install, and run dev server

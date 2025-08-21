@@ -48,11 +48,7 @@ echo "Building documentation..."
 # Run MkDocs from within the docs directory
 cd /opt/lxc-compose/docs
 
-# Move markdown files to docs subdirectory where MkDocs expects them
-echo "Reorganizing documentation structure..."
-mkdir -p docs
-mv *.md docs/ 2>/dev/null || true
-
+# Build documentation (markdown files are already in docs/docs/)
 echo "Building with MkDocs..."
 .venv/bin/mkdocs build --clean
 echo "Documentation built successfully"

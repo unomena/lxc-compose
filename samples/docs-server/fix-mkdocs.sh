@@ -1,18 +1,13 @@
 #!/bin/bash
-# Quick fix script for MkDocs configuration issue
+# Script to rebuild documentation in LXC container
 
-echo "Fixing MkDocs documentation structure in container..."
+echo "Rebuilding documentation in container..."
 
-# Move markdown files to docs subdirectory where MkDocs expects them
-echo "Reorganizing documentation structure..."
-lxc exec lxc-docs -- sh -c "cd /opt/lxc-compose/docs && mkdir -p docs && mv *.md docs/ 2>/dev/null || true"
-
-echo ""
 echo "Checking directory structure:"
 lxc exec lxc-docs -- ls -la /opt/lxc-compose/docs/docs/ | head -10
 
 echo ""
-echo "Attempting to rebuild documentation..."
+echo "Rebuilding documentation..."
 lxc exec lxc-docs -- sh -c "cd /opt/lxc-compose/docs && .venv/bin/mkdocs build --clean"
 
 echo ""
