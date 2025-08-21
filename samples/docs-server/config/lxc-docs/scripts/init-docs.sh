@@ -48,10 +48,10 @@ echo "Building documentation..."
 # Run MkDocs from within the docs directory
 cd /opt/lxc-compose/docs
 
-# Ensure mkdocs.yml doesn't have problematic settings
-echo "Checking mkdocs.yml configuration..."
-sed -i '/^docs_dir:/d' mkdocs.yml 2>/dev/null || true
-sed -i '/^site_dir:/d' mkdocs.yml 2>/dev/null || true
+# Move markdown files to docs subdirectory where MkDocs expects them
+echo "Reorganizing documentation structure..."
+mkdir -p docs
+mv *.md docs/ 2>/dev/null || true
 
 echo "Building with MkDocs..."
 .venv/bin/mkdocs build --clean

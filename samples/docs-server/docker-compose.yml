@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  docs:
+    build: .
+    container_name: lxc-docs-test
+    ports:
+      - "8080:80"
+      - "8000:8000"
+    volumes:
+      # Mount scripts for live editing during development
+      - ./config/lxc-docs/scripts:/docs/scripts:ro
+      - ./config/lxc-docs/nginx/default.conf:/etc/nginx/http.d/default.conf:ro
+    environment:
+      - REPO_URL=https://github.com/unomena/lxc-compose.git
+      - REPO_BRANCH=main
+      - BUILD_CLEAN=true
+      - AUTO_UPDATE=false
+    restart: unless-stopped
