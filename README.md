@@ -99,13 +99,13 @@ Most applications can be migrated in under an hour. [See our migration guide →
 ### Quick Install (One-line)
 
 ```bash
+# Using curl
 curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/install.sh | sudo bash
-```
 
-Or using wget:
-
-```bash
+# Or using wget
 wget -qO- https://raw.githubusercontent.com/unomena/lxc-compose/main/install.sh | sudo bash
+
+# Note: The pipe to 'sudo bash' is important - don't use 'sudo curl'
 ```
 
 ### Local Installation

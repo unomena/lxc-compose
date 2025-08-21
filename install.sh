@@ -102,7 +102,7 @@ check_prerequisites() {
     info "Checking prerequisites..."
     
     # Check if running with sudo
-    if [[ "$EUID" -ne 0 ]]; then
+    if [[ "$EUID" -ne 0 ]] && [[ "$(id -u)" -ne 0 ]]; then
         error "This script must be run with sudo"
     fi
     
