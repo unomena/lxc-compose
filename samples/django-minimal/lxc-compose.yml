@@ -65,12 +65,12 @@ containers:
           su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
 
   sample-django-app:
-    template: ubuntu-minimal-database
+    template: ubuntu-minimal
     release: lts
     
     # Dependencies must exist before this container can start
     depends_on:
-      - sample-django-datastore
+      - sample-django-minimal-database
     
     mounts:
       - .:/app
