@@ -1,0 +1,9 @@
+# Debian Bullseye Template Alias
+# Debian 11 (Bullseye)
+
+version: '1.0'
+
+alias:
+  name: debian-bullseye
+  description: Debian 11 (Bullseye)
+  template: debian-11

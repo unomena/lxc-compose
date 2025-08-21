@@ -1,0 +1,9 @@
+# Ubuntu Minimal Noble Template Alias
+# Ubuntu Minimal 24.04 (Noble Numbat)
+
+version: '1.0'
+
+alias:
+  name: ubuntu-minimal-noble
+  description: Ubuntu Minimal 24.04 (Noble Numbat)
+  template: ubuntu-minimal-24.04

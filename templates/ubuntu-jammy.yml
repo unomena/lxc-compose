@@ -1,0 +1,9 @@
+# Ubuntu Jammy Template Alias
+# Ubuntu 22.04 LTS (Jammy Jellyfish)
+
+version: '1.0'
+
+alias:
+  name: ubuntu-jammy
+  description: Ubuntu 22.04 LTS (Jammy Jellyfish)
+  template: ubuntu-22.04

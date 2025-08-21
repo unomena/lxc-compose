@@ -1,0 +1,9 @@
+# Debian Bookworm Template Alias
+# Debian 12 (Bookworm)
+
+version: '1.0'
+
+alias:
+  name: debian-bookworm
+  description: Debian 12 (Bookworm)
+  template: debian-12

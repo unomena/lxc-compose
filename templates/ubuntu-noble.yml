@@ -1,0 +1,9 @@
+# Ubuntu Noble Template Alias
+# Ubuntu 24.04 LTS (Noble Numbat)
+
+version: '1.0'
+
+alias:
+  name: ubuntu-noble
+  description: Ubuntu 24.04 LTS (Noble Numbat)
+  template: ubuntu-24.04

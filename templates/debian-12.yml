@@ -1,0 +1,73 @@
+# Debian 12 Template
+# Debian 12 (Bookworm) - Latest stable Debian release
+# Size: ~400MB with standard packages
+
+version: '1.0'
+
+template:
+  name: debian-12
+  description: Debian 12 (Bookworm) - Latest stable Debian with systemd
+  image: images:debian/12
+  aliases:
+    - debian:bookworm
+    - debian:12
+    - images:debian/12
+  
+  # Base packages commonly needed
+  base_packages:
+    - curl
+    - wget
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - apt-transport-https
+    - systemd
+    - systemd-sysv
+    
+  # Package manager
+  package_manager: apt
+  
+  # System initialization
+  init_commands:
+    - name: "Update package index"
+      command: "apt-get update"
+    
+    - name: "Install essential packages"
+      command: "apt-get install -y curl wget ca-certificates gnupg lsb-release apt-transport-https"
+    
+    - name: "Clean apt cache"
+      command: "apt-get clean && rm -rf /var/lib/apt/lists/*"
+    
+    - name: "Enable systemd"
+      command: "systemctl set-default multi-user.target"
+  
+  # Environment
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    LANG: "C.UTF-8"
+    DEBIAN_FRONTEND: "noninteractive"
+  
+  # Notes for developers
+  notes: |
+    Debian 12 (Bookworm) provides:
+    - Latest stable Debian release (2023)
+    - Full systemd support
+    - Updated package versions
+    - Excellent stability
+    - Long-term support until 2028
+    
+    Best for:
+    - Production servers
+    - Database systems
+    - Services requiring stability
+    - Modern applications needing newer packages
+    
+    Package differences from Ubuntu:
+    - default-mysql-server instead of mysql-server
+    - Different PostgreSQL versions
+    - Generally more conservative package versions
+    
+    Package management:
+    - apt-get update
+    - apt-get install package-name
+    - systemctl enable/start service-name

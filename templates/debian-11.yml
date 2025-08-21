@@ -1,0 +1,73 @@
+# Debian 11 Template
+# Debian 11 (Bullseye) - Stable and reliable base
+# Size: ~400MB with standard packages
+
+version: '1.0'
+
+template:
+  name: debian-11
+  description: Debian 11 (Bullseye) - Stable Debian base with systemd
+  image: images:debian/11
+  aliases:
+    - debian:bullseye
+    - debian:11
+    - images:debian/11
+  
+  # Base packages commonly needed
+  base_packages:
+    - curl
+    - wget
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - apt-transport-https
+    - systemd
+    - systemd-sysv
+    
+  # Package manager
+  package_manager: apt
+  
+  # System initialization
+  init_commands:
+    - name: "Update package index"
+      command: "apt-get update"
+    
+    - name: "Install essential packages"
+      command: "apt-get install -y curl wget ca-certificates gnupg lsb-release apt-transport-https"
+    
+    - name: "Clean apt cache"
+      command: "apt-get clean && rm -rf /var/lib/apt/lists/*"
+    
+    - name: "Enable systemd"
+      command: "systemctl set-default multi-user.target"
+  
+  # Environment
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    LANG: "C.UTF-8"
+    DEBIAN_FRONTEND: "noninteractive"
+  
+  # Notes for developers
+  notes: |
+    Debian 11 (Bullseye) provides:
+    - Rock-solid stability
+    - Full systemd support
+    - Conservative package versions
+    - Excellent for production
+    - Long-term support until 2026
+    
+    Best for:
+    - Production servers
+    - Database systems
+    - Services requiring stability
+    - Long-running applications
+    
+    Package differences from Ubuntu:
+    - default-mysql-server instead of mysql-server
+    - Different PostgreSQL versions
+    - May have older package versions
+    
+    Package management:
+    - apt-get update
+    - apt-get install package-name
+    - systemctl enable/start service-name

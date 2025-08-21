@@ -1,16 +1,16 @@
-# Ubuntu Minimal 22.04 Template
+# Ubuntu Minimal 24.04 Template
 # Minimal Ubuntu base for lightweight containers
 # Size: ~300MB with basic packages
 
 version: '1.0'
 
 template:
-  name: ubuntu-minimal-22.04
-  description: Ubuntu Minimal 22.04 - Lightweight Ubuntu base image
-  image: ubuntu-minimal:22.04
+  name: ubuntu-minimal-24.04
+  description: Ubuntu Minimal 24.04 - Lightweight Ubuntu base image
+  image: ubuntu-minimal:24.04
   aliases:
-    - ubuntu-minimal:jammy
-    - ubuntu-minimal:22.04
+    - ubuntu-minimal:noble
+    - ubuntu-minimal:24.04
   
   # Base packages commonly needed
   base_packages:
@@ -39,16 +39,18 @@ template:
   
   # Notes for developers
   notes: |
-    Ubuntu Minimal provides:
+    Ubuntu Minimal 24.04 provides:
     - Smaller footprint than standard Ubuntu
     - APT package management
     - No systemd by default
     - Fewer pre-installed packages
+    - Based on Noble Numbat (24.04)
     
     Best for:
     - Simple applications
     - Single-service containers
     - When you want Ubuntu compatibility with less overhead
+    - Microservices
     
     May need to install:
     - apt-utils for better apt experience

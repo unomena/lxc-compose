@@ -1,0 +1,9 @@
+# Ubuntu LTS Template Alias
+# Points to the latest LTS version (24.04)
+
+version: '1.0'
+
+alias:
+  name: ubuntu-lts
+  description: Ubuntu LTS - Latest Long Term Support version
+  template: ubuntu-24.04

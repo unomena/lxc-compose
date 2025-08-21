@@ -1,0 +1,10 @@
+# Ubuntu Minimal LTS Template
+# Minimal Ubuntu base for lightweight containers
+# Size: ~300MB with basic packages
+
+version: '1.0'
+
+alias:
+  name: ubuntu-minimal-lts
+  description: Ubuntu Minimal LTS - Lightweight Ubuntu base image
+  template: ubuntu-minimal-24.04

@@ -1,0 +1,9 @@
+# Alpine Template Alias
+# Points to the current Alpine version
+
+version: '1.0'
+
+alias:
+  name: alpine
+  description: Alpine Linux - Current version
+  template: alpine-3.19

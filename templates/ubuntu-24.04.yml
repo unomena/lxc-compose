@@ -1,0 +1,66 @@
+# Ubuntu 24.04 Template
+# Ubuntu 24.04 LTS (Noble Numbat) - Full-featured Ubuntu with systemd
+# Size: ~500MB with standard packages
+
+version: '1.0'
+
+template:
+  name: ubuntu-24.04
+  description: Ubuntu 24.04 LTS (Noble) - Full Ubuntu with systemd support
+  image: ubuntu:24.04
+  aliases:
+    - ubuntu:noble
+    - ubuntu:24.04
+  
+  # Base packages commonly needed
+  base_packages:
+    - curl
+    - wget
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - software-properties-common
+    - systemd
+    
+  # Package manager
+  package_manager: apt
+  
+  # System initialization
+  init_commands:
+    - name: "Update package index"
+      command: "apt-get update"
+    
+    - name: "Install essential packages"
+      command: "apt-get install -y curl wget ca-certificates gnupg lsb-release software-properties-common"
+    
+    - name: "Clean apt cache"
+      command: "apt-get clean && rm -rf /var/lib/apt/lists/*"
+    
+    - name: "Enable systemd"
+      command: "systemctl set-default multi-user.target"
+  
+  # Environment
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    LANG: "C.UTF-8"
+    DEBIAN_FRONTEND: "noninteractive"
+  
+  # Notes for developers
+  notes: |
+    Ubuntu 24.04 LTS (Noble Numbat) provides:
+    - Full systemd support
+    - Complete Ubuntu package ecosystem
+    - Latest LTS release with 5 years support
+    - Wide software compatibility
+    
+    Best for:
+    - Complex applications
+    - Services requiring systemd
+    - Database servers
+    - Full-stack applications
+    - Production workloads
+    
+    Package management:
+    - apt-get update
+    - apt-get install package-name
+    - systemctl enable/start service-name

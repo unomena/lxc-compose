@@ -1,16 +1,15 @@
-# Ubuntu 22.04 LTS Template
-# Standard Ubuntu base for full-featured containers
-# Size: ~500MB with basic packages
+# Ubuntu 22.04 Template
+# Ubuntu 22.04 LTS (Jammy Jellyfish) - Previous LTS release
+# Size: ~500MB with standard packages
 
 version: '1.0'
 
 template:
   name: ubuntu-22.04
-  description: Ubuntu 22.04 LTS (Jammy Jellyfish) - Full-featured base image
+  description: Ubuntu 22.04 LTS (Jammy) - Previous LTS with systemd support
   image: ubuntu:22.04
   aliases:
     - ubuntu:jammy
-    - ubuntu:lts
   
   # Base packages commonly needed
   base_packages:
