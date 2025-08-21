@@ -1,0 +1,44 @@
+# Test Debian-based services with includes
+# Tests library services on Debian 11 and 12
+
+version: '1.0'
+
+containers:
+  # Test Debian 12 (Bookworm)
+  test-debian12-postgres:
+    template: debian-bookworm
+    includes:
+      - postgresql
+    environment:
+      POSTGRES_PASSWORD: debian12pass
+  
+  # Test Debian 11 (Bullseye)
+  test-debian11-redis:
+    template: debian-bullseye
+    includes:
+      - redis
+    packages:
+      - redis-tools  # Additional tools
+  
+  # Test load balancer
+  test-debian-haproxy:
+    template: debian-12
+    includes:
+      - haproxy
+    post_install:
+      - name: "Configure HAProxy backends"
+        command: |
+          cat >> /etc/haproxy/haproxy.cfg << EOF
+          backend web_servers
+              balance roundrobin
+              server web1 10.0.0.10:80 check
+              server web2 10.0.0.11:80 check
+          EOF
+  
+  # Test caching
+  test-debian-memcached:
+    template: debian-bookworm
+    includes:
+      - memcached
+    packages:
+      - telnet  # For testing memcached

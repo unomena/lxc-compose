@@ -1,0 +1,39 @@
+# Test Ubuntu Minimal services
+# Tests that services work on minimal distributions
+
+version: '1.0'
+
+containers:
+  # Test minimal with simple services
+  test-minimal-redis:
+    template: ubuntu-minimal-lts  # ubuntu-minimal-24.04
+    includes:
+      - redis
+    packages:
+      - redis-tools
+  
+  # Test minimal with web server
+  test-minimal-nginx:
+    template: ubuntu-minimal-jammy  # ubuntu-minimal-22.04
+    includes:
+      - nginx
+    packages:
+      - curl
+    post_install:
+      - name: "Test nginx"
+        command: |
+          nginx -t
+          echo "<h1>Minimal Ubuntu Nginx</h1>" > /usr/share/nginx/html/test.html
+  
+  # Test PostgreSQL on minimal (should work but without systemd)
+  test-minimal-postgres:
+    template: ubuntu-minimal-24.04
+    includes:
+      - postgresql
+    environment:
+      POSTGRES_PASSWORD: minimalpass
+    post_install:
+      - name: "Note about systemd"
+        command: |
+          echo "Note: Ubuntu Minimal doesn't have systemd by default"
+          echo "PostgreSQL will need manual startup"

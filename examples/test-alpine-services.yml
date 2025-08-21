@@ -1,0 +1,40 @@
+# Test Alpine-based services with includes
+# Tests library service inheritance and test availability
+
+version: '1.0'
+
+containers:
+  # Test 1: PostgreSQL from library
+  test-alpine-postgres:
+    template: alpine-3.19
+    includes:
+      - postgresql
+    environment:
+      POSTGRES_PASSWORD: testpass123
+  
+  # Test 2: Redis from library
+  test-alpine-redis:
+    template: alpine
+    includes:
+      - redis
+  
+  # Test 3: Nginx from library
+  test-alpine-nginx:
+    template: alpine-3.19
+    includes:
+      - nginx
+  
+  # Test 4: Multiple includes
+  test-alpine-stack:
+    template: alpine
+    includes:
+      - nginx
+      - redis
+    packages:
+      - curl  # Additional package
+    post_install:
+      - name: "Verify services"
+        command: |
+          echo "Testing that both nginx and redis are configured"
+          nginx -t
+          redis-cli ping || echo "Redis will be started later"

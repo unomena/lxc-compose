@@ -1,0 +1,46 @@
+# Test Ubuntu-based services with includes
+# Tests library service inheritance across different Ubuntu versions
+
+version: '1.0'
+
+containers:
+  # Test Ubuntu 24.04 LTS (latest)
+  test-ubuntu-postgres:
+    template: ubuntu-lts  # Alias for ubuntu-24.04
+    includes:
+      - postgresql
+    environment:
+      POSTGRES_PASSWORD: ubuntu24pass
+      POSTGRES_DB: testdb
+  
+  # Test Ubuntu 22.04
+  test-ubuntu22-mysql:
+    template: ubuntu-jammy  # Alias for ubuntu-22.04
+    includes:
+      - mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: mysqlpass123
+      MYSQL_DATABASE: testdb
+  
+  # Test complex service
+  test-ubuntu-mongodb:
+    template: ubuntu-24.04
+    includes:
+      - mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: mongopass
+  
+  # Test monitoring stack
+  test-ubuntu-monitoring:
+    template: ubuntu-noble  # Another alias for 24.04
+    includes:
+      - prometheus
+      - grafana
+    packages:
+      - htop  # Additional monitoring tool
+    post_install:
+      - name: "Configure monitoring"
+        command: |
+          echo "Prometheus and Grafana should be configured"
+          # Add custom dashboards here
