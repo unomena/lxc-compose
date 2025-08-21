@@ -19,6 +19,12 @@ containers:
     logs:
       - mongodb:/var/log/mongodb/mongod.log
     
+    tests:
+      internal:
+        - health:/app/tests/internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
+    
     post_install:
       - name: "Install MongoDB"
         command: |
@@ -67,6 +73,12 @@ containers:
       - nginx-access:/var/log/nginx/access.log
       - nginx-error:/var/log/nginx/error.log
       - supervisor:/var/log/supervisord.log
+    
+    tests:
+      internal:
+        - health:/app/tests/internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
     
     packages:
       - curl

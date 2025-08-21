@@ -23,6 +23,12 @@ containers:
     logs:
       - postgres:/var/lib/postgresql/logfile
       - redis:/var/log/redis/redis.log
+    
+    tests:
+      internal:
+        - health:/app/tests/internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
 
     post_install:
       - name: "Setup PostgreSQL"
@@ -109,6 +115,12 @@ containers:
       - nginx:/var/log/nginx/access.log
       - nginx-error:/var/log/nginx/error.log
       - supervisor:/var/log/supervisord.log
+    
+    tests:
+      internal:
+        - health:/app/tests/internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
 
     packages:
       - python3

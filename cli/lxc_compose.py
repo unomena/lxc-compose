@@ -1415,5 +1415,149 @@ def logs(container_name, log_name, file, follow, lines):
         click.echo(f"{RED}✗{NC} Failed to read log: {e}")
         sys.exit(1)
 
+@cli.command()
+@click.argument('container_name')
+@click.argument('test_type', required=False, default='all', type=click.Choice(['all', 'internal', 'external']))
+@click.option('-c', '--config', 'file', default=DEFAULT_CONFIG, help='Config file')
+def test(container_name, test_type, file):
+    """Run health check tests for a container
+    
+    Examples:
+        lxc-compose test sample-django-app       # Run all tests
+        lxc-compose test sample-django-app internal  # Run only internal tests
+        lxc-compose test sample-django-app external  # Run only external tests
+    """
+    # Check if container exists
+    result = subprocess.run(['lxc', 'list', container_name, '--format', 'json'], 
+                          capture_output=True, text=True)
+    if result.returncode != 0:
+        click.echo(f"{RED}✗{NC} Failed to list container: {result.stderr}")
+        sys.exit(1)
+    
+    containers = json.loads(result.stdout)
+    if not containers:
+        click.echo(f"{RED}✗{NC} Container '{container_name}' not found")
+        sys.exit(1)
+    
+    container = containers[0]
+    if container.get('status') != 'Running':
+        click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' is not running")
+        sys.exit(1)
+    
+    # Load config to get test definitions
+    compose = LXCCompose(file)
+    compose.load_config()
+    
+    # Find container in config
+    container_config = None
+    for c in compose.containers:
+        if c.get('name') == container_name:
+            container_config = c
+            break
+    
+    if not container_config:
+        click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' not found in config file")
+        sys.exit(1)
+    
+    # Get tests from config
+    tests_config = container_config.get('tests', {})
+    
+    if not tests_config:
+        click.echo(f"{YELLOW}⚠{NC} No tests configured for container '{container_name}'")
+        sys.exit(1)
+    
+    # Parse tests configuration
+    internal_tests = []
+    external_tests = []
+    
+    if isinstance(tests_config, dict):
+        # New format with internal/external
+        internal_tests = tests_config.get('internal', [])
+        external_tests = tests_config.get('external', [])
+    elif isinstance(tests_config, list):
+        # Legacy format - treat as internal tests
+        internal_tests = tests_config
+    
+    # Parse test entries
+    def parse_tests(test_list):
+        tests = {}
+        for test_entry in test_list:
+            if isinstance(test_entry, str) and ':' in test_entry:
+                name, path = test_entry.split(':', 1)
+                tests[name] = path
+        return tests
+    
+    internal_test_map = parse_tests(internal_tests)
+    external_test_map = parse_tests(external_tests)
+    
+    # Show available tests if no specific test requested
+    if not internal_test_map and not external_test_map:
+        click.echo(f"{YELLOW}⚠{NC} No tests defined for container '{container_name}'")
+        sys.exit(1)
+    
+    click.echo(f"\n{BLUE}Running tests for {container_name}...{NC}\n")
+    
+    results = {'passed': 0, 'failed': 0}
+    
+    # Run internal tests
+    if test_type in ['all', 'internal'] and internal_test_map:
+        click.echo(f"{BLUE}=== Internal Tests (running inside container) ==={NC}")
+        for test_name, test_path in internal_test_map.items():
+            click.echo(f"\nRunning internal test: {test_name}")
+            
+            # First, make the script executable
+            chmod_cmd = ['lxc', 'exec', container_name, '--', 'chmod', '+x', test_path]
+            subprocess.run(chmod_cmd, capture_output=True)
+            
+            # Run the test script inside the container
+            test_cmd = ['lxc', 'exec', container_name, '--', 'bash', test_path]
+            result = subprocess.run(test_cmd, capture_output=False, text=True)
+            
+            if result.returncode == 0:
+                results['passed'] += 1
+            else:
+                results['failed'] += 1
+    
+    # Run external tests
+    if test_type in ['all', 'external'] and external_test_map:
+        click.echo(f"\n{BLUE}=== External Tests (running from host) ==={NC}")
+        for test_name, test_path in external_test_map.items():
+            click.echo(f"\nRunning external test: {test_name}")
+            
+            # External tests run on the host, so we need to find the actual path
+            # Assuming the path is relative to the config file directory
+            config_dir = os.path.dirname(os.path.abspath(file))
+            actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
+            
+            if not os.path.exists(actual_test_path):
+                click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
+                results['failed'] += 1
+                continue
+            
+            # Make the script executable
+            os.chmod(actual_test_path, 0o755)
+            
+            # Run the test script on the host
+            result = subprocess.run(['bash', actual_test_path], capture_output=False, text=True)
+            
+            if result.returncode == 0:
+                results['passed'] += 1
+            else:
+                results['failed'] += 1
+    
+    # Display summary
+    click.echo(f"\n{BLUE}{'='*50}{NC}")
+    click.echo(f"{BLUE}Test Summary for {container_name}{NC}")
+    click.echo(f"{BLUE}{'='*50}{NC}")
+    click.echo(f"Tests Passed: {GREEN}{results['passed']}{NC}")
+    click.echo(f"Tests Failed: {RED}{results['failed']}{NC}")
+    
+    if results['failed'] == 0:
+        click.echo(f"\n{GREEN}✓ All tests passed!{NC}")
+        sys.exit(0)
+    else:
+        click.echo(f"\n{RED}✗ Some tests failed!{NC}")
+        sys.exit(1)
+
 if __name__ == '__main__':
     cli()

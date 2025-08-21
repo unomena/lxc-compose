@@ -26,6 +26,12 @@ containers:
       - redis:/var/log/redis/redis.log
       - supervisor:/var/log/supervisord.log
     
+    tests:
+      internal:
+        - health:/app/tests/internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
+    
     packages:
       - python3
       - python3-pip
