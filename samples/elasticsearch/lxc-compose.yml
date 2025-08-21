@@ -1,0 +1,55 @@
+# Elasticsearch Search Engine (Docker-style)
+# Simple Elasticsearch following official Docker patterns
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  elasticsearch:
+    image: ubuntu:22.04
+    
+    exposed_ports:
+      - 9200  # HTTP API
+      - 9300  # Transport
+    
+    packages:
+      - wget
+      - gnupg
+      - apt-transport-https
+      - default-jdk
+    
+    post_install:
+      - name: "Install Elasticsearch"
+        command: |
+          # Add Elastic repository
+          wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | apt-key add -
+          echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | tee /etc/apt/sources.list.d/elastic-8.x.list
+          
+          # Install Elasticsearch
+          apt-get update
+          apt-get install -y elasticsearch
+          
+          # Configure for single-node development
+          cat >> /etc/elasticsearch/elasticsearch.yml << 'EOF'
+          network.host: 0.0.0.0
+          discovery.type: single-node
+          xpack.security.enabled: false
+          xpack.security.enrollment.enabled: false
+          EOF
+          
+          # Set JVM heap size (small for development)
+          sed -i 's/-Xms.*/-Xms512m/' /etc/elasticsearch/jvm.options
+          sed -i 's/-Xmx.*/-Xmx512m/' /etc/elasticsearch/jvm.options
+          
+          # Start Elasticsearch
+          systemctl enable elasticsearch
+          systemctl start elasticsearch
+          
+          # Wait for Elasticsearch to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:9200 >/dev/null; then
+              echo "Elasticsearch is ready!"
+              break
+            fi
+            sleep 2
+          done

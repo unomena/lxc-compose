@@ -1,0 +1,56 @@
+# MongoDB Server (Docker-style)
+# Simple MongoDB following official Docker patterns
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  mongodb:
+    image: ubuntu:22.04
+    
+    exposed_ports:
+      - 27017
+    
+    packages:
+      - wget
+      - gnupg
+      - lsb-release
+    
+    post_install:
+      - name: "Install MongoDB"
+        command: |
+          # Import MongoDB GPG key
+          wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add -
+          
+          # Add MongoDB repository
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/6.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          
+          # Update and install
+          apt-get update
+          apt-get install -y mongodb-org
+          
+          # Create data directory
+          mkdir -p /data/db
+          chown -R mongodb:mongodb /data/db
+          
+          # Configure MongoDB to listen on all interfaces
+          sed -i 's/bindIp: 127.0.0.1/bindIp: 0.0.0.0/' /etc/mongod.conf
+          
+          # Start MongoDB
+          mongod --config /etc/mongod.conf --fork --logpath /var/log/mongodb/mongod.log
+          sleep 5
+          
+          # Create root user if password provided
+          MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-}
+          MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-}
+          if [ -n "$MONGO_INITDB_ROOT_USERNAME" ] && [ -n "$MONGO_INITDB_ROOT_PASSWORD" ]; then
+            mongosh admin --eval "db.createUser({user: '$MONGO_INITDB_ROOT_USERNAME', pwd: '$MONGO_INITDB_ROOT_PASSWORD', roles: ['root']})"
+          fi
+          
+          # Create database and user if specified
+          MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE:-}
+          if [ -n "$MONGO_INITDB_DATABASE" ]; then
+            mongosh $MONGO_INITDB_DATABASE --eval "db.createCollection('init')"
+          fi
+          
+          echo "MongoDB is ready!"

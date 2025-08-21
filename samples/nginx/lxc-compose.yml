@@ -1,0 +1,46 @@
+# Nginx Web Server (Docker-style)
+# Simple Nginx following official Docker patterns
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  nginx:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 80
+      - 443
+    
+    packages:
+      - nginx
+    
+    mounts:
+      # Mount config and content directories
+      - ./html:/usr/share/nginx/html
+      - ./conf.d:/etc/nginx/conf.d
+    
+    post_install:
+      - name: "Setup Nginx"
+        command: |
+          # Create necessary directories
+          mkdir -p /run/nginx
+          mkdir -p /usr/share/nginx/html
+          
+          # Create default index.html if not mounted
+          if [ ! -f /usr/share/nginx/html/index.html ]; then
+            cat > /usr/share/nginx/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>Welcome to nginx!</title></head>
+          <body>
+          <h1>Welcome to nginx!</h1>
+          <p>If you see this page, nginx is successfully installed and working.</p>
+          </body>
+          </html>
+          EOF
+          fi
+          
+          # Start nginx
+          nginx
+          echo "Nginx is ready!"

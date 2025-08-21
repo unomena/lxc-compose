@@ -1,0 +1,42 @@
+# RabbitMQ Message Broker (Docker-style)
+# Simple RabbitMQ following official Docker patterns
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  rabbitmq:
+    image: ubuntu:22.04
+    
+    exposed_ports:
+      - 5672   # AMQP
+      - 15672  # Management UI
+    
+    packages:
+      - rabbitmq-server
+    
+    post_install:
+      - name: "Setup RabbitMQ"
+        command: |
+          # Start RabbitMQ
+          service rabbitmq-server start
+          sleep 5
+          
+          # Enable management plugin
+          rabbitmq-plugins enable rabbitmq_management
+          
+          # Set default user/password if provided
+          RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-admin}
+          RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-admin}
+          
+          # Create admin user
+          rabbitmqctl add_user $RABBITMQ_DEFAULT_USER $RABBITMQ_DEFAULT_PASS
+          rabbitmqctl set_user_tags $RABBITMQ_DEFAULT_USER administrator
+          rabbitmqctl set_permissions -p / $RABBITMQ_DEFAULT_USER ".*" ".*" ".*"
+          
+          # Delete default guest user for security
+          rabbitmqctl delete_user guest
+          
+          # Restart to apply changes
+          service rabbitmq-server restart
+          echo "RabbitMQ is ready! Management UI at port 15672"

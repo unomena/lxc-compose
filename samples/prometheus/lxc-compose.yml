@@ -1,0 +1,57 @@
+# Prometheus Metrics Server (Docker-style)
+# Simple Prometheus following official Docker patterns
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  prometheus:
+    image: ubuntu:22.04
+    
+    exposed_ports:
+      - 9090
+    
+    packages:
+      - wget
+    
+    mounts:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    
+    post_install:
+      - name: "Install Prometheus"
+        command: |
+          # Download Prometheus
+          PROM_VERSION="2.45.0"
+          wget https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz
+          tar xvf prometheus-${PROM_VERSION}.linux-amd64.tar.gz
+          
+          # Install binaries
+          cp prometheus-${PROM_VERSION}.linux-amd64/prometheus /usr/local/bin/
+          cp prometheus-${PROM_VERSION}.linux-amd64/promtool /usr/local/bin/
+          
+          # Create directories
+          mkdir -p /etc/prometheus /var/lib/prometheus
+          
+          # Create basic config if not mounted
+          if [ ! -f /etc/prometheus/prometheus.yml ]; then
+            cat > /etc/prometheus/prometheus.yml << 'EOF'
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+          
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+          EOF
+          fi
+          
+          # Start Prometheus
+          prometheus \
+            --config.file=/etc/prometheus/prometheus.yml \
+            --storage.tsdb.path=/var/lib/prometheus/ \
+            --web.console.libraries=/usr/share/prometheus/console_libraries \
+            --web.console.templates=/usr/share/prometheus/consoles \
+            --web.listen-address=0.0.0.0:9090 &
+          
+          echo "Prometheus is ready at port 9090!"

@@ -1,0 +1,54 @@
+# HAProxy Load Balancer (Docker-style)
+# Simple HAProxy following official Docker patterns
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  haproxy:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 80     # HTTP
+      - 443    # HTTPS  
+      - 8404   # Stats page
+    
+    packages:
+      - haproxy
+    
+    mounts:
+      - ./haproxy.cfg:/etc/haproxy/haproxy.cfg
+    
+    post_install:
+      - name: "Setup HAProxy"
+        command: |
+          # Create default config if not mounted
+          if [ ! -f /etc/haproxy/haproxy.cfg ]; then
+            cat > /etc/haproxy/haproxy.cfg << 'EOF'
+          global
+              daemon
+              maxconn 256
+          
+          defaults
+              mode http
+              timeout connect 5000ms
+              timeout client 50000ms
+              timeout server 50000ms
+          
+          frontend http_front
+              bind *:80
+              stats enable
+              stats uri /stats
+              stats refresh 30s
+              default_backend http_back
+          
+          backend http_back
+              balance roundrobin
+              server web1 10.0.0.1:80 check
+              server web2 10.0.0.2:80 check
+          EOF
+          fi
+          
+          # Start HAProxy
+          haproxy -f /etc/haproxy/haproxy.cfg
+          echo "HAProxy is ready!"
