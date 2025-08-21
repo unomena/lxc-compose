@@ -1,15 +1,15 @@
-# Ubuntu Minimal LTS Template
+# Ubuntu Minimal 22.04 Template
 # Minimal Ubuntu base for lightweight containers
 # Size: ~300MB with basic packages
 
 version: '1.0'
 
 template:
-  name: ubuntu-minimal-lts
-  description: Ubuntu Minimal LTS - Lightweight Ubuntu base image
+  name: ubuntu-minimal-22.04
+  description: Ubuntu Minimal 22.04 - Lightweight Ubuntu base image
   image: ubuntu-minimal:lts
   aliases:
-    - ubuntu-minimal:22.04
+    - ubuntu-minimal:lts
     - ubuntu-minimal:jammy
   
   # Base packages commonly needed

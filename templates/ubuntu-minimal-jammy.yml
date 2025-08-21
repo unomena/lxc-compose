@@ -1,0 +1,10 @@
+# Ubuntu Minimal Jammy Template
+# Minimal Ubuntu base for lightweight containers
+# Size: ~300MB with basic packages
+
+version: '1.0'
+
+alias:
+  name: ubuntu-minimal-jammy
+  description: Ubuntu Minimal Jammy - Lightweight Ubuntu base image
+  template: ubuntu-minimal-22.04
