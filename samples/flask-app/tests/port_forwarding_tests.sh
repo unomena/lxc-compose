@@ -170,9 +170,9 @@ LXC_COMPOSE_RULES=$(sudo iptables -L -n -v | grep -c "lxc-compose" 2>/dev/null |
 echo "Found $LXC_COMPOSE_RULES lxc-compose related rules in iptables"
 
 # Summary
-echo -e "\n${BLUE}${'='*50}${NC}"
+echo -e "\n${BLUE}==================================================${NC}"
 echo -e "${BLUE}Port Forwarding Test Summary${NC}"
-echo -e "${BLUE}${'='*50}${NC}"
+echo -e "${BLUE}==================================================${NC}"
 echo -e "Tests Passed: ${GREEN}$TESTS_PASSED${NC}"
 echo -e "Tests Failed: ${RED}$TESTS_FAILED${NC}"
 echo -e "Warnings: ${YELLOW}$WARNINGS${NC}"
