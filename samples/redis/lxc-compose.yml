@@ -15,6 +15,10 @@ containers:
     packages:
       - redis
     
+    tests:
+      external:
+        - operations:/tests/test.sh
+    
     post_install:
       - name: "Setup Redis"
         command: |

@@ -16,6 +16,10 @@ containers:
       - postgresql15
       - postgresql15-client
     
+    tests:
+      external:
+        - crud:/tests/test.sh
+    
     post_install:
       - name: "Setup PostgreSQL"
         command: |
