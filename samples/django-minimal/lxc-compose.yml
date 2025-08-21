@@ -123,6 +123,10 @@ containers:
         stopwaitsecs: 600
     
     post_install:
+      - name: "Update package lists"
+        command: |
+          apt-get update
+          
       - name: "Create directories"
         command: |
           mkdir -p /var/log/django /run/django
