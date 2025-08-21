@@ -30,7 +30,12 @@ fi
 echo "Setting up Python environment..."
 cd /opt/lxc-compose/docs
 if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
+    # Create virtual environment (Alpine doesn't have py3-virtualenv, use python3 -m venv)
+    python3 -m venv .venv || {
+        echo "Installing python3 venv module..."
+        apk add --no-cache python3-dev
+        python3 -m venv .venv
+    }
     .venv/bin/pip install --upgrade pip setuptools wheel
     .venv/bin/pip install -r requirements.txt
     echo "Python environment created"

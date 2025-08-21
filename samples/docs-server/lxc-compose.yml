@@ -12,7 +12,6 @@ containers:
       - git
       - python3
       - py3-pip
-      - py3-virtualenv
       - nginx
       - supervisor
       - curl
@@ -72,9 +71,6 @@ containers:
     post_install:
       - name: "Initialize documentation server"
         command: |
-          # Make scripts executable
           chmod +x /docs/scripts/*.sh
           chmod +x /docs/tests/*.sh
-          
-          # Run initialization script
-          /docs/scripts/init-docs.sh > /var/log/build.log 2>&1
+          /docs/scripts/init-docs.sh 2>&1 | tee /var/log/build.log
