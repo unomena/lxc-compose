@@ -1417,15 +1417,16 @@ def logs(container_name, log_name, file, follow, lines):
 
 @cli.command()
 @click.argument('container_name')
-@click.argument('test_type', required=False, default='all', type=click.Choice(['all', 'internal', 'external']))
+@click.argument('test_type', required=False, default='all', type=click.Choice(['all', 'internal', 'external', 'port_forwarding']))
 @click.option('-c', '--config', 'file', default=DEFAULT_CONFIG, help='Config file')
 def test(container_name, test_type, file):
     """Run health check tests for a container
     
     Examples:
-        lxc-compose test sample-django-app       # Run all tests
-        lxc-compose test sample-django-app internal  # Run only internal tests
-        lxc-compose test sample-django-app external  # Run only external tests
+        lxc-compose test sample-django-app              # Run all tests
+        lxc-compose test sample-django-app internal     # Run only internal tests
+        lxc-compose test sample-django-app external     # Run only external tests
+        lxc-compose test sample-django-app port_forwarding  # Run only port forwarding tests
     """
     # Check if container exists
     result = subprocess.run(['lxc', 'list', container_name, '--format', 'json'], 
@@ -1469,11 +1470,13 @@ def test(container_name, test_type, file):
     # Parse tests configuration
     internal_tests = []
     external_tests = []
+    port_forwarding_tests = []
     
     if isinstance(tests_config, dict):
-        # New format with internal/external
+        # New format with internal/external/port_forwarding
         internal_tests = tests_config.get('internal', [])
         external_tests = tests_config.get('external', [])
+        port_forwarding_tests = tests_config.get('port_forwarding', [])
     elif isinstance(tests_config, list):
         # Legacy format - treat as internal tests
         internal_tests = tests_config
@@ -1489,9 +1492,10 @@ def test(container_name, test_type, file):
     
     internal_test_map = parse_tests(internal_tests)
     external_test_map = parse_tests(external_tests)
+    port_forwarding_test_map = parse_tests(port_forwarding_tests)
     
     # Show available tests if no specific test requested
-    if not internal_test_map and not external_test_map:
+    if not internal_test_map and not external_test_map and not port_forwarding_test_map:
         click.echo(f"{YELLOW}⚠{NC} No tests defined for container '{container_name}'")
         sys.exit(1)
     
@@ -1538,6 +1542,32 @@ def test(container_name, test_type, file):
             os.chmod(actual_test_path, 0o755)
             
             # Run the test script on the host
+            result = subprocess.run(['bash', actual_test_path], capture_output=False, text=True)
+            
+            if result.returncode == 0:
+                results['passed'] += 1
+            else:
+                results['failed'] += 1
+    
+    # Run port forwarding tests
+    if test_type in ['all', 'port_forwarding'] and port_forwarding_test_map:
+        click.echo(f"\n{BLUE}=== Port Forwarding Tests (checking iptables rules) ==={NC}")
+        for test_name, test_path in port_forwarding_test_map.items():
+            click.echo(f"\nRunning port forwarding test: {test_name}")
+            
+            # Port forwarding tests run on the host
+            config_dir = os.path.dirname(os.path.abspath(file))
+            actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
+            
+            if not os.path.exists(actual_test_path):
+                click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
+                results['failed'] += 1
+                continue
+            
+            # Make the script executable
+            os.chmod(actual_test_path, 0o755)
+            
+            # Run the test script on the host (requires sudo for iptables)
             result = subprocess.run(['bash', actual_test_path], capture_output=False, text=True)
             
             if result.returncode == 0:

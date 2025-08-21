@@ -31,6 +31,8 @@ containers:
         - health:/app/tests/internal_tests.sh
       external:
         - health:/app/tests/external_tests.sh
+      port_forwarding:
+        - iptables:/app/tests/port_forwarding_tests.sh
     
     packages:
       - python3
