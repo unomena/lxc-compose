@@ -55,8 +55,8 @@ containers:
           redis-cli ping || echo "Redis not responding yet"
 
   sample-flask-app:
-    template: ubuntu-minimal
-    release: lts
+    template: alpine
+    release: "3.19"
     
     # Dependencies must exist before this container can start
     depends_on:
@@ -87,14 +87,14 @@ containers:
     
     packages:
       - python3
-      - python3-pip
-      - python3-venv
-      - python3-dev
-      - build-essential
+      - py3-pip
       - nginx
       - supervisor
-      - redis-tools
+      - redis
       - curl
+      - gcc
+      - musl-dev
+      - python3-dev
     
     # Note: Environment variables from .env are automatically available
     
@@ -112,10 +112,6 @@ containers:
         stopwaitsecs: 600
     
     post_install:
-      - name: "Update package lists"
-        command: |
-          apt-get update
-          
       - name: "Setup Python environment"
         command: |
           cd /app
