@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   mysql:
-    image: debian:11
+    image: images:debian/11
     
     exposed_ports:
       - 3306

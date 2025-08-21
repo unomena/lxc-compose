@@ -6,7 +6,7 @@ version: '1.0'
 
 containers:
   mongodb:
-    image: debian:11
+    image: images:debian/11
     
     exposed_ports:
       - 27017
