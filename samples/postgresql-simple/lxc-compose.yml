@@ -1,0 +1,58 @@
+# PostgreSQL Server (Docker-style)
+# Simple PostgreSQL following official Docker patterns
+# Usage: POSTGRES_PASSWORD=mysecret lxc-compose up
+
+version: '1.0'
+
+containers:
+  postgres:
+    template: alpine
+    release: "3.19"
+    
+    exposed_ports:
+      - 5432
+    
+    packages:
+      - postgresql15
+      - postgresql15-client
+    
+    post_install:
+      - name: "Setup PostgreSQL"
+        command: |
+          # Create directories
+          mkdir -p /run/postgresql /var/lib/postgresql/data
+          chown -R postgres:postgres /run/postgresql /var/lib/postgresql
+          chmod 700 /var/lib/postgresql/data
+          
+          # Initialize database
+          su postgres -c "initdb -D /var/lib/postgresql/data"
+          
+          # Configure for network access
+          echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+          
+          # Start PostgreSQL
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data start"
+          sleep 3
+          
+          # Set password from environment (Docker-style)
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+          su postgres -c "psql -c \"ALTER USER postgres PASSWORD '$POSTGRES_PASSWORD';\""
+          
+          # Create database if specified
+          POSTGRES_DB=${POSTGRES_DB:-}
+          if [ -n "$POSTGRES_DB" ] && [ "$POSTGRES_DB" != "postgres" ]; then
+            su postgres -c "createdb $POSTGRES_DB"
+          fi
+          
+          # Create user if specified  
+          POSTGRES_USER=${POSTGRES_USER:-}
+          if [ -n "$POSTGRES_USER" ] && [ "$POSTGRES_USER" != "postgres" ]; then
+            su postgres -c "psql -c \"CREATE USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';\""
+            if [ -n "$POSTGRES_DB" ]; then
+              su postgres -c "psql -c \"GRANT ALL ON DATABASE $POSTGRES_DB TO $POSTGRES_USER;\""
+            fi
+          fi
+          
+          echo "PostgreSQL is ready!"
+          su postgres -c "psql -l"
