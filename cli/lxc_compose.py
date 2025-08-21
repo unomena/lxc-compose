@@ -1261,8 +1261,8 @@ def ssh(container_name, command):
 @cli.command()
 @click.argument('container_name')
 @click.argument('log_name', required=False)
-@click.option('-c', '--config', 'file', default=DEFAULT_CONFIG, help='Config file')
-@click.option('-f', '--follow', is_flag=True, help='Follow log output (like tail -f)')
+@click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
+@click.option('--follow', is_flag=True, help='Follow log output (like tail -f)')
 @click.option('-n', '--lines', default=100, help='Number of lines to show')
 def logs(container_name, log_name, file, follow, lines):
     """View container logs
@@ -1416,39 +1416,252 @@ def logs(container_name, log_name, file, follow, lines):
         sys.exit(1)
 
 @cli.command()
-@click.argument('container_name')
-@click.argument('test_type', required=False, default='all', type=click.Choice(['all', 'internal', 'external', 'port_forwarding']))
-@click.option('-c', '--config', 'file', default=DEFAULT_CONFIG, help='Config file')
+@click.argument('container_name', required=False)
+@click.argument('test_type', required=False, default='all')
+@click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file (default: lxc-compose.yml)')
 def test(container_name, test_type, file):
-    """Run health check tests for a container
+    """Run health check tests for containers
     
     Examples:
-        lxc-compose test sample-django-app              # Run all tests
+        lxc-compose test                                # Test all containers
+        lxc-compose test -f /path/to/config.yml        # Test all with specific config
+        lxc-compose test sample-django-app              # Test specific container
+        lxc-compose test sample-django-app list         # List tests for container
         lxc-compose test sample-django-app internal     # Run only internal tests
         lxc-compose test sample-django-app external     # Run only external tests
         lxc-compose test sample-django-app port_forwarding  # Run only port forwarding tests
     """
-    # Check if container exists
-    result = subprocess.run(['lxc', 'list', container_name, '--format', 'json'], 
-                          capture_output=True, text=True)
-    if result.returncode != 0:
-        click.echo(f"{RED}✗{NC} Failed to list container: {result.stderr}")
-        sys.exit(1)
-    
-    containers = json.loads(result.stdout)
-    if not containers:
-        click.echo(f"{RED}✗{NC} Container '{container_name}' not found")
-        sys.exit(1)
-    
-    container = containers[0]
-    if container.get('status') != 'Running':
-        click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' is not running")
-        sys.exit(1)
-    
     # Load config to get test definitions
     compose = LXCCompose(file)
     compose.load_config()
     
+    # Helper function to list tests for a container
+    def list_container_tests(container_name, tests_config):
+        click.echo(f"\n{GREEN}Container: {container_name}{NC}")
+        if isinstance(tests_config, dict):
+            # Show internal tests
+            internal_tests = tests_config.get('internal', [])
+            if internal_tests:
+                click.echo(f"  {BLUE}Internal tests:{NC}")
+                for test_entry in internal_tests:
+                    if isinstance(test_entry, str) and ':' in test_entry:
+                        name, path = test_entry.split(':', 1)
+                        click.echo(f"    • {name}: {path}")
+            
+            # Show external tests
+            external_tests = tests_config.get('external', [])
+            if external_tests:
+                click.echo(f"  {BLUE}External tests:{NC}")
+                for test_entry in external_tests:
+                    if isinstance(test_entry, str) and ':' in test_entry:
+                        name, path = test_entry.split(':', 1)
+                        click.echo(f"    • {name}: {path}")
+            
+            # Show port forwarding tests
+            port_forwarding_tests = tests_config.get('port_forwarding', [])
+            if port_forwarding_tests:
+                click.echo(f"  {BLUE}Port forwarding tests:{NC}")
+                for test_entry in port_forwarding_tests:
+                    if isinstance(test_entry, str) and ':' in test_entry:
+                        name, path = test_entry.split(':', 1)
+                        click.echo(f"    • {name}: {path}")
+    
+    # Helper function to run tests for a container
+    def run_container_tests(container_name, container_config, test_type):
+        # Validate test_type
+        valid_types = ['all', 'internal', 'external', 'port_forwarding']
+        if test_type not in valid_types:
+            click.echo(f"{RED}✗{NC} Invalid test type: {test_type}")
+            click.echo(f"Valid types: {', '.join(valid_types)}")
+            return {'passed': 0, 'failed': 1}
+        
+        # Check if container exists
+        result = subprocess.run(['lxc', 'list', container_name, '--format', 'json'], 
+                              capture_output=True, text=True)
+        if result.returncode != 0:
+            click.echo(f"{RED}✗{NC} Failed to list container: {result.stderr}")
+            return {'passed': 0, 'failed': 1}
+        
+        containers = json.loads(result.stdout)
+        if not containers:
+            click.echo(f"{RED}✗{NC} Container '{container_name}' not found")
+            return {'passed': 0, 'failed': 1}
+        
+        container = containers[0]
+        if container.get('status') != 'Running':
+            click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' is not running")
+            return {'passed': 0, 'failed': 1}
+        
+        # Get tests from config
+        tests_config = container_config.get('tests', {})
+        
+        if not tests_config:
+            click.echo(f"{YELLOW}⚠{NC} No tests configured for container '{container_name}'")
+            return {'passed': 0, 'failed': 0}
+        
+        # Parse tests configuration
+        internal_tests = []
+        external_tests = []
+        port_forwarding_tests = []
+        
+        if isinstance(tests_config, dict):
+            internal_tests = tests_config.get('internal', [])
+            external_tests = tests_config.get('external', [])
+            port_forwarding_tests = tests_config.get('port_forwarding', [])
+        elif isinstance(tests_config, list):
+            internal_tests = tests_config
+        
+        # Parse test entries
+        def parse_tests(test_list):
+            tests = {}
+            for test_entry in test_list:
+                if isinstance(test_entry, str) and ':' in test_entry:
+                    name, path = test_entry.split(':', 1)
+                    tests[name] = path
+            return tests
+        
+        internal_test_map = parse_tests(internal_tests)
+        external_test_map = parse_tests(external_tests)
+        port_forwarding_test_map = parse_tests(port_forwarding_tests)
+        
+        if not internal_test_map and not external_test_map and not port_forwarding_test_map:
+            click.echo(f"{YELLOW}⚠{NC} No tests defined for container '{container_name}'")
+            return {'passed': 0, 'failed': 0}
+        
+        click.echo(f"\n{BLUE}Running tests for {container_name}...{NC}\n")
+        
+        results = {'passed': 0, 'failed': 0}
+        
+        # Run internal tests
+        if test_type in ['all', 'internal'] and internal_test_map:
+            click.echo(f"{BLUE}=== Internal Tests (running inside container) ==={NC}")
+            for test_name, test_path in internal_test_map.items():
+                click.echo(f"\nRunning internal test: {test_name}")
+                
+                # First, make the script executable
+                chmod_cmd = ['lxc', 'exec', container_name, '--', 'chmod', '+x', test_path]
+                subprocess.run(chmod_cmd, capture_output=True)
+                
+                # Run the test script inside the container
+                test_cmd = ['lxc', 'exec', container_name, '--', 'bash', test_path]
+                result = subprocess.run(test_cmd, capture_output=False, text=True)
+                
+                if result.returncode == 0:
+                    results['passed'] += 1
+                else:
+                    results['failed'] += 1
+        
+        # Run external tests
+        if test_type in ['all', 'external'] and external_test_map:
+            click.echo(f"\n{BLUE}=== External Tests (running from host) ==={NC}")
+            for test_name, test_path in external_test_map.items():
+                click.echo(f"\nRunning external test: {test_name}")
+                
+                # External tests run on the host
+                config_dir = os.path.dirname(os.path.abspath(file))
+                actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
+                
+                if not os.path.exists(actual_test_path):
+                    click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
+                    results['failed'] += 1
+                    continue
+                
+                # Make the script executable
+                os.chmod(actual_test_path, 0o755)
+                
+                # Run the test script on the host
+                result = subprocess.run(['bash', actual_test_path], capture_output=False, text=True)
+                
+                if result.returncode == 0:
+                    results['passed'] += 1
+                else:
+                    results['failed'] += 1
+        
+        # Run port forwarding tests
+        if test_type in ['all', 'port_forwarding'] and port_forwarding_test_map:
+            click.echo(f"\n{BLUE}=== Port Forwarding Tests (checking iptables rules) ==={NC}")
+            for test_name, test_path in port_forwarding_test_map.items():
+                click.echo(f"\nRunning port forwarding test: {test_name}")
+                
+                # Port forwarding tests run on the host
+                config_dir = os.path.dirname(os.path.abspath(file))
+                actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
+                
+                if not os.path.exists(actual_test_path):
+                    click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
+                    results['failed'] += 1
+                    continue
+                
+                # Make the script executable
+                os.chmod(actual_test_path, 0o755)
+                
+                # Run the test script on the host
+                result = subprocess.run(['bash', actual_test_path], capture_output=False, text=True)
+                
+                if result.returncode == 0:
+                    results['passed'] += 1
+                else:
+                    results['failed'] += 1
+        
+        return results
+    
+    # If no container specified, test all containers
+    if not container_name:
+        click.echo(f"\n{BLUE}Testing all containers in {file}...{NC}\n")
+        
+        total_results = {'passed': 0, 'failed': 0}
+        containers_tested = 0
+        
+        for container in compose.containers:
+            cont_name = container.get('name')
+            tests_config = container.get('tests', {})
+            
+            if tests_config:
+                containers_tested += 1
+                results = run_container_tests(cont_name, container, 'all')
+                total_results['passed'] += results['passed']
+                total_results['failed'] += results['failed']
+        
+        if containers_tested == 0:
+            click.echo(f"{YELLOW}No containers with tests found in {file}{NC}")
+            return
+        
+        # Display total summary
+        click.echo(f"\n{BLUE}{'='*50}{NC}")
+        click.echo(f"{BLUE}Total Test Summary{NC}")
+        click.echo(f"{BLUE}{'='*50}{NC}")
+        click.echo(f"Containers Tested: {containers_tested}")
+        click.echo(f"Tests Passed: {GREEN}{total_results['passed']}{NC}")
+        click.echo(f"Tests Failed: {RED}{total_results['failed']}{NC}")
+        
+        if total_results['failed'] == 0:
+            click.echo(f"\n{GREEN}✓ All tests passed!{NC}")
+            sys.exit(0)
+        else:
+            click.echo(f"\n{RED}✗ Some tests failed!{NC}")
+            sys.exit(1)
+    
+    # If test_type is 'list', show tests for the specified container
+    if test_type == 'list':
+        # Find container in config
+        container_config = None
+        for c in compose.containers:
+            if c.get('name') == container_name:
+                container_config = c
+                break
+        
+        if not container_config:
+            click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' not found in config file")
+            sys.exit(1)
+        
+        tests_config = container_config.get('tests', {})
+        if not tests_config:
+            click.echo(f"{YELLOW}⚠{NC} No tests configured for container '{container_name}'")
+        else:
+            list_container_tests(container_name, tests_config)
+        return
+    
+    # Run tests for the specified container
     # Find container in config
     container_config = None
     for c in compose.containers:
@@ -1460,120 +1673,8 @@ def test(container_name, test_type, file):
         click.echo(f"{YELLOW}⚠{NC} Container '{container_name}' not found in config file")
         sys.exit(1)
     
-    # Get tests from config
-    tests_config = container_config.get('tests', {})
-    
-    if not tests_config:
-        click.echo(f"{YELLOW}⚠{NC} No tests configured for container '{container_name}'")
-        sys.exit(1)
-    
-    # Parse tests configuration
-    internal_tests = []
-    external_tests = []
-    port_forwarding_tests = []
-    
-    if isinstance(tests_config, dict):
-        # New format with internal/external/port_forwarding
-        internal_tests = tests_config.get('internal', [])
-        external_tests = tests_config.get('external', [])
-        port_forwarding_tests = tests_config.get('port_forwarding', [])
-    elif isinstance(tests_config, list):
-        # Legacy format - treat as internal tests
-        internal_tests = tests_config
-    
-    # Parse test entries
-    def parse_tests(test_list):
-        tests = {}
-        for test_entry in test_list:
-            if isinstance(test_entry, str) and ':' in test_entry:
-                name, path = test_entry.split(':', 1)
-                tests[name] = path
-        return tests
-    
-    internal_test_map = parse_tests(internal_tests)
-    external_test_map = parse_tests(external_tests)
-    port_forwarding_test_map = parse_tests(port_forwarding_tests)
-    
-    # Show available tests if no specific test requested
-    if not internal_test_map and not external_test_map and not port_forwarding_test_map:
-        click.echo(f"{YELLOW}⚠{NC} No tests defined for container '{container_name}'")
-        sys.exit(1)
-    
-    click.echo(f"\n{BLUE}Running tests for {container_name}...{NC}\n")
-    
-    results = {'passed': 0, 'failed': 0}
-    
-    # Run internal tests
-    if test_type in ['all', 'internal'] and internal_test_map:
-        click.echo(f"{BLUE}=== Internal Tests (running inside container) ==={NC}")
-        for test_name, test_path in internal_test_map.items():
-            click.echo(f"\nRunning internal test: {test_name}")
-            
-            # First, make the script executable
-            chmod_cmd = ['lxc', 'exec', container_name, '--', 'chmod', '+x', test_path]
-            subprocess.run(chmod_cmd, capture_output=True)
-            
-            # Run the test script inside the container
-            test_cmd = ['lxc', 'exec', container_name, '--', 'bash', test_path]
-            result = subprocess.run(test_cmd, capture_output=False, text=True)
-            
-            if result.returncode == 0:
-                results['passed'] += 1
-            else:
-                results['failed'] += 1
-    
-    # Run external tests
-    if test_type in ['all', 'external'] and external_test_map:
-        click.echo(f"\n{BLUE}=== External Tests (running from host) ==={NC}")
-        for test_name, test_path in external_test_map.items():
-            click.echo(f"\nRunning external test: {test_name}")
-            
-            # External tests run on the host, so we need to find the actual path
-            # Assuming the path is relative to the config file directory
-            config_dir = os.path.dirname(os.path.abspath(file))
-            actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
-            
-            if not os.path.exists(actual_test_path):
-                click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
-                results['failed'] += 1
-                continue
-            
-            # Make the script executable
-            os.chmod(actual_test_path, 0o755)
-            
-            # Run the test script on the host
-            result = subprocess.run(['bash', actual_test_path], capture_output=False, text=True)
-            
-            if result.returncode == 0:
-                results['passed'] += 1
-            else:
-                results['failed'] += 1
-    
-    # Run port forwarding tests
-    if test_type in ['all', 'port_forwarding'] and port_forwarding_test_map:
-        click.echo(f"\n{BLUE}=== Port Forwarding Tests (checking iptables rules) ==={NC}")
-        for test_name, test_path in port_forwarding_test_map.items():
-            click.echo(f"\nRunning port forwarding test: {test_name}")
-            
-            # Port forwarding tests run on the host
-            config_dir = os.path.dirname(os.path.abspath(file))
-            actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
-            
-            if not os.path.exists(actual_test_path):
-                click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
-                results['failed'] += 1
-                continue
-            
-            # Make the script executable
-            os.chmod(actual_test_path, 0o755)
-            
-            # Run the test script on the host (requires sudo for iptables)
-            result = subprocess.run(['bash', actual_test_path], capture_output=False, text=True)
-            
-            if result.returncode == 0:
-                results['passed'] += 1
-            else:
-                results['failed'] += 1
+    # Run the tests
+    results = run_container_tests(container_name, container_config, test_type)
     
     # Display summary
     click.echo(f"\n{BLUE}{'='*50}{NC}")
