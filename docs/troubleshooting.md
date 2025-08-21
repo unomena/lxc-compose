@@ -2,307 +2,328 @@
 
 Common issues and solutions for LXC Compose.
 
-## Table of Contents
-- [Installation Issues](#installation-issues)
-- [Container Issues](#container-issues)
-- [Networking Issues](#networking-issues)
-- [Configuration Issues](#configuration-issues)
-- [Performance Issues](#performance-issues)
-- [Common Errors](#common-errors)
-- [Debugging Tools](#debugging-tools)
-
 ## Installation Issues
 
-### LXC/LXD Not Found
+### LXD Not Initialized
 
-**Problem:** Installation fails with "LXC not found" or "LXD not found"
+**Problem:** Error message about LXD not being initialized
 
 **Solution:**
 ```bash
-# For Ubuntu
-sudo apt update
-sudo apt install -y lxc lxc-utils
+# The installer should handle this, but if needed:
+sudo lxd init --minimal
 
-# For Debian
-sudo apt update
-sudo apt install -y lxc
-
-# Verify installation
-lxc-ls --version
+# Or with default settings:
+sudo lxd init --auto
 ```
 
 ### Permission Denied
 
-**Problem:** Installation fails with permission errors
+**Problem:** Permission errors when running commands
 
 **Solution:**
 ```bash
-# Ensure you're using sudo
-sudo ./install.sh
+# Always use sudo for LXC Compose commands
+sudo lxc-compose up
 
-# Or with curl
+# For installation
 curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/install.sh | sudo bash
 ```
 
 ### Network Bridge Missing
 
-**Problem:** Bridge network lxcbr0 not found
+**Problem:** Bridge network lxdbr0 not found
 
 **Solution:**
 ```bash
-# Create bridge manually
-sudo systemctl stop lxc-net
-sudo systemctl start lxc-net
+# Create the bridge network
+sudo lxc network create lxdbr0 ipv4.address=10.0.3.1/24 ipv4.nat=true
 
-# Verify bridge
-ip addr show lxcbr0
-
-# If still missing, reinstall lxc
-sudo apt remove --purge lxc lxc-utils
-sudo apt install lxc lxc-utils
+# Verify it exists
+lxc network list
 ```
 
 ## Container Issues
 
-### Container Name Conflicts
-
-**Problem:** Error: Container name conflict detected!
-
-**Solution:**
-```bash
-# List existing containers
-lxc-compose list
-sudo lxc-ls
-
-# Check /etc/hosts for conflicts
-grep "container-name" /etc/hosts
-
-# Use namespaced names
-# Instead of: db, web, cache
-# Use: myproject-db, myproject-web, myproject-cache
-```
-
 ### Container Won't Start
 
-**Problem:** Container created but won't start
+**Problem:** Container fails to start or shows as STOPPED
 
-**Solution:**
+**Diagnosis:**
 ```bash
 # Check container status
-sudo lxc-info -n container-name
+lxc list
 
 # View container logs
-sudo lxc-console -n container-name
+lxc info container-name --show-log
 
-# Check configuration
-sudo cat /var/lib/lxc/container-name/config
-
-# Try starting manually
-sudo lxc-start -n container-name -F  # Foreground for debugging
-
-# Check for mount issues
-sudo lxc-start -n container-name -l DEBUG -o /tmp/lxc.log
-cat /tmp/lxc.log
+# Check for errors
+lxc console container-name
 ```
 
-### Container Has No Network
+**Common Solutions:**
 
-**Problem:** Container starts but has no network connectivity
+1. Check template availability:
+```bash
+# List available images
+lxc image list ubuntu:
+lxc image list ubuntu-minimal:
+lxc image list alpine:
+```
+
+2. Verify storage pool:
+```bash
+lxc storage list
+# If missing, create default pool
+lxc storage create default dir
+```
+
+3. Check profile configuration:
+```bash
+lxc profile show default
+```
+
+### Container IP Not Assigned
+
+**Problem:** Container doesn't get an IP address
 
 **Solution:**
 ```bash
-# Check container IP
-sudo lxc-info -n container-name -iH
-
-# Verify bridge
-sudo brctl show lxcbr0
-
-# Check /etc/hosts
-cat /etc/hosts | grep "LXC Compose"
-
 # Restart container
-lxc-compose restart container-name
+lxc restart container-name
 
-# Manual IP assignment
-sudo lxc-attach -n container-name -- ip addr add 10.0.3.100/24 dev eth0
-sudo lxc-attach -n container-name -- ip route add default via 10.0.3.1
+# Check DHCP on bridge
+sudo systemctl restart lxd
+
+# Manually check network
+lxc exec container-name -- ip addr show
 ```
 
-### Mount Points Not Working
+### Mount Permission Denied
 
-**Problem:** Host directories not visible in container
+**Problem:** Can't access mounted directories
 
 **Solution:**
-```bash
-# Verify mount in config
-sudo grep mount /var/lib/lxc/container-name/config
-
-# Check host path exists
-ls -la /path/on/host
-
-# Create missing directories
-mkdir -p /path/on/host
-
-# Fix permissions
-sudo chown -R 100000:100000 /path/on/host  # For unprivileged containers
-
-# Restart container
-sudo lxc-stop -n container-name
-sudo lxc-start -n container-name
+```yaml
+# In lxc-compose.yml, add permission fixes:
+post_install:
+  - name: "Fix mount permissions"
+    command: |
+      chown -R $(id -u):$(id -g) /app
+      chmod -R 755 /app
 ```
 
 ## Networking Issues
 
-### Port Forwarding Not Working
+### Port Not Accessible
 
-**Problem:** Can't access services on forwarded ports
+**Problem:** Can't connect to exposed ports
 
-**Solution:**
+**Diagnosis:**
 ```bash
-# Check if port is listening
-sudo lxc-attach -n container-name -- netstat -tlpn
+# Check if port is exposed in config
+grep exposed_ports lxc-compose.yml
 
 # Verify iptables rules
-sudo iptables -t nat -L PREROUTING -n --line-numbers
+sudo iptables -t nat -L PREROUTING -n | grep container-name
 
-# Add port forward manually
-sudo iptables -t nat -A PREROUTING -p tcp --dport 8080 \
-  -j DNAT --to-destination 10.0.3.11:80
-
-# Make persistent
-sudo apt install iptables-persistent
-sudo netfilter-persistent save
+# Check if service is listening
+lxc exec container-name -- netstat -tlnp | grep PORT
 ```
 
-### Container Can't Reach Internet
+**Solutions:**
 
-**Problem:** Container can't access external networks
+1. Ensure port is in exposed_ports:
+```yaml
+exposed_ports:
+  - 80
+  - 443
+```
 
-**Solution:**
+2. Verify iptables rule exists:
 ```bash
-# Check NAT/masquerade
-sudo iptables -t nat -L POSTROUTING
+# Check DNAT rules
+sudo iptables -t nat -L PREROUTING -n -v
 
-# Enable IP forwarding
-echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+# Manually add if missing (temporary)
+sudo iptables -t nat -A PREROUTING -p tcp --dport 80 \
+  -j DNAT --to-destination CONTAINER_IP:80
+```
 
-# Add masquerade rule
-sudo iptables -t nat -A POSTROUTING -s 10.0.3.0/24 -j MASQUERADE
-
-# Check DNS
-sudo lxc-attach -n container-name -- cat /etc/resolv.conf
-sudo lxc-attach -n container-name -- ping 8.8.8.8
-sudo lxc-attach -n container-name -- nslookup google.com
+3. Check if another service is using the port:
+```bash
+sudo lsof -i :PORT
+sudo netstat -tlnp | grep PORT
 ```
 
 ### Containers Can't Communicate
 
-**Problem:** Containers can't reach each other
+**Problem:** Containers can't reach each other by name
 
 **Solution:**
 ```bash
-# Check /etc/hosts entries
-cat /etc/hosts | grep "LXC Compose"
+# Check shared hosts file
+cat /srv/lxc-compose/etc/hosts
 
-# Verify both containers are running
-lxc-compose ps
+# Verify from inside container
+lxc exec container1 -- cat /etc/hosts
+lxc exec container1 -- ping container2
 
-# Test connectivity
-sudo lxc-attach -n container1 -- ping container2
+# Rebuild hosts file
+sudo lxc-compose down
+sudo lxc-compose up
+```
 
-# Check firewall rules
-sudo iptables -L FORWARD
+### iptables Rules Not Created
 
-# Allow container communication
-sudo iptables -A FORWARD -s 10.0.3.0/24 -d 10.0.3.0/24 -j ACCEPT
+**Problem:** Port forwarding rules missing
+
+**Solution:**
+```bash
+# Check if UPF is installed
+which upf
+
+# Install UPF if missing
+curl -fsSL https://raw.githubusercontent.com/unomena/upf/main/install.sh | sudo bash
+
+# Recreate containers to trigger rule creation
+lxc-compose destroy
+lxc-compose up
+```
+
+## Service Issues
+
+### Supervisor Not Starting Services
+
+**Problem:** Services defined in YAML not running
+
+**Diagnosis:**
+```bash
+# Check supervisor status
+lxc exec container-name -- supervisorctl status
+
+# View supervisor logs
+lxc exec container-name -- tail -f /var/log/supervisord.log
+```
+
+**Solution:**
+```bash
+# Restart supervisor
+lxc exec container-name -- supervisorctl reload
+
+# Check service configuration
+lxc exec container-name -- cat /etc/supervisor.d/*.ini
+```
+
+### Service Keeps Restarting
+
+**Problem:** Service in restart loop
+
+**Solution:**
+1. Check service logs:
+```bash
+lxc-compose logs container-name service-name
+```
+
+2. Verify command path:
+```yaml
+services:
+  myservice:
+    command: /full/path/to/executable  # Use absolute paths
+    directory: /app                     # Set working directory
+```
+
+3. Check dependencies:
+```bash
+# Ensure required services are running
+lxc exec container-name -- ps aux | grep service
 ```
 
 ## Configuration Issues
 
+### Environment Variables Not Loading
+
+**Problem:** .env variables not available in container
+
+**Solution:**
+1. Verify .env file location (same directory as lxc-compose.yml)
+2. Check syntax:
+```env
+# Correct
+KEY=value
+DB_HOST=localhost
+
+# Wrong (no spaces around =)
+KEY = value
+```
+
+3. Use variables in post_install:
+```yaml
+post_install:
+  - name: "Use env var"
+    command: |
+      echo "Database: ${DB_HOST}"
+```
+
 ### YAML Parse Errors
 
-**Problem:** Error reading config: yaml parse error
+**Problem:** Invalid YAML configuration
 
-**Solution:**
-```yaml
-# Check YAML syntax
-# Use proper indentation (2 spaces)
-containers:
-  myapp-web:    # 2 spaces
-    ports:      # 4 spaces
-      - 8080:80 # 6 spaces
+**Common Issues:**
+- Tabs instead of spaces (use spaces only)
+- Incorrect indentation (use 2 spaces)
+- Missing quotes around version numbers
 
-# Validate YAML online
-# https://www.yamllint.com/
+**Validation:**
+```bash
+# Install yamllint
+sudo apt install yamllint
 
-# Common issues:
-# - Tabs instead of spaces
-# - Missing colons
-# - Wrong indentation
-# - Special characters not quoted
+# Check syntax
+yamllint lxc-compose.yml
 ```
 
-### Environment Variables Not Set
+### Template Not Found
 
-**Problem:** Environment variables not available in container
-
-**Solution:**
-```yaml
-# Correct format in lxc-compose.yml
-containers:
-  myapp-web:
-    environment:
-      KEY: "value"        # String format
-      PORT: "3000"        # Numbers as strings
-      DEBUG: "true"       # Booleans as strings
-
-# Verify in container
-sudo lxc-attach -n myapp-web -- env | grep KEY
-```
-
-### Services Not Starting
-
-**Problem:** Services defined but not running
+**Problem:** Error about ubuntu-minimal or alpine template
 
 **Solution:**
 ```bash
-# Check supervisor status
-sudo lxc-attach -n container-name -- supervisorctl status
+# For ubuntu-minimal
+lxc launch ubuntu-minimal:lts test-container
 
-# View service logs
-sudo lxc-attach -n container-name -- supervisorctl tail service-name
+# For alpine
+lxc launch alpine:3.19 test-container
 
-# Restart service
-sudo lxc-attach -n container-name -- supervisorctl restart service-name
-
-# Check service configuration
-sudo lxc-attach -n container-name -- cat /etc/supervisor/conf.d/services.conf
-
-# Manual start for debugging
-sudo lxc-attach -n container-name -- /path/to/command
+# If not available, use alternatives:
+# ubuntu-minimal → ubuntu
+# alpine → ubuntu with minimal packages
 ```
 
 ## Performance Issues
 
 ### Slow Container Startup
 
-**Problem:** Containers take long time to start
+**Problem:** Containers take long to start
 
-**Solution:**
+**Solutions:**
+
+1. Use Alpine for lightweight containers:
+```yaml
+template: alpine
+release: "3.19"
+```
+
+2. Minimize packages:
+```yaml
+packages:
+  - only-what-you-need
+```
+
+3. Cache package installations:
 ```bash
-# Check system resources
-free -h
-df -h
-
-# Reduce package installation
-# Only install essential packages
-
-# Use template caching
-sudo lxc-create -t download -n template-cache -- \
-  --dist ubuntu --release jammy --arch amd64
-
-# Clone from template
-sudo lxc-copy -n template-cache -N new-container
+# Create custom image after setup
+lxc publish container-name --alias myapp-base
 ```
 
 ### High Memory Usage
@@ -311,210 +332,125 @@ sudo lxc-copy -n template-cache -N new-container
 
 **Solution:**
 ```bash
-# Check memory usage
-sudo lxc-info -n container-name
-
 # Set memory limits
-echo "lxc.cgroup2.memory.max = 512M" | \
-  sudo tee -a /var/lib/lxc/container-name/config
+lxc config set container-name limits.memory 512MB
 
-# Restart container
-sudo lxc-stop -n container-name
-sudo lxc-start -n container-name
+# Check current usage
+lxc info container-name
 ```
 
-## Common Errors
+## Common Error Messages
 
 ### "Container already exists"
 
+**Solution:**
 ```bash
-# Solution 1: Use existing container
-lxc-compose start container-name
+# Remove existing container
+lxc delete container-name --force
 
-# Solution 2: Remove and recreate
-sudo lxc-stop -n container-name
-sudo lxc-destroy -n container-name
-lxc-compose up
-
-# Solution 3: Force recreate
-lxc-compose up --force-recreate
-```
-
-### "No such file or directory"
-
-```bash
-# Check if path exists
-ls -la /path/to/file
-
-# Create missing directories
-mkdir -p /srv/apps/myapp
-
-# Use absolute paths in config
-mounts:
-  - /absolute/path:/container/path  # Good
-  - ./relative:/path                 # May cause issues
+# Or use destroy command
+lxc-compose destroy
 ```
 
 ### "Address already in use"
 
+**Solution:**
 ```bash
 # Find process using port
-sudo lsof -i :8080
-sudo netstat -tlpn | grep 8080
-
-# Kill process
-sudo kill -9 <PID>
-
-# Or use different port
-ports:
-  - 8081:80  # Use 8081 instead of 8080
+sudo lsof -i :PORT
+# Kill process if needed
+sudo kill PID
 ```
 
-## Debugging Tools
+### "No such file or directory"
 
-### LXC Compose Doctor
-
+**Solution:**
 ```bash
-# Run diagnostics
-lxc-compose doctor
-
-# Auto-fix common issues
-lxc-compose doctor --fix
-
-# Check specific component
-lxc-compose doctor --check networking
-lxc-compose doctor --check containers
-lxc-compose doctor --check config
+# Ensure mount source exists
+mkdir -p ./data
+# Verify paths in lxc-compose.yml
 ```
 
-### Container Logs
+### "Connection refused"
+
+**Solution:**
+```bash
+# Check if service is running
+lxc exec container-name -- ps aux | grep service
+
+# Verify port binding
+lxc exec container-name -- netstat -tlnp
+```
+
+## Debugging Commands
+
+### Essential Diagnostic Commands
 
 ```bash
-# View all logs
-lxc-compose logs
+# Container status
+lxc list
+lxc-compose list
 
-# Follow logs
-lxc-compose logs -f
+# Container info
+lxc info container-name
 
-# Specific container
+# Container processes
+lxc exec container-name -- ps aux
+
+# Network configuration
+lxc exec container-name -- ip addr show
+lxc exec container-name -- ip route
+
+# Check mounts
+lxc exec container-name -- mount | grep /app
+
+# Service status
+lxc exec container-name -- supervisorctl status
+
+# View logs
 lxc-compose logs container-name
+lxc exec container-name -- journalctl -xe
 
-# System logs
-sudo journalctl -u lxc
-sudo journalctl -xe | grep lxc
+# Interactive shell
+lxc exec container-name -- /bin/bash
 ```
 
-### Interactive Debugging
+### Reset Everything
+
+If all else fails, complete reset:
 
 ```bash
-# Enter container shell
-lxc-compose exec container-name bash
+# Stop all containers
+lxc-compose destroy --all
 
-# Run commands
-lxc-compose exec container-name ps aux
-lxc-compose exec container-name netstat -tlpn
-lxc-compose exec container-name systemctl status
+# Clean up iptables
+sudo iptables -t nat -F
+sudo iptables -F
 
-# Attach to container console
-sudo lxc-console -n container-name
-# Press Ctrl+A, Q to exit
-```
+# Remove installation
+sudo rm -rf /srv/lxc-compose
+sudo rm -f /usr/local/bin/lxc-compose
 
-### Network Debugging
-
-```bash
-# Check routing
-ip route
-sudo lxc-attach -n container-name -- ip route
-
-# Check DNS
-nslookup container-name
-dig container-name
-
-# Trace network path
-sudo lxc-attach -n container-name -- traceroute google.com
-
-# Monitor traffic
-sudo tcpdump -i lxcbr0 -n
-```
-
-### Configuration Validation
-
-```bash
-# Validate YAML syntax
-python3 -c "import yaml; yaml.safe_load(open('lxc-compose.yml'))"
-
-# Check container config
-sudo lxc-config -l
-sudo lxc-checkconfig
-
-# Verify installation
-lxc-compose --version
-which lxc-compose
-ls -la /srv/lxc-compose/
+# Reinstall
+curl -fsSL https://raw.githubusercontent.com/unomena/lxc-compose/main/install.sh | sudo bash
 ```
 
 ## Getting Help
 
-### Collect Debug Information
+If you're still stuck:
 
-When reporting issues, include:
+1. Check container logs: `lxc-compose logs container-name`
+2. Run tests: `lxc-compose test`
+3. Review configuration: `cat lxc-compose.yml`
+4. Check [GitHub Issues](https://github.com/unomena/lxc-compose/issues)
+5. Review [Documentation](index.md)
 
-```bash
-# System information
-lsb_release -a
-uname -a
+## Prevention Tips
 
-# LXC version
-lxc-ls --version
-
-# Container list
-sudo lxc-ls -f
-
-# Configuration
-cat lxc-compose.yml
-
-# Error logs
-lxc-compose logs > error.log 2>&1
-
-# Network configuration
-ip addr
-ip route
-sudo iptables -L -n
-```
-
-### Resources
-
-- **GitHub Issues**: [Report bugs](https://github.com/unomena/lxc-compose/issues)
-- **Documentation**: [Read the docs](https://github.com/unomena/lxc-compose/tree/main/docs)
-- **Examples**: [Sample configurations](https://github.com/unomena/lxc-compose/tree/main/examples)
-
-### Quick Fixes Script
-
-Create a quick-fix script for common issues:
-
-```bash
-#!/bin/bash
-# save as fix-common.sh
-
-echo "Running LXC Compose Quick Fixes..."
-
-# Fix permissions
-sudo chown -R $USER:$USER ~/.config/lxc/
-
-# Restart networking
-sudo systemctl restart lxc-net
-
-# Clear IP allocations (careful!)
-sudo cp /srv/lxc-compose/ip-allocations.json /srv/lxc-compose/ip-allocations.backup
-echo '{"subnet":"10.0.3.0/24","next_ip":11,"allocations":{},"reserved":[1,2,3,4,5,6,7,8,9,10]}' | \
-  sudo tee /srv/lxc-compose/ip-allocations.json
-
-# Fix /etc/hosts
-sudo sed -i '/# BEGIN LXC Compose/,/# END LXC Compose/d' /etc/hosts
-
-# Run doctor
-lxc-compose doctor --fix
-
-echo "Quick fixes applied. Try running your command again."
-```
+1. **Always use sudo** for LXC Compose commands
+2. **Start simple** - test with minimal configuration first
+3. **Check logs early** - don't wait for multiple errors
+4. **Use Alpine** for databases and services (smaller, faster)
+5. **Test locally** before deploying to production
+6. **Keep configurations versioned** in git
+7. **Document custom settings** in comments

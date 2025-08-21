@@ -1,0 +1,80 @@
+version: "1.0"
+
+containers:
+  # Documentation server container
+  lxc-docs:
+    # Use Alpine for minimal footprint (~200MB total with Python)
+    template: alpine
+    release: "3.19"
+    
+    # Install required packages
+    packages:
+      - git
+      - python3
+      - py3-pip
+      - py3-virtualenv
+      - nginx
+      - supervisor
+      - curl
+      - make
+      - bash
+    
+    # Expose web server ports
+    exposed_ports:
+      - 80    # Nginx serving built docs
+      - 8000  # MkDocs dev server (optional)
+    
+    # Mount configuration files and scripts
+    mounts:
+      # Nginx configuration
+      - ./config/lxc-docs/nginx/default.conf:/etc/nginx/http.d/default.conf
+      
+      # Helper scripts
+      - ./config/lxc-docs/scripts:/docs/scripts
+      
+      # Test scripts
+      - ./tests:/docs/tests
+    
+    # Services managed by supervisor
+    services:
+      nginx:
+        command: nginx -g "daemon off;"
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/nginx.log
+        stderr_logfile: /var/log/nginx.error.log
+      
+      mkdocs-watch:
+        command: /docs/scripts/rebuild-docs.sh
+        directory: /opt/lxc-compose
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/mkdocs.log
+        stderr_logfile: /var/log/mkdocs.error.log
+    
+    # Log files to monitor
+    logs:
+      - nginx:/var/log/nginx.log
+      - nginx-error:/var/log/nginx.error.log
+      - mkdocs:/var/log/mkdocs.log
+      - build:/var/log/build.log
+    
+    # Test configurations
+    tests:
+      internal:
+        - services:/docs/tests/internal_tests.sh
+      external:
+        - web:/docs/tests/external_tests.sh
+      port_forwarding:
+        - ports:/docs/tests/port_tests.sh
+    
+    # Post-installation setup - only essential initialization
+    post_install:
+      - name: "Initialize documentation server"
+        command: |
+          # Make scripts executable
+          chmod +x /docs/scripts/*.sh
+          chmod +x /docs/tests/*.sh
+          
+          # Run initialization script
+          /docs/scripts/init-docs.sh > /var/log/build.log 2>&1

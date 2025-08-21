@@ -2,601 +2,438 @@
 
 This guide helps you migrate existing Docker Compose applications to LXC Compose.
 
-## Table of Contents
-- [Key Differences](#key-differences)
-- [Migration Strategy](#migration-strategy)
-- [Configuration Translation](#configuration-translation)
-- [Common Patterns](#common-patterns)
-- [Migration Examples](#migration-examples)
-- [Troubleshooting](#troubleshooting)
-
 ## Key Differences
 
-### Container Types
+### Container Philosophy
 
 | Docker Compose | LXC Compose |
 |---------------|-------------|
 | Application containers | System containers |
 | Single process per container | Multiple services per container |
-| Dockerfile builds | Template-based + packages |
 | Ephemeral by default | Persistent by default |
+| Dockerfile builds | Template + packages + post_install |
+| Microservices architecture | Service-oriented architecture |
 
-### Networking
+### Configuration Mapping
 
-| Docker Compose | LXC Compose |
-|---------------|-------------|
-| Docker networks | Bridge network + /etc/hosts |
-| Service discovery by name | Exact container names only |
-| Network aliases supported | No aliases - unique names required |
-| Dynamic IP allocation | Static IP allocation |
-
-### Configuration
-
-| Docker Compose | LXC Compose |
-|---------------|-------------|
-| `docker-compose.yml` | `lxc-compose.yml` |
-| `build:` context | `template:` + `packages:` |
-| `image:` specification | `template:` + `release:` |
-| `networks:` section | Automatic bridge network |
-| `volumes:` section | `mounts:` in container |
+| Docker Compose | LXC Compose | Notes |
+|---------------|-------------|-------|
+| `image:` | `template:` + `release:` | Use base OS instead of app image |
+| `build:` | `packages:` + `post_install:` | Install packages and run setup |
+| `ports:` | `exposed_ports:` | Only list ports, no mapping syntax |
+| `volumes:` | `mounts:` | Similar syntax, different behavior |
+| `environment:` | `.env` file | Environment variables in separate file |
+| `depends_on:` | `depends_on:` | Same concept |
+| `command:` | `services:` section | Define as supervisor service |
+| `networks:` | Automatic | Single bridge network |
+| `restart:` | `autorestart:` in services | Per-service configuration |
 
 ## Migration Strategy
 
 ### Step 1: Analyze Your Docker Compose File
 
-Identify the key components:
-- Services and their dependencies
-- Port mappings
-- Volume mounts
-- Environment variables
-- Networks and aliases
+Identify the components:
+- What base images are used?
+- What services run in each container?
+- What ports need exposure?
+- What data needs persistence?
+- What are the dependencies?
 
-### Step 2: Plan Container Consolidation
+### Step 2: Consolidate or Separate Services
 
-Docker Compose often uses many single-purpose containers. With LXC, you can consolidate:
+Docker Compose typically uses one container per service. With LXC Compose, you can:
 
-**Docker Compose** (multiple containers):
-```yaml
-services:
-  web:
-    image: nginx
-  app:
-    image: python:3.9
-  worker:
-    image: python:3.9
-```
+**Option A: One Service Per Container** (Docker-like)
+- Maintains microservices architecture
+- Easier migration
+- More containers to manage
 
-**LXC Compose** (consolidated):
-```yaml
-containers:
-  myapp-web:
-    template: ubuntu
-    packages:
-      - nginx
-      - python3
-    services:
-      nginx:
-        # Nginx service
-      app:
-        # Python app service
-      worker:
-        # Worker service
-```
+**Option B: Consolidate Related Services** (Recommended)
+- Group related services (e.g., app + nginx)
+- Fewer containers
+- Simpler networking
 
-### Step 3: Choose Naming Convention
+### Step 3: Map Configuration
 
-Replace Docker service names with namespaced container names:
+Create your `lxc-compose.yml` based on the mapping table above.
 
-```yaml
-# Docker Compose
-services:
-  db:
-  redis:
-  web:
+## Migration Examples
 
-# LXC Compose (with namespace)
-containers:
-  myproject-db:
-  myproject-redis:
-  myproject-web:
-```
-
-## Configuration Translation
-
-### Basic Service Translation
+### Example 1: Simple Web Application
 
 **Docker Compose:**
 ```yaml
-version: '3.8'
+version: '3'
 services:
   web:
-    image: nginx:latest
+    image: python:3.11-slim
     ports:
-      - "80:80"
+      - "5000:5000"
     volumes:
-      - ./html:/usr/share/nginx/html
-    environment:
-      - NGINX_HOST=example.com
-```
-
-**LXC Compose:**
-```yaml
-version: '1.0'
-containers:
-  myapp-web:
-    template: ubuntu
-    release: jammy
-    ports:
-      - 80:80
-    mounts:
-      - ./html:/usr/share/nginx/html
-    packages:
-      - nginx
-    environment:
-      NGINX_HOST: example.com
-```
-
-### Database Service Translation
-
-**Docker Compose:**
-```yaml
-services:
-  postgres:
-    image: postgres:14
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: myapp
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypass
-```
-
-**LXC Compose:**
-```yaml
-containers:
-  myapp-db:
-    template: ubuntu
-    release: jammy
-    ports:
-      - 5432:5432
-    mounts:
-      - /srv/data/myapp-db:/var/lib/postgresql
-    packages:
-      - postgresql
-      - postgresql-contrib
-    environment:
-      POSTGRES_DB: myapp
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypass
-    services:
-      postgresql:
-        type: system
-        config: |
-          sudo -u postgres psql <<EOF
-          CREATE USER myuser WITH PASSWORD 'mypass';
-          CREATE DATABASE myapp OWNER myuser;
-          EOF
-```
-
-### Application with Dependencies
-
-**Docker Compose:**
-```yaml
-services:
-  redis:
-    image: redis:alpine
-    
-  db:
-    image: postgres:14
-    
-  web:
-    build: .
-    depends_on:
-      - db
-      - redis
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://user:pass@db:5432/myapp
-      REDIS_URL: redis://redis:6379
-```
-
-**LXC Compose:**
-```yaml
-containers:
-  myapp-redis:
-    template: ubuntu
-    release: jammy
-    packages:
-      - redis-server
-    ports:
-      - 6379:6379
-      
-  myapp-db:
-    template: ubuntu
-    release: jammy
-    packages:
-      - postgresql
-    ports:
-      - 5432:5432
-      
-  myapp-web:
-    template: ubuntu
-    release: jammy
-    depends_on:
-      - myapp-db
-      - myapp-redis
-    ports:
-      - 8000:8000
-    mounts:
       - .:/app
+    environment:
+      - FLASK_ENV=development
+    command: python app.py
+```
+
+**LXC Compose:**
+```yaml
+version: "1.0"
+containers:
+  web:
+    template: ubuntu-minimal
+    release: lts
     packages:
       - python3
       - python3-pip
+    exposed_ports:
+      - 5000
+    mounts:
+      - .:/app
+    services:
+      flask:
+        command: python3 /app/app.py
+        directory: /app
+        autostart: true
+        autorestart: true
+    post_install:
+      - name: "Install Python dependencies"
+        command: |
+          cd /app
+          pip3 install -r requirements.txt
+```
+
+### Example 2: Web + Database
+
+**Docker Compose:**
+```yaml
+version: '3'
+services:
+  db:
+    image: postgres:15-alpine
     environment:
-      DATABASE_URL: postgresql://user:pass@myapp-db:5432/myapp
-      REDIS_URL: redis://myapp-redis:6379
+      POSTGRES_DB: myapp
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - db_data:/var/lib/postgresql/data
+  
+  web:
+    image: node:18-alpine
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://user:pass@db:5432/myapp
+    command: npm start
+
+volumes:
+  db_data:
+```
+
+**LXC Compose:**
+```yaml
+version: "1.0"
+containers:
+  db:
+    template: alpine
+    release: "3.19"
+    packages:
+      - postgresql
+    mounts:
+      - ./data/postgres:/var/lib/postgresql/data
+    post_install:
+      - name: "Setup PostgreSQL"
+        command: |
+          su postgres -c "initdb -D /var/lib/postgresql/data"
+          su postgres -c "pg_ctl start -D /var/lib/postgresql/data"
+          su postgres -c "createdb myapp"
+          su postgres -c "createuser user"
+          su postgres -c "psql -c \"ALTER USER user PASSWORD 'pass'\""
+  
+  web:
+    template: alpine
+    release: "3.19"
+    depends_on:
+      - db
+    packages:
+      - nodejs
+      - npm
+    exposed_ports:
+      - 3000
+    mounts:
+      - .:/app
+    services:
+      node:
+        command: npm start
+        directory: /app
+        autostart: true
+        environment: DATABASE_URL=postgresql://user:pass@db:5432/myapp
+    post_install:
+      - name: "Install Node dependencies"
+        command: |
+          cd /app
+          npm install
+```
+
+### Example 3: Multi-Service Application
+
+**Docker Compose:**
+```yaml
+version: '3'
+services:
+  redis:
+    image: redis:alpine
+  
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_PASSWORD: secret
+  
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+  
+  worker:
+    build: .
+    command: celery worker
+    depends_on:
+      - db
+      - redis
+  
+  nginx:
+    image: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - web
+```
+
+**LXC Compose (Consolidated):**
+```yaml
+version: "1.0"
+containers:
+  # Data services container
+  data:
+    template: alpine
+    release: "3.19"
+    packages:
+      - postgresql
+      - redis
+    post_install:
+      - name: "Setup services"
+        command: |
+          # PostgreSQL
+          su postgres -c "initdb -D /var/lib/postgresql/data"
+          su postgres -c "pg_ctl start -D /var/lib/postgresql/data"
+          su postgres -c "createdb myapp"
+          
+          # Redis
+          redis-server --daemonize yes
+  
+  # Application container (web + worker + nginx)
+  app:
+    template: ubuntu-minimal
+    release: lts
+    depends_on:
+      - data
+    packages:
+      - python3
+      - python3-pip
+      - nginx
+      - supervisor
+    exposed_ports:
+      - 80
+    mounts:
+      - .:/app
+      - ./nginx.conf:/etc/nginx/sites-available/default
+    services:
+      web:
+        command: /app/venv/bin/gunicorn myapp:app
+        directory: /app
+        autostart: true
+      worker:
+        command: /app/venv/bin/celery -A myapp worker
+        directory: /app
+        autostart: true
+    post_install:
+      - name: "Setup application"
+        command: |
+          cd /app
+          python3 -m venv venv
+          ./venv/bin/pip install -r requirements.txt
+          
+          # Start nginx
+          service nginx start
 ```
 
 ## Common Patterns
 
-### Pattern 1: Microservices to System Containers
+### Pattern 1: Database Containers
 
-**Docker (Microservices):**
+Docker often uses official database images. In LXC:
+
 ```yaml
-services:
-  nginx:
-    image: nginx
-  api:
-    image: node:16
-  worker:
-    image: node:16
+# PostgreSQL in Alpine (~150MB)
+postgres:
+  template: alpine
+  release: "3.19"
+  packages: [postgresql]
+  post_install:
+    - name: "Initialize PostgreSQL"
+      command: |
+        su postgres -c "initdb -D /var/lib/postgresql/data"
+        su postgres -c "pg_ctl start -D /var/lib/postgresql/data"
+
+# MySQL in Alpine
+mysql:
+  template: alpine
+  release: "3.19"
+  packages: [mysql, mysql-client]
+  post_install:
+    - name: "Initialize MySQL"
+      command: |
+        mysql_install_db --user=mysql
+        mysqld_safe &
 ```
 
-**LXC (Consolidated):**
+### Pattern 2: Application Runtime
+
+Replace Docker base images with OS packages:
+
+| Docker Base Image | LXC Template + Packages |
+|------------------|------------------------|
+| `python:3.11` | `ubuntu-minimal` + `python3, python3-pip` |
+| `node:18` | `ubuntu-minimal` + `nodejs, npm` |
+| `ruby:3.2` | `ubuntu-minimal` + `ruby, bundler` |
+| `golang:1.21` | `ubuntu-minimal` + `golang` |
+| `openjdk:17` | `ubuntu-minimal` + `openjdk-17-jdk` |
+| `nginx` | `alpine` + `nginx` |
+| `redis` | `alpine` + `redis` |
+
+### Pattern 3: Build Process
+
+Docker's build process becomes post_install commands:
+
 ```yaml
-containers:
-  myapp-services:
-    template: ubuntu
-    packages:
-      - nginx
-      - nodejs
-      - npm
-    services:
-      nginx:
-        type: system
-      api:
-        command: node /app/api/server.js
-      worker:
-        command: node /app/worker/index.js
-```
+# Docker
+build:
+  context: .
+  dockerfile: Dockerfile
 
-### Pattern 2: Development Environment
-
-**Docker Compose:**
-```yaml
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    volumes:
-      - .:/app
-      - /app/node_modules
-    command: npm run dev
-```
-
-**LXC Compose:**
-```yaml
-containers:
-  myapp-dev:
-    template: ubuntu
-    mounts:
-      - .:/app
-    packages:
-      - nodejs
-      - npm
-    post_install:
-      - name: "Install dependencies"
-        command: |
-          cd /app
-          npm install
-    services:
-      app:
-        command: npm run dev
-        directory: /app
-```
-
-### Pattern 3: Multi-Stage Builds → Post-Install
-
-**Docker (Multi-stage):**
-```dockerfile
-FROM node:16 AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM node:16-slim
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-CMD ["node", "dist/index.js"]
-```
-
-**LXC Compose:**
-```yaml
-containers:
-  myapp-prod:
-    template: ubuntu
-    packages:
-      - nodejs
-      - npm
-    mounts:
-      - .:/app
-    post_install:
-      - name: "Build application"
-        command: |
-          cd /app
-          npm ci
-          npm run build
-    services:
-      app:
-        command: node dist/index.js
-        directory: /app
-```
-
-## Migration Examples
-
-### Example 1: WordPress Stack
-
-**Docker Compose:**
-```yaml
-version: '3.8'
-
-services:
-  wordpress:
-    image: wordpress:latest
-    ports:
-      - 8080:80
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-      WORDPRESS_DB_NAME: wordpress
-    volumes:
-      - wordpress:/var/www/html
-    depends_on:
-      - db
-
-  db:
-    image: mysql:5.7
-    environment:
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
-      MYSQL_ROOT_PASSWORD: somewordpress
-    volumes:
-      - db:/var/lib/mysql
-
-volumes:
-  wordpress:
-  db:
-```
-
-**LXC Compose:**
-```yaml
-version: '1.0'
-
-containers:
-  wordpress-db:
-    template: ubuntu
-    release: jammy
-    ports:
-      - 3306:3306
-    packages:
-      - mysql-server
-    mounts:
-      - /srv/data/wordpress-db:/var/lib/mysql
-    environment:
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
-      MYSQL_ROOT_PASSWORD: somewordpress
-    post_install:
-      - name: "Configure MySQL"
-        command: |
-          mysql -u root <<EOF
-          CREATE DATABASE IF NOT EXISTS wordpress;
-          CREATE USER IF NOT EXISTS 'wordpress'@'%' IDENTIFIED BY 'wordpress';
-          GRANT ALL ON wordpress.* TO 'wordpress'@'%';
-          FLUSH PRIVILEGES;
-          EOF
-
-  wordpress-web:
-    template: ubuntu
-    release: jammy
-    depends_on:
-      - wordpress-db
-    ports:
-      - 8080:80
-    packages:
-      - apache2
-      - php
-      - php-mysql
-      - libapache2-mod-php
-      - wget
-    mounts:
-      - /srv/apps/wordpress:/var/www/html
-    environment:
-      WORDPRESS_DB_HOST: wordpress-db
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-      WORDPRESS_DB_NAME: wordpress
-    post_install:
-      - name: "Install WordPress"
-        command: |
-          cd /var/www/html
-          wget https://wordpress.org/latest.tar.gz
-          tar xzf latest.tar.gz --strip-components=1
-          rm latest.tar.gz
-          chown -R www-data:www-data /var/www/html
-```
-
-### Example 2: Node.js + MongoDB
-
-**Docker Compose:**
-```yaml
-version: '3.8'
-
-services:
-  mongo:
-    image: mongo:5
-    ports:
-      - 27017:27017
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: secret
-    volumes:
-      - mongo_data:/data/db
-
-  app:
-    build: .
-    ports:
-      - 3000:3000
-    environment:
-      MONGODB_URI: mongodb://admin:secret@mongo:27017
-      NODE_ENV: production
-    depends_on:
-      - mongo
-    volumes:
-      - .:/app
-      - /app/node_modules
-
-volumes:
-  mongo_data:
-```
-
-**LXC Compose:**
-```yaml
-version: '1.0'
-
-containers:
-  nodeapp-db:
-    template: ubuntu
-    release: jammy
-    ports:
-      - 27017:27017
-    packages:
-      - mongodb
-    mounts:
-      - /srv/data/nodeapp-mongo:/var/lib/mongodb
-    services:
-      mongodb:
-        type: system
-        config: |
-          sed -i 's/bind_ip = 127.0.0.1/bind_ip = 0.0.0.0/' /etc/mongodb.conf
-          systemctl restart mongodb
-
-  nodeapp-web:
-    template: ubuntu
-    release: jammy
-    depends_on:
-      - nodeapp-db
-    ports:
-      - 3000:3000
-    mounts:
-      - .:/app
-    packages:
-      - nodejs
-      - npm
-    environment:
-      MONGODB_URI: mongodb://admin:secret@nodeapp-db:27017
-      NODE_ENV: production
-    post_install:
-      - name: "Install dependencies"
-        command: |
-          cd /app
-          npm ci --production
-    services:
-      app:
-        command: node server.js
-        directory: /app
-        autostart: true
-        autorestart: true
-```
-
-## Troubleshooting
-
-### Issue: Container Name Conflicts
-
-**Problem:** Container names from Docker Compose are too generic.
-
-**Solution:** Add project namespace:
-```yaml
-# Instead of: db, web, cache
-# Use: myproject-db, myproject-web, myproject-cache
-```
-
-### Issue: Missing Build Context
-
-**Problem:** Docker Compose uses `build:` with Dockerfile.
-
-**Solution:** Use `packages:` and `post_install:`:
-```yaml
-packages:
-  - python3
-  - python3-pip
+# LXC Compose equivalent
 post_install:
-  - name: "Install requirements"
-    command: pip install -r /app/requirements.txt
+  - name: "Build application"
+    command: |
+      cd /app
+      # Install dependencies
+      pip install -r requirements.txt
+      # Run build steps
+      python setup.py install
+      # Compile assets
+      npm run build
 ```
 
-### Issue: Network Aliases
+### Pattern 4: Environment Variables
 
-**Problem:** Docker Compose uses network aliases for service discovery.
+Docker Compose embeds environment variables. LXC Compose uses `.env` files:
 
-**Solution:** Use exact container names and update connection strings:
+```env
+# .env file
+DB_HOST=data
+DB_PORT=5432
+DB_NAME=myapp
+DB_USER=appuser
+DB_PASSWORD=secret
+REDIS_HOST=data
+REDIS_PORT=6379
+```
+
+## Troubleshooting Migration
+
+### Issue: Missing Docker Image Features
+
+**Problem**: Docker image includes specific tools/configurations
+
+**Solution**: Add required packages and configuration in `post_install`:
 ```yaml
-# Docker: redis://cache:6379
-# LXC: redis://myapp-cache:6379
+post_install:
+  - name: "Install additional tools"
+    command: |
+      apt-get update
+      apt-get install -y specific-tool
+      # Configure as needed
 ```
 
-### Issue: Named Volumes
+### Issue: Complex Networking
 
-**Problem:** Docker Compose uses named volumes.
+**Problem**: Docker Compose uses custom networks
 
-**Solution:** Use host mount points:
+**Solution**: LXC Compose uses a single bridge network. Use container names for internal communication:
 ```yaml
-# Docker: volumes: - mydata:/data
-# LXC: mounts: - /srv/data/myapp:/data
+# Containers can reach each other by name
+DATABASE_URL: postgresql://user:pass@db-container:5432/myapp
 ```
 
-### Issue: Health Checks
+### Issue: Volume Permissions
 
-**Problem:** Docker Compose has built-in health checks.
+**Problem**: Docker volumes have different permissions
 
-**Solution:** Use supervisor with autorestart:
+**Solution**: Set permissions in post_install:
+```yaml
+post_install:
+  - name: "Fix permissions"
+    command: |
+      chown -R www-data:www-data /app
+      chmod -R 755 /app
+```
+
+### Issue: Init System
+
+**Problem**: Docker containers don't have init systems
+
+**Solution**: LXC containers have full init. Services can be managed properly:
 ```yaml
 services:
-  app:
-    command: /app/start.sh
-    autorestart: true  # Restarts if unhealthy
+  myservice:
+    command: /usr/bin/myservice
+    autostart: true
+    autorestart: true
 ```
 
-## Best Practices for Migration
+## Migration Checklist
 
-1. **Start with a single service** - Migrate incrementally
-2. **Use namespaces from the start** - Avoid conflicts
-3. **Consolidate related services** - Reduce container count
-4. **Test locally first** - Use development configurations
-5. **Document changes** - Note any behavioral differences
-6. **Keep both configs** - Maintain Docker Compose for compatibility
+- [ ] Inventory all Docker services
+- [ ] Decide on consolidation strategy
+- [ ] Map images to templates + packages
+- [ ] Convert port mappings to exposed_ports
+- [ ] Convert volumes to mounts
+- [ ] Move environment variables to .env
+- [ ] Convert commands to services
+- [ ] Add post_install for setup
+- [ ] Test each service individually
+- [ ] Test inter-service communication
+- [ ] Verify data persistence
+- [ ] Document any custom configurations
 
-## Next Steps
+## Benefits After Migration
 
-- Review the [Configuration Reference](configuration.md) for all options
-- Check [Troubleshooting Guide](troubleshooting.md) for common issues
-- See [Production Deployment](production.md) for best practices
+1. **Lower Resource Usage**: System containers share more resources
+2. **Persistent State**: Containers maintain state between restarts
+3. **Full System Access**: Complete init system and standard tools
+4. **Simpler Networking**: Direct container-to-container communication
+5. **Better for Stateful Apps**: Designed for persistent services
+
+## See Also
+
+- [Configuration Reference](configuration.md)
+- [Getting Started Tutorial](getting-started.md)
+- [Sample Applications](../samples/)

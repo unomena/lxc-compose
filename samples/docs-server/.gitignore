@@ -1,0 +1,20 @@
+# Local environment overrides
+.env.local
+.env.production
+
+# Build artifacts
+build/
+dist/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
