@@ -29,13 +29,15 @@ while true; do
         echo "Updates detected, rebuilding documentation..."
         git pull origin ${REPO_BRANCH}
         
-        # Build from parent directory
+        # Build from docs directory
+        cd docs
         if [ "$BUILD_CLEAN" = "true" ]; then
-            /opt/lxc-compose/docs/.venv/bin/mkdocs build --config-file docs/mkdocs.yml --clean
+            .venv/bin/mkdocs build --clean
         else
-            /opt/lxc-compose/docs/.venv/bin/mkdocs build --config-file docs/mkdocs.yml
+            .venv/bin/mkdocs build
         fi
         echo "Documentation rebuilt at $(date)"
+        cd ..
     fi
     
     # Check at configured interval

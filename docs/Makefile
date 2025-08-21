@@ -93,10 +93,6 @@ repo_url: https://github.com/unomena/lxc-compose
 repo_name: unomena/lxc-compose
 edit_uri: edit/main/docs/
 
-# MkDocs will be run from parent directory
-docs_dir: docs
-site_dir: docs/site
-
 theme:
   name: material
   language: en

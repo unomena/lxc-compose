@@ -45,9 +45,9 @@ fi
 
 # Build documentation
 echo "Building documentation..."
-# Run MkDocs from the parent directory where it can properly find the docs/ subdirectory
-cd /opt/lxc-compose
-/opt/lxc-compose/docs/.venv/bin/mkdocs build --config-file docs/mkdocs.yml --clean
+# Run MkDocs from within the docs directory
+cd /opt/lxc-compose/docs
+.venv/bin/mkdocs build --clean
 echo "Documentation built successfully"
 
 # Ensure scripts are executable
