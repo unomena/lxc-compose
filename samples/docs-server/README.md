@@ -257,10 +257,25 @@ lxc exec lxc-docs -- cat /var/log/build.log
 
 ### Nginx Not Serving
 
-Check Nginx status:
+1. Start supervisor if not running:
+```bash
+lxc exec lxc-docs -- supervisord -c /etc/supervisord.conf || true
+```
+
+2. Check service status:
+```bash
+lxc exec lxc-docs -- supervisorctl status
+```
+
+3. Check Nginx configuration:
 ```bash
 lxc exec lxc-docs -- nginx -t
 lxc-compose logs lxc-docs nginx-error
+```
+
+4. Restart services:
+```bash
+lxc exec lxc-docs -- supervisorctl restart all
 ```
 
 ### Repository Clone Failed
@@ -278,6 +293,11 @@ Check the update service:
 lxc exec lxc-docs -- supervisorctl status mkdocs-watch
 lxc-compose logs lxc-docs mkdocs
 ```
+
+### Known Issues
+
+- **Supervisor may not start automatically**: Run the supervisor start command above after container creation
+- **Documentation structure**: The repository requires markdown files in `/docs/docs/` relative to the root
 
 ## Performance
 

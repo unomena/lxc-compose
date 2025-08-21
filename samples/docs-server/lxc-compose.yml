@@ -74,3 +74,5 @@ containers:
           chmod +x /docs/scripts/*.sh
           chmod +x /docs/tests/*.sh
           /docs/scripts/init-docs.sh 2>&1 | tee /var/log/build.log
+          # Start supervisor if not already running
+          supervisord -c /etc/supervisord.conf || true
