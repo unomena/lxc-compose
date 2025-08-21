@@ -42,16 +42,28 @@ echo
 run_test "App container running" "lxc list sample-django-app --format csv | grep -q RUNNING"
 run_test "Datastore container running" "lxc list sample-datastore --format csv | grep -q RUNNING"
 
-# Test exposed ports from host
+# Test APP CONTAINER exposed ports (only Nginx should be exposed)
 if [ -n "$APP_IP" ]; then
-    # Test Nginx on port 80
+    echo -e "\n${YELLOW}Testing App Container (${APP_IP})${NC}"
+    
+    # Test Nginx on port 80 (the only exposed port for this container)
     run_test "Nginx accessible (port 80)" "curl -s -o /dev/null -w '%{http_code}' http://${APP_IP}:80 | grep -q '200\|301\|302'"
     
-    # Test Django admin
-    run_test "Django admin page" "curl -s http://${APP_IP}:80/admin/ | grep -q 'Django administration'"
+    # Test Django admin through Nginx
+    run_test "Django admin page via Nginx" "curl -s http://${APP_IP}:80/admin/ | grep -q 'Django administration'"
     
     # Test static files served by Nginx
-    run_test "Static files (CSS)" "curl -s -o /dev/null -w '%{http_code}' http://${APP_IP}:80/static/admin/css/base.css | grep -q '200\|304'"
+    run_test "Static files via Nginx" "curl -s -o /dev/null -w '%{http_code}' http://${APP_IP}:80/static/admin/css/base.css | grep -q '200\|304'"
+    
+    # Test that Django port 8000 is NOT accessible from host (internal only)
+    echo -n "Testing Django port 8000 NOT exposed... "
+    if ! nc -zv ${APP_IP} 8000 2>&1 | grep -q 'succeeded\|open'; then
+        echo -e "${GREEN}✓${NC} PASSED (correctly not exposed)"
+        ((TESTS_PASSED++))
+    else
+        echo -e "${RED}✗${NC} FAILED (port 8000 should not be exposed)"
+        ((TESTS_FAILED++))
+    fi
     
     # Test application response time
     RESPONSE_TIME=$(curl -s -o /dev/null -w '%{time_total}' http://${APP_IP}:80)
@@ -65,21 +77,26 @@ else
     echo -e "${RED}App container IP not found!${NC}"
 fi
 
+# Test DATASTORE CONTAINER - PostgreSQL and Redis should be accessible from containers
+# but in this setup they're exposed for development purposes
 if [ -n "$DATASTORE_IP" ]; then
-    # Test PostgreSQL port 5432
+    echo -e "\n${YELLOW}Testing Datastore Container (${DATASTORE_IP})${NC}"
+    
+    # Test PostgreSQL port 5432 (exposed for development)
     run_test "PostgreSQL port open (5432)" "nc -zv ${DATASTORE_IP} 5432 2>&1 | grep -q 'succeeded\|open'"
     
-    # Test Redis port 6379
+    # Test Redis port 6379 (exposed for development)
     run_test "Redis port open (6379)" "nc -zv ${DATASTORE_IP} 6379 2>&1 | grep -q 'succeeded\|open'"
     
     # Test Redis PING command
     run_test "Redis responds to PING" "echo 'PING' | nc ${DATASTORE_IP} 6379 | grep -q '+PONG'"
+    
+    # Note about security
+    echo -e "${YELLOW}Note: PostgreSQL and Redis ports are exposed for development.${NC}"
+    echo -e "${YELLOW}      In production, these should only be accessible from app containers.${NC}"
 else
     echo -e "${RED}Datastore container IP not found!${NC}"
 fi
-
-# Test port forwarding from host
-run_test "Port 80 forwarded" "curl -s -o /dev/null -w '%{http_code}' http://localhost:80 2>/dev/null | grep -q '200\|301\|302' || true"
 
 echo
 echo "=== Test Summary ==="

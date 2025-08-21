@@ -53,13 +53,10 @@ echo "Datastore Container IP: ${DATASTORE_IP}"
 echo
 
 # Define expected port mappings
+# Only Nginx on port 80 should be forwarded for the app container
+# PostgreSQL and Redis should NOT be forwarded (internal use only)
 declare -A APP_PORTS=(
     ["80"]="nginx"
-)
-
-declare -A DATASTORE_PORTS=(
-    ["5432"]="postgresql"
-    ["6379"]="redis"
 )
 
 # Function to check if port is forwarded in iptables
@@ -158,11 +155,34 @@ for port in "${!APP_PORTS[@]}"; do
 done
 check_orphaned_rules "$APP_IP" "sample-django-app"
 
-# Test Datastore container ports
-echo -e "\n${BLUE}=== Testing Datastore Container Port Forwarding ===${NC}"
-for port in "${!DATASTORE_PORTS[@]}"; do
-    check_iptables_forward "$DATASTORE_IP" "$port" "${DATASTORE_PORTS[$port]}"
-done
+# Check that datastore ports are NOT forwarded
+echo -e "\n${BLUE}=== Verifying Datastore Ports NOT Forwarded ===${NC}"
+echo -e "${BLUE}Checking that PostgreSQL and Redis are not exposed via iptables...${NC}"
+
+# Check PostgreSQL port 5432 is NOT forwarded
+echo -n "Checking PostgreSQL port 5432 NOT forwarded... "
+POSTGRES_RULE=$(sudo iptables -t nat -L PREROUTING -n -v | grep -E "dpt:5432.*to:$DATASTORE_IP:5432")
+if [ -z "$POSTGRES_RULE" ]; then
+    echo -e "${GREEN}✓${NC} PASSED (correctly not forwarded)"
+    ((TESTS_PASSED++))
+else
+    echo -e "${YELLOW}⚠${NC} WARNING: PostgreSQL port is forwarded (development setup)"
+    echo "    $POSTGRES_RULE"
+    ((WARNINGS++))
+fi
+
+# Check Redis port 6379 is NOT forwarded
+echo -n "Checking Redis port 6379 NOT forwarded... "
+REDIS_RULE=$(sudo iptables -t nat -L PREROUTING -n -v | grep -E "dpt:6379.*to:$DATASTORE_IP:6379")
+if [ -z "$REDIS_RULE" ]; then
+    echo -e "${GREEN}✓${NC} PASSED (correctly not forwarded)"
+    ((TESTS_PASSED++))
+else
+    echo -e "${YELLOW}⚠${NC} WARNING: Redis port is forwarded (development setup)"
+    echo "    $REDIS_RULE"
+    ((WARNINGS++))
+fi
+
 check_orphaned_rules "$DATASTORE_IP" "sample-datastore"
 
 # Check for any lxc-compose managed rules

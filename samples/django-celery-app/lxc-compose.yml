@@ -26,7 +26,7 @@ containers:
     
     tests:
       internal:
-        - health:/app/tests/internal_tests.sh
+        - health:/app/tests/datastore_internal_tests.sh
       external:
         - health:/app/tests/external_tests.sh
       port_forwarding:
@@ -120,7 +120,7 @@ containers:
     
     tests:
       internal:
-        - health:/app/tests/internal_tests.sh
+        - health:/app/tests/app_internal_tests.sh
       external:
         - health:/app/tests/external_tests.sh
       port_forwarding:
