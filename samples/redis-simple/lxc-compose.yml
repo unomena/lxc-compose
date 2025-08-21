@@ -1,0 +1,46 @@
+# Redis Server (Docker-style)
+# Simple Redis following official Docker patterns
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  redis:
+    template: alpine
+    release: "3.19"
+    
+    exposed_ports:
+      - 6379
+    
+    packages:
+      - redis
+    
+    post_install:
+      - name: "Setup Redis"
+        command: |
+          # Create redis user and directories
+          adduser -D -H -s /sbin/nologin redis 2>/dev/null || true
+          mkdir -p /data
+          chown redis:redis /data
+          
+          # Configure Redis for network access
+          cat > /etc/redis.conf << 'EOF'
+          bind 0.0.0.0
+          port 6379
+          dir /data
+          logfile ""
+          protected-mode no
+          EOF
+          
+          # Set password if provided
+          if [ -n "${REDIS_PASSWORD}" ]; then
+            echo "requirepass ${REDIS_PASSWORD}" >> /etc/redis.conf
+          fi
+          
+          # Start Redis
+          redis-server /etc/redis.conf --daemonize yes
+          sleep 2
+          
+          # Verify it's running
+          redis-cli ping
+          echo "Redis is ready!"
