@@ -2,6 +2,8 @@
 
 Comprehensive guide for testing LXC Compose containers and applications.
 
+> **Important**: For information about test inheritance when using `includes:` with library services, see [TEST_INHERITANCE.md](TEST_INHERITANCE.md)
+
 ## Table of Contents
 
 - [Testing Overview](#testing-overview)
@@ -9,6 +11,7 @@ Comprehensive guide for testing LXC Compose containers and applications.
   - [Internal Tests](#internal-tests)
   - [External Tests](#external-tests)
   - [Port Forwarding Tests](#port-forwarding-tests)
+- [Test Inheritance](#test-inheritance)
 - [Writing Tests](#writing-tests)
   - [Test Script Structure](#test-script-structure)
   - [Common Test Patterns](#common-test-patterns)
@@ -334,6 +337,23 @@ check_logs "/var/log/django/app.log"
 8. **Logging**: Log detailed information for debugging
 9. **Environment**: Use environment variables for configuration
 10. **Documentation**: Comment complex test logic
+
+## Test Inheritance
+
+When using `includes:` to pull in library services, tests are automatically inherited:
+
+```yaml
+containers:
+  mydb:
+    template: alpine-3.19
+    includes:
+      - postgresql  # Inherits all PostgreSQL tests
+    tests:
+      external:
+        - custom:/tests/my_test.sh  # Add your own tests too
+```
+
+See [TEST_INHERITANCE.md](TEST_INHERITANCE.md) for complete details on test inheritance.
 
 ## Configuration
 
