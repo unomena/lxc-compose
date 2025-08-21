@@ -67,11 +67,9 @@ containers:
             cp /etc/postgresql/pg_hba.conf /var/lib/postgresql/data/
           else
             # Default configuration for development
-            cat >> /var/lib/postgresql/data/pg_hba.conf <<EOF
-# Allow connections from any container
-host    all             all             0.0.0.0/0               md5
-host    all             all             ::/0                    md5
-EOF
+            echo "# Allow connections from any container" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "host    all             all             0.0.0.0/0               md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "host    all             all             ::/0                    md5" >> /var/lib/postgresql/data/pg_hba.conf
           fi
           
           # Configure PostgreSQL to listen on all interfaces
@@ -179,30 +177,28 @@ EOF
           sleep 2
           
           # Add logging configuration
-          cat >> /var/lib/postgresql/data/postgresql.conf <<EOF
-          
-# Logging
-logging_collector = on
-log_directory = '/var/lib/postgresql'
-log_filename = 'postgresql-%Y-%m-%d.log'
-log_file_mode = 0640
-log_rotation_age = 1d
-log_rotation_size = 100MB
-log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
-log_checkpoints = on
-log_connections = on
-log_disconnections = on
-log_duration = off
-log_error_verbosity = default
-log_hostname = on
-log_lock_waits = on
-log_statement = 'all'
-log_temp_files = 0
-log_timezone = 'UTC'
-
-# Performance logging
-log_min_duration_statement = 1000  # Log slow queries (> 1 second)
-EOF
+          echo "" >> /var/lib/postgresql/data/postgresql.conf
+          echo "# Logging" >> /var/lib/postgresql/data/postgresql.conf
+          echo "logging_collector = on" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_directory = '/var/lib/postgresql'" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_filename = 'postgresql-%Y-%m-%d.log'" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_file_mode = 0640" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_rotation_age = 1d" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_rotation_size = 100MB" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_checkpoints = on" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_connections = on" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_disconnections = on" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_duration = off" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_error_verbosity = default" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_hostname = on" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_lock_waits = on" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_statement = 'all'" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_temp_files = 0" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_timezone = 'UTC'" >> /var/lib/postgresql/data/postgresql.conf
+          echo "" >> /var/lib/postgresql/data/postgresql.conf
+          echo "# Performance logging" >> /var/lib/postgresql/data/postgresql.conf
+          echo "log_min_duration_statement = 1000" >> /var/lib/postgresql/data/postgresql.conf
       
       - name: "Start PostgreSQL service"
         command: |
