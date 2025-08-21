@@ -29,11 +29,11 @@ while true; do
         echo "Updates detected, rebuilding documentation..."
         git pull origin ${REPO_BRANCH}
         
-        cd docs
+        # Build from parent directory
         if [ "$BUILD_CLEAN" = "true" ]; then
-            .venv/bin/mkdocs build --clean
+            /opt/lxc-compose/docs/.venv/bin/mkdocs build --config-file docs/mkdocs.yml --clean
         else
-            .venv/bin/mkdocs build
+            /opt/lxc-compose/docs/.venv/bin/mkdocs build --config-file docs/mkdocs.yml
         fi
         echo "Documentation rebuilt at $(date)"
     fi

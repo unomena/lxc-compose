@@ -93,9 +93,9 @@ repo_url: https://github.com/unomena/lxc-compose
 repo_name: unomena/lxc-compose
 edit_uri: edit/main/docs/
 
-# Documentation files are in current directory
-docs_dir: .
-site_dir: site
+# MkDocs will be run from parent directory
+docs_dir: docs
+site_dir: docs/site
 
 theme:
   name: material

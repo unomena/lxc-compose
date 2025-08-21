@@ -8,14 +8,13 @@ BUILD_CLEAN=${BUILD_CLEAN:-true}
 echo "Manually rebuilding documentation..."
 cd /opt/lxc-compose
 git pull origin ${REPO_BRANCH}
-cd docs
 
 if [ "$BUILD_CLEAN" = "true" ]; then
     echo "Building with --clean flag..."
-    .venv/bin/mkdocs build --clean
+    /opt/lxc-compose/docs/.venv/bin/mkdocs build --config-file docs/mkdocs.yml --clean
 else
     echo "Building without --clean flag..."
-    .venv/bin/mkdocs build
+    /opt/lxc-compose/docs/.venv/bin/mkdocs build --config-file docs/mkdocs.yml
 fi
 
 echo "Documentation rebuilt successfully"
