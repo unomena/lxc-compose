@@ -1,5 +1,5 @@
 # SearXNG - Privacy-respecting metasearch engine
-# Single container setup with Redis for caching
+# Single container setup with Redis for result caching and rate limiting
 
 version: '1.0'
 
@@ -61,9 +61,10 @@ containers:
         stopwaitsecs: 600
     
     post_install:
-      - name: "Setup Redis"
+      - name: "Setup Redis for caching"
         command: |
-          # Configure Redis for SearXNG caching
+          # Configure Redis for SearXNG caching and rate limiting
+          # Redis is connected via settings.yml (redis: url: redis://127.0.0.1:6379/0)
           sed -i 's/^# maxmemory <bytes>/maxmemory 100mb/' /etc/redis/redis.conf
           sed -i 's/^# maxmemory-policy noeviction/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
           sed -i 's/^bind 127.0.0.1 ::1/bind 127.0.0.1/' /etc/redis/redis.conf

@@ -18,8 +18,19 @@ This sample uses a single Ubuntu Minimal container with:
 - **SearXNG**: The metasearch engine application
 - **uWSGI**: Python application server
 - **Nginx**: Web server and reverse proxy
-- **Redis**: In-memory cache for search results
+- **Redis**: In-memory cache for search results and rate limiting data
 - **Supervisor**: Process management for SearXNG
+
+### How Redis is Connected
+Redis is configured in `config/sample-searxng-app/settings.yml`:
+```yaml
+redis:
+  url: redis://127.0.0.1:6379/0
+```
+SearXNG uses Redis for:
+- Caching search results to reduce load on search engines
+- Storing rate limiting data to prevent abuse
+- Managing session data
 
 ## Quick Start
 

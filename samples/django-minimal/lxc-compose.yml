@@ -4,7 +4,7 @@
 version: '1.0'
 
 containers:
-  sample-django-datastore:
+  sample-django-minimal-database:
     template: alpine
     release: "3.19"
     
@@ -57,7 +57,7 @@ containers:
           su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
 
   sample-django-app:
-    template: ubuntu-minimal
+    template: ubuntu-minimal-database
     release: lts
     
     # Dependencies must exist before this container can start
