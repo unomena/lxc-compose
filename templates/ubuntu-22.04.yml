@@ -1,0 +1,60 @@
+# Ubuntu 22.04 LTS Template
+# Standard Ubuntu base for full-featured containers
+# Size: ~500MB with basic packages
+
+version: '1.0'
+
+template:
+  name: ubuntu-22.04
+  description: Ubuntu 22.04 LTS (Jammy Jellyfish) - Full-featured base image
+  image: ubuntu:22.04
+  aliases:
+    - ubuntu:jammy
+    - ubuntu:lts
+  
+  # Base packages commonly needed
+  base_packages:
+    - apt-utils
+    - curl
+    - wget
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - software-properties-common
+    
+  # Package manager
+  package_manager: apt
+  
+  # System initialization
+  init_commands:
+    - name: "Update package index"
+      command: "apt-get update"
+    
+    - name: "Install base packages"
+      command: "apt-get install -y curl wget ca-certificates gnupg lsb-release"
+    
+    - name: "Clean apt cache"
+      command: "apt-get clean && rm -rf /var/lib/apt/lists/*"
+  
+  # Environment
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    LANG: "C.UTF-8"
+    DEBIAN_FRONTEND: "noninteractive"
+  
+  # Notes for developers
+  notes: |
+    Ubuntu 22.04 LTS provides:
+    - Full systemd support (in LXC privileged mode)
+    - APT package management
+    - Wide package availability
+    - Good for complex applications
+    
+    Common packages:
+    - mysql-server for MySQL
+    - postgresql for PostgreSQL
+    - mongodb-org (requires adding repo)
+    - nodejs (via NodeSource repo)
+    - python3/python3-pip for Python
+    - nginx for web server
+    - rabbitmq-server for messaging

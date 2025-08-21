@@ -71,6 +71,7 @@ Most applications can be migrated in under an hour. [See our migration guide →
 - [Installation](#installation)
 - [Commands](#commands)
 - [Configuration](#configuration)
+- [Service Library](#service-library)
 - [Directory Structure](#directory-structure)
 - [Sample Projects](#sample-projects)
 - [Testing](#testing)
@@ -220,6 +221,40 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for complete configuration re
 - Container dependencies
 - Test configurations
 - Log definitions
+
+## Service Library
+
+Pre-configured, production-ready services available in the `library/` directory:
+
+### Databases
+- **PostgreSQL** - Relational database (Alpine-based, 5432)
+- **MySQL** - Relational database (Ubuntu-based, 3306)
+- **MongoDB** - NoSQL database (Ubuntu-based, 27017)
+- **Redis** - In-memory cache/database (Alpine-based, 6379)
+
+### Web/Proxy
+- **Nginx** - Web server/reverse proxy (Alpine-based, 80/443)
+- **HAProxy** - Load balancer (Alpine-based, 80/443/8404)
+
+### Caching
+- **Memcached** - Distributed memory cache (Alpine-based, 11211)
+
+### Message Queues
+- **RabbitMQ** - Message broker (Ubuntu-based, 5672/15672)
+
+### Monitoring/Search
+- **Elasticsearch** - Search and analytics (Ubuntu-based, 9200/9300)
+- **Grafana** - Metrics visualization (Ubuntu-based, 3000)
+- **Prometheus** - Metrics collection (Ubuntu-based, 9090)
+
+Quick deploy any service:
+```bash
+cp -r library/postgresql ~/myproject/
+cd ~/myproject/postgresql
+lxc-compose up
+```
+
+See [library/README.md](library/README.md) for detailed service documentation.
 
 ## Directory Structure
 

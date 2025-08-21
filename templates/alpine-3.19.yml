@@ -1,0 +1,49 @@
+# Alpine Linux 3.19 Template
+# Minimal Alpine base for lightweight containers
+# Size: ~150MB with basic packages
+
+version: '1.0'
+
+template:
+  name: alpine-3.19
+  description: Alpine Linux 3.19 - Minimal base image
+  image: images:alpine/3.19
+  
+  # Base packages commonly needed
+  base_packages:
+    - alpine-base
+    - bash
+    - curl
+    - ca-certificates
+    
+  # Package manager
+  package_manager: apk
+  
+  # System initialization
+  init_commands:
+    - name: "Update package index"
+      command: "apk update"
+    
+    - name: "Install base packages"
+      command: "apk add --no-cache bash curl ca-certificates"
+  
+  # Environment
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    LANG: "C.UTF-8"
+  
+  # Notes for developers
+  notes: |
+    Alpine Linux uses:
+    - apk for package management
+    - musl libc instead of glibc
+    - adduser instead of useradd
+    - OpenRC for init (limited in containers)
+    - Minimal by default - install what you need
+    
+    Common packages:
+    - postgresql15 (not postgresql)
+    - nodejs/npm for Node.js
+    - python3/py3-pip for Python
+    - nginx for web server
+    - redis for caching

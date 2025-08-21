@@ -1,0 +1,55 @@
+# Ubuntu Minimal LTS Template
+# Minimal Ubuntu base for lightweight containers
+# Size: ~300MB with basic packages
+
+version: '1.0'
+
+template:
+  name: ubuntu-minimal-lts
+  description: Ubuntu Minimal LTS - Lightweight Ubuntu base image
+  image: ubuntu-minimal:lts
+  aliases:
+    - ubuntu-minimal:22.04
+    - ubuntu-minimal:jammy
+  
+  # Base packages commonly needed
+  base_packages:
+    - curl
+    - ca-certificates
+    
+  # Package manager
+  package_manager: apt
+  
+  # System initialization
+  init_commands:
+    - name: "Update package index"
+      command: "apt-get update"
+    
+    - name: "Install minimal packages"
+      command: "apt-get install -y --no-install-recommends curl ca-certificates"
+    
+    - name: "Clean apt cache"
+      command: "apt-get clean && rm -rf /var/lib/apt/lists/*"
+  
+  # Environment
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    LANG: "C.UTF-8"
+    DEBIAN_FRONTEND: "noninteractive"
+  
+  # Notes for developers
+  notes: |
+    Ubuntu Minimal provides:
+    - Smaller footprint than standard Ubuntu
+    - APT package management
+    - No systemd by default
+    - Fewer pre-installed packages
+    
+    Best for:
+    - Simple applications
+    - Single-service containers
+    - When you want Ubuntu compatibility with less overhead
+    
+    May need to install:
+    - apt-utils for better apt experience
+    - systemd if needed for services
