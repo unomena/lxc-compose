@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Get container IP
-CONTAINER_IP=$(lxc list nginx -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
+CONTAINER_IP=$(lxc list nginx-alpine-3-19 -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
 
 if [ -z "$CONTAINER_IP" ]; then
     echo -e "${RED}✗${NC} Could not determine container IP"
@@ -31,7 +31,7 @@ fi
 
 # Test 2: Check if default page contains expected content
 echo "2. Checking default page content..."
-if curl -s http://$CONTAINER_IP | grep -q "Welcome to nginx"; then
+if curl -s http://$CONTAINER_IP | grep -q "Welcome to nginx-alpine-3-19"; then
     echo -e "${GREEN}✓${NC} Default page content found"
 else
     echo -e "${RED}✗${NC} Default page content not found"
@@ -40,7 +40,7 @@ fi
 
 # Test 3: Check response headers
 echo "3. Checking response headers..."
-if curl -sI http://$CONTAINER_IP | grep -q "Server: nginx"; then
+if curl -sI http://$CONTAINER_IP | grep -q "Server: nginx-alpine-3-19"; then
     echo -e "${GREEN}✓${NC} Nginx server header present"
 else
     echo -e "${RED}✗${NC} Nginx server header missing"

@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Get container IP
-CONTAINER_IP=$(lxc list grafana -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
+CONTAINER_IP=$(lxc list grafana-ubuntu-22-04 -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
 
 if [ -z "$CONTAINER_IP" ]; then
     echo -e "${RED}✗${NC} Could not determine container IP"
@@ -50,7 +50,7 @@ fi
 
 # Test 4: Check Grafana process
 echo "4. Checking Grafana process..."
-if lxc exec grafana -- pgrep grafana > /dev/null; then
+if lxc exec grafana-ubuntu-22-04 -- pgrep grafana-ubuntu-22-04 > /dev/null; then
     echo -e "${GREEN}✓${NC} Grafana process is running"
 else
     echo -e "${RED}✗${NC} Grafana process not found"

@@ -141,6 +141,9 @@ class TemplateHandler:
         if 'name' in container_config:
             merged['name'] = container_config['name']
         
+        # Store template name for container naming
+        template_name = container_config.get('template', '')
+        
         # Step 1: Apply template if specified
         if 'template' in container_config:
             template_name = container_config['template']

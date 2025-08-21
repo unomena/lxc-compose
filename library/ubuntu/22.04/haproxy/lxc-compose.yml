@@ -5,7 +5,7 @@
 version: '1.0'
 
 containers:
-  haproxy:
+  haproxy-ubuntu-22-04:
     template: ubuntu-22.04
     
     exposed_ports:

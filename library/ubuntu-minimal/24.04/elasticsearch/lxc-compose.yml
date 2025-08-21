@@ -5,7 +5,7 @@
 version: '1.0'
 
 containers:
-  elasticsearch:
+  elasticsearch-minimal-24-04:
     template: ubuntu-minimal-24.04
     
     exposed_ports:

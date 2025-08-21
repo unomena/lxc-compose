@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Get container IP
-CONTAINER_IP=$(lxc list haproxy -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
+CONTAINER_IP=$(lxc list haproxy-alpine-3-19 -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
 
 if [ -z "$CONTAINER_IP" ]; then
     echo -e "${RED}✗${NC} Could not determine container IP"
@@ -40,7 +40,7 @@ fi
 
 # Test 3: Check HAProxy process
 echo "3. Checking HAProxy process..."
-if lxc exec haproxy -- pgrep haproxy > /dev/null; then
+if lxc exec haproxy-alpine-3-19 -- pgrep haproxy-alpine-3-19 > /dev/null; then
     echo -e "${GREEN}✓${NC} HAProxy process is running"
 else
     echo -e "${RED}✗${NC} HAProxy process not found"

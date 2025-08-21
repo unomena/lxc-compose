@@ -5,7 +5,7 @@
 version: '1.0'
 
 containers:
-  postgres:
+  postgresql-alpine-3-19:
     template: alpine-3.19
     
     exposed_ports:

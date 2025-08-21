@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Get container IP
-CONTAINER_IP=$(lxc list mongodb -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
+CONTAINER_IP=$(lxc list mongodb-ubuntu-22-04 -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
 
 if [ -z "$CONTAINER_IP" ]; then
     echo -e "${RED}✗${NC} Could not determine container IP"
@@ -33,7 +33,7 @@ echo "2. Testing MongoDB operations..."
 
 # Insert test document
 echo "  Inserting test document..."
-lxc exec mongodb -- mongosh --eval "db.test.insertOne({name: 'test', value: 123})" testdb > /dev/null 2>&1
+lxc exec mongodb-ubuntu-22-04 -- mongosh --eval "db.test.insertOne({name: 'test', value: 123})" testdb > /dev/null 2>&1
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Document inserted"
 else
@@ -43,7 +43,7 @@ fi
 
 # Query test document
 echo "  Querying test document..."
-RESULT=$(lxc exec mongodb -- mongosh --quiet --eval "db.test.findOne({name: 'test'}).value" testdb 2>/dev/null)
+RESULT=$(lxc exec mongodb-ubuntu-22-04 -- mongosh --quiet --eval "db.test.findOne({name: 'test'}).value" testdb 2>/dev/null)
 if [ "$RESULT" = "123" ]; then
     echo -e "${GREEN}✓${NC} Document retrieved: value=$RESULT"
 else
@@ -53,7 +53,7 @@ fi
 
 # Count documents
 echo "  Counting documents..."
-COUNT=$(lxc exec mongodb -- mongosh --quiet --eval "db.test.countDocuments()" testdb 2>/dev/null)
+COUNT=$(lxc exec mongodb-ubuntu-22-04 -- mongosh --quiet --eval "db.test.countDocuments()" testdb 2>/dev/null)
 if [ "$COUNT" -ge "1" ]; then
     echo -e "${GREEN}✓${NC} Document count: $COUNT"
 else
@@ -63,7 +63,7 @@ fi
 
 # Cleanup
 echo "  Cleaning up..."
-lxc exec mongodb -- mongosh --eval "db.dropDatabase()" testdb > /dev/null 2>&1
+lxc exec mongodb-ubuntu-22-04 -- mongosh --eval "db.dropDatabase()" testdb > /dev/null 2>&1
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Test database dropped"
 else

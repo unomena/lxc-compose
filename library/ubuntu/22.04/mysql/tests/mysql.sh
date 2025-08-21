@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Get container IP
-CONTAINER_IP=$(lxc list mysql -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
+CONTAINER_IP=$(lxc list mysql-ubuntu-22-04 -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
 
 if [ -z "$CONTAINER_IP" ]; then
     echo -e "${RED}✗${NC} Could not determine container IP"
@@ -30,11 +30,11 @@ fi
 
 # Test 2: Test MySQL connection and operations
 echo "2. Testing MySQL operations..."
-PASSWORD=${MYSQL_ROOT_PASSWORD:-mysql}
+PASSWORD=${MYSQL_ROOT_PASSWORD:-mysql-ubuntu-22-04}
 
 # Create test database
 echo "  Creating test database..."
-lxc exec mysql -- mysql -u root -p$PASSWORD -e "CREATE DATABASE IF NOT EXISTS testdb;"
+lxc exec mysql-ubuntu-22-04 -- mysql-ubuntu-22-04 -u root -p$PASSWORD -e "CREATE DATABASE IF NOT EXISTS testdb;"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Database created"
 else
@@ -44,7 +44,7 @@ fi
 
 # Create test table
 echo "  Creating test table..."
-lxc exec mysql -- mysql -u root -p$PASSWORD testdb -e "CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(50));"
+lxc exec mysql-ubuntu-22-04 -- mysql-ubuntu-22-04 -u root -p$PASSWORD testdb -e "CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(50));"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Table created"
 else
@@ -54,7 +54,7 @@ fi
 
 # Insert test data
 echo "  Inserting test data..."
-lxc exec mysql -- mysql -u root -p$PASSWORD testdb -e "INSERT INTO test_table VALUES (1, 'test');"
+lxc exec mysql-ubuntu-22-04 -- mysql-ubuntu-22-04 -u root -p$PASSWORD testdb -e "INSERT INTO test_table VALUES (1, 'test');"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Data inserted"
 else
@@ -64,7 +64,7 @@ fi
 
 # Query test data
 echo "  Querying test data..."
-RESULT=$(lxc exec mysql -- mysql -u root -p$PASSWORD testdb -sN -e "SELECT name FROM test_table WHERE id=1;")
+RESULT=$(lxc exec mysql-ubuntu-22-04 -- mysql-ubuntu-22-04 -u root -p$PASSWORD testdb -sN -e "SELECT name FROM test_table WHERE id=1;")
 if [ "$RESULT" = "test" ]; then
     echo -e "${GREEN}✓${NC} Data retrieved: $RESULT"
 else
@@ -74,7 +74,7 @@ fi
 
 # Cleanup
 echo "  Cleaning up..."
-lxc exec mysql -- mysql -u root -p$PASSWORD -e "DROP DATABASE testdb;"
+lxc exec mysql-ubuntu-22-04 -- mysql-ubuntu-22-04 -u root -p$PASSWORD -e "DROP DATABASE testdb;"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Test database dropped"
 else

@@ -11,7 +11,7 @@ NC='\033[0m'
 
 # Get container name - check which one exists
 CONTAINER_NAME=""
-for name in postgres postgresql-server; do
+for name in postgresql-debian-12 postgresql-debian-12ql-server; do
     if lxc info $name >/dev/null 2>&1; then
         CONTAINER_NAME=$name
         break
@@ -19,7 +19,7 @@ for name in postgres postgresql-server; do
 done
 
 if [ -z "$CONTAINER_NAME" ]; then
-    echo -e "${RED}✗${NC} PostgreSQL container not found (tried: postgres, postgresql-server)"
+    echo -e "${RED}✗${NC} PostgreSQL container not found (tried: postgresql-debian-12, postgresql-debian-12ql-server)"
     exit 1
 fi
 
@@ -36,7 +36,7 @@ echo "PostgreSQL IP: $CONTAINER_IP"
 # Test using lxc exec to run psql commands
 echo ""
 echo "1. Creating test database..."
-lxc exec $CONTAINER_NAME -- su postgres -c "createdb testdb"
+lxc exec $CONTAINER_NAME -- su postgresql-debian-12 -c "createdb testdb"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Database created"
 else
@@ -46,7 +46,7 @@ fi
 
 echo ""
 echo "2. Creating test table..."
-lxc exec $CONTAINER_NAME -- su postgres -c "psql -d testdb -c 'CREATE TABLE test_table (id SERIAL PRIMARY KEY, name VARCHAR(50), created_at TIMESTAMP DEFAULT NOW());'"
+lxc exec $CONTAINER_NAME -- su postgresql-debian-12 -c "psql -d testdb -c 'CREATE TABLE test_table (id SERIAL PRIMARY KEY, name VARCHAR(50), created_at TIMESTAMP DEFAULT NOW());'"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Table created"
 else
@@ -56,7 +56,7 @@ fi
 
 echo ""
 echo "3. Inserting test record..."
-lxc exec $CONTAINER_NAME -- su postgres -c "psql -d testdb -c \"INSERT INTO test_table (name) VALUES ('Test Record');\""
+lxc exec $CONTAINER_NAME -- su postgresql-debian-12 -c "psql -d testdb -c \"INSERT INTO test_table (name) VALUES ('Test Record');\""
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Record inserted"
 else
@@ -66,7 +66,7 @@ fi
 
 echo ""
 echo "4. Querying test record..."
-RESULT=$(lxc exec $CONTAINER_NAME -- su postgres -c "psql -d testdb -t -c \"SELECT name FROM test_table WHERE name='Test Record';\"" | tr -d ' ')
+RESULT=$(lxc exec $CONTAINER_NAME -- su postgresql-debian-12 -c "psql -d testdb -t -c \"SELECT name FROM test_table WHERE name='Test Record';\"" | tr -d ' ')
 if [ "$RESULT" = "TestRecord" ]; then
     echo -e "${GREEN}✓${NC} Record found: $RESULT"
 else
@@ -76,7 +76,7 @@ fi
 
 echo ""
 echo "5. Deleting test record..."
-lxc exec $CONTAINER_NAME -- su postgres -c "psql -d testdb -c \"DELETE FROM test_table WHERE name='Test Record';\""
+lxc exec $CONTAINER_NAME -- su postgresql-debian-12 -c "psql -d testdb -c \"DELETE FROM test_table WHERE name='Test Record';\""
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Record deleted"
 else
@@ -86,7 +86,7 @@ fi
 
 echo ""
 echo "6. Dropping test table..."
-lxc exec $CONTAINER_NAME -- su postgres -c "psql -d testdb -c 'DROP TABLE test_table;'"
+lxc exec $CONTAINER_NAME -- su postgresql-debian-12 -c "psql -d testdb -c 'DROP TABLE test_table;'"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Table dropped"
 else
@@ -96,7 +96,7 @@ fi
 
 echo ""
 echo "7. Dropping test database..."
-lxc exec $CONTAINER_NAME -- su postgres -c "dropdb testdb"
+lxc exec $CONTAINER_NAME -- su postgresql-debian-12 -c "dropdb testdb"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓${NC} Database dropped"
 else

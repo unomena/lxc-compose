@@ -5,7 +5,7 @@
 version: '1.0'
 
 containers:
-  prometheus:
+  prometheus-ubuntu-22-04:
     template: ubuntu-22.04
     
     exposed_ports:

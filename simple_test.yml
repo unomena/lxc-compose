@@ -1,0 +1,23 @@
+# Simple test to verify includes work
+version: '1.0'
+
+containers:
+  # Test 1: Alpine PostgreSQL via includes
+  test-pg:
+    template: alpine-3.19
+    includes:
+      - postgresql
+    environment:
+      POSTGRES_PASSWORD: testpass123
+  
+  # Test 2: Ubuntu Redis via includes  
+  test-cache:
+    template: ubuntu-lts
+    includes:
+      - redis
+  
+  # Test 3: Debian Nginx via includes
+  test-web:
+    template: debian-bookworm
+    includes:
+      - nginx

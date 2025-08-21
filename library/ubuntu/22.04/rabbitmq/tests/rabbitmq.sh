@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Get container IP
-CONTAINER_IP=$(lxc list rabbitmq -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
+CONTAINER_IP=$(lxc list rabbitmq-ubuntu-22-04 -f json | jq -r '.[0].state.network.eth0.addresses[] | select(.family=="inet").address')
 
 if [ -z "$CONTAINER_IP" ]; then
     echo -e "${RED}✗${NC} Could not determine container IP"
@@ -51,7 +51,7 @@ fi
 
 # Test 4: Check RabbitMQ process
 echo "4. Checking RabbitMQ process..."
-if lxc exec rabbitmq -- pgrep -f rabbitmq > /dev/null; then
+if lxc exec rabbitmq-ubuntu-22-04 -- pgrep -f rabbitmq-ubuntu-22-04 > /dev/null; then
     echo -e "${GREEN}✓${NC} RabbitMQ process is running"
 else
     echo -e "${RED}✗${NC} RabbitMQ process not found"

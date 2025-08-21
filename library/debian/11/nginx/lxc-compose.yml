@@ -5,7 +5,7 @@
 version: '1.0'
 
 containers:
-  nginx:
+  nginx-debian-11:
     template: debian-11
     
     exposed_ports:
