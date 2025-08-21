@@ -1,0 +1,33 @@
+# Redis Server - Ubuntu 24.04
+# Redis on Ubuntu 24.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  redis:
+    image: ubuntu:24.04
+    
+    exposed_ports:
+      - 6379
+    
+    packages:
+      - redis-server
+    
+    tests:
+      external:
+        - operations:/tests/redis.sh
+    
+    post_install:
+      - name: "Setup Redis"
+        command: |
+
+          # Configure Redis for network access
+          sed -i 's/^bind 127.0.0.1.*/bind 0.0.0.0/' /etc/redis/redis.conf
+          sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
+          
+          # Restart Redis
+          systemctl restart redis-server
+          sleep 2
+          
+          echo "Redis is ready!"

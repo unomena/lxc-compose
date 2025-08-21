@@ -1,0 +1,29 @@
+# Memcached Server - Debian 11
+# Memcached on Debian 11
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  memcached:
+    image: debian:11
+    
+    exposed_ports:
+      - 11211
+    
+    packages:
+      - memcached
+    
+    tests:
+      external:
+        - memcached:/tests/memcached.sh
+    
+    post_install:
+      - name: "Setup Memcached"
+        command: |
+
+          # Configure and start memcached
+          sed -i 's/-l 127.0.0.1/-l 0.0.0.0/' /etc/memcached.conf
+          systemctl restart memcached
+          
+          echo "Memcached is ready!"

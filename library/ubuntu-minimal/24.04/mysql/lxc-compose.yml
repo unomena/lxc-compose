@@ -1,0 +1,30 @@
+# Mysql Server - Ubuntu-Minimal 24.04
+# Mysql on Ubuntu-Minimal 24.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  mysql:
+    image: ubuntu-minimal:24.04
+    
+    exposed_ports:
+      - 3306
+    
+    packages:
+      - mysql-server
+      - mysql-client
+    
+    tests:
+      external:
+        - mysql:/tests/mysql.sh
+    
+    post_install:
+      - name: "Setup Mysql"
+        command: |
+
+          # Start MySQL service
+          service mysql start
+          sleep 5
+          
+          echo "Mysql is ready!"

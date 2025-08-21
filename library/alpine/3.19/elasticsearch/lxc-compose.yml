@@ -1,0 +1,27 @@
+# Elasticsearch Server - Alpine 3.19
+# Elasticsearch on Alpine 3.19
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  elasticsearch:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 9200
+      - 9300
+    
+    packages:
+
+    
+    tests:
+      external:
+        - elasticsearch:/tests/elasticsearch.sh
+    
+    post_install:
+      - name: "Setup Elasticsearch"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Elasticsearch is ready!"

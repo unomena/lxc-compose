@@ -1,0 +1,27 @@
+# Rabbitmq Server - Ubuntu-Minimal 24.04
+# Rabbitmq on Ubuntu-Minimal 24.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  rabbitmq:
+    image: ubuntu-minimal:24.04
+    
+    exposed_ports:
+      - 5672
+      - 15672
+    
+    packages:
+
+    
+    tests:
+      external:
+        - rabbitmq:/tests/rabbitmq.sh
+    
+    post_install:
+      - name: "Setup Rabbitmq"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Rabbitmq is ready!"

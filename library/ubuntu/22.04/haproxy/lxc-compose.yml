@@ -1,0 +1,31 @@
+# Haproxy Server - Ubuntu 22.04
+# Haproxy on Ubuntu 22.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  haproxy:
+    image: ubuntu:22.04
+    
+    exposed_ports:
+      - 80
+      - 443
+      - 8404
+    
+    packages:
+      - haproxy
+    
+    tests:
+      external:
+        - haproxy:/tests/haproxy.sh
+    
+    post_install:
+      - name: "Setup Haproxy"
+        command: |
+
+          # Enable and start HAProxy
+          systemctl enable haproxy
+          systemctl start haproxy
+          
+          echo "Haproxy is ready!"

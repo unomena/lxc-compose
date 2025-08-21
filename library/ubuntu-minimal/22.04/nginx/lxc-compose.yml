@@ -1,0 +1,30 @@
+# Nginx Server - Ubuntu-Minimal 22.04
+# Nginx on Ubuntu-Minimal 22.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  nginx:
+    image: ubuntu-minimal:22.04
+    
+    exposed_ports:
+      - 80
+      - 443
+    
+    packages:
+      - nginx
+    
+    tests:
+      external:
+        - nginx:/tests/nginx.sh
+    
+    post_install:
+      - name: "Setup Nginx"
+        command: |
+
+          # Start nginx
+          systemctl enable nginx
+          systemctl start nginx
+          
+          echo "Nginx is ready!"

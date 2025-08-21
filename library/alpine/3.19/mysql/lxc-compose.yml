@@ -1,0 +1,31 @@
+# Mysql Server - Alpine 3.19
+# Mysql on Alpine 3.19
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  mysql:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 3306
+    
+    packages:
+      - mariadb
+      - mariadb-client
+    
+    tests:
+      external:
+        - mysql:/tests/mysql.sh
+    
+    post_install:
+      - name: "Setup Mysql"
+        command: |
+
+          # Note: MariaDB on Alpine
+          mysql_install_db --user=mysql --datadir=/var/lib/mysql
+          mysqld_safe &
+          sleep 5
+          
+          echo "Mysql is ready!"

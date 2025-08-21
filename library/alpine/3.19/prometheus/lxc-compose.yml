@@ -1,0 +1,26 @@
+# Prometheus Server - Alpine 3.19
+# Prometheus on Alpine 3.19
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  prometheus:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 9090
+    
+    packages:
+
+    
+    tests:
+      external:
+        - prometheus:/tests/prometheus.sh
+    
+    post_install:
+      - name: "Setup Prometheus"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Prometheus is ready!"

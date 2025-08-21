@@ -1,0 +1,26 @@
+# Mongodb Server - Alpine 3.19
+# Mongodb on Alpine 3.19
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  mongodb:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 27017
+    
+    packages:
+
+    
+    tests:
+      external:
+        - mongodb:/tests/mongodb.sh
+    
+    post_install:
+      - name: "Setup Mongodb"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Mongodb is ready!"

@@ -1,0 +1,30 @@
+# Nginx Server - Debian 12
+# Nginx on Debian 12
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  nginx:
+    image: debian:12
+    
+    exposed_ports:
+      - 80
+      - 443
+    
+    packages:
+      - nginx
+    
+    tests:
+      external:
+        - nginx:/tests/nginx.sh
+    
+    post_install:
+      - name: "Setup Nginx"
+        command: |
+
+          # Start nginx
+          systemctl enable nginx
+          systemctl start nginx
+          
+          echo "Nginx is ready!"

@@ -1,0 +1,26 @@
+# Grafana Server - Ubuntu-Minimal 22.04
+# Grafana on Ubuntu-Minimal 22.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  grafana:
+    image: ubuntu-minimal:22.04
+    
+    exposed_ports:
+      - 3000
+    
+    packages:
+
+    
+    tests:
+      external:
+        - grafana:/tests/grafana.sh
+    
+    post_install:
+      - name: "Setup Grafana"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Grafana is ready!"

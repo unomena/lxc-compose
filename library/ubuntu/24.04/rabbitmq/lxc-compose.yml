@@ -1,0 +1,46 @@
+# Rabbitmq Server - Ubuntu 24.04
+# Rabbitmq on Ubuntu 24.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  rabbitmq:
+    image: ubuntu:24.04
+    
+    exposed_ports:
+      - 5672
+      - 15672
+    
+    packages:
+      - rabbitmq-server
+
+    
+    tests:
+      external:
+        - rabbitmq:/tests/rabbitmq.sh
+    
+    post_install:
+      - name: "Setup Rabbitmq"
+        command: |
+
+          # Start RabbitMQ
+          systemctl enable rabbitmq-server
+          systemctl start rabbitmq-server
+          sleep 5
+          
+          # Enable management plugin
+          rabbitmq-plugins enable rabbitmq_management
+          
+          # Create admin user
+          RABBITMQ_USER=${RABBITMQ_DEFAULT_USER:-admin}
+          RABBITMQ_PASS=${RABBITMQ_DEFAULT_PASS:-admin}
+          rabbitmqctl add_user $RABBITMQ_USER $RABBITMQ_PASS
+          rabbitmqctl set_user_tags $RABBITMQ_USER administrator
+          rabbitmqctl set_permissions -p / $RABBITMQ_USER ".*" ".*" ".*"
+          
+          # Delete guest user
+          rabbitmqctl delete_user guest || true
+          
+          systemctl restart rabbitmq-server
+          echo "RabbitMQ is ready!"

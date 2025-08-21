@@ -1,0 +1,33 @@
+# Mongodb Server - Ubuntu-Minimal 24.04
+# Mongodb on Ubuntu-Minimal 24.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  mongodb:
+    image: ubuntu-minimal:24.04
+    
+    exposed_ports:
+      - 27017
+    
+    packages:
+      - wget
+      - gnupg
+      - lsb-release
+      - apt-transport-https
+
+    
+    tests:
+      external:
+        - mongodb:/tests/mongodb.sh
+    
+    post_install:
+      - name: "Setup Mongodb"
+        command: |
+
+          # Note: MongoDB is complex for minimal installations
+          echo "MongoDB requires manual installation on minimal systems"
+          echo "Consider using full Ubuntu instead"
+          exit 1
+          echo "mongodb is ready!"

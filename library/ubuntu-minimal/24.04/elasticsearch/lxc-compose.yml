@@ -1,0 +1,27 @@
+# Elasticsearch Server - Ubuntu-Minimal 24.04
+# Elasticsearch on Ubuntu-Minimal 24.04
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  elasticsearch:
+    image: ubuntu-minimal:24.04
+    
+    exposed_ports:
+      - 9200
+      - 9300
+    
+    packages:
+
+    
+    tests:
+      external:
+        - elasticsearch:/tests/elasticsearch.sh
+    
+    post_install:
+      - name: "Setup Elasticsearch"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Elasticsearch is ready!"

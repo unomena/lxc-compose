@@ -1,28 +1,30 @@
-# Elasticsearch Search Engine (Docker-style)
-# Simple Elasticsearch following official Docker patterns
+# Elasticsearch Server - Debian 11
+# Elasticsearch on Debian 11
 # Usage: lxc-compose up
 
 version: '1.0'
 
 containers:
   elasticsearch:
-    image: ubuntu:22.04
+    image: debian:11
     
     exposed_ports:
-      - 9200  # HTTP API
-      - 9300  # Transport
+      - 9200
+      - 9300
     
     packages:
       - wget
       - gnupg
       - apt-transport-https
       - default-jdk
+
+    
     tests:
       external:
         - elasticsearch:/tests/elasticsearch.sh
     
     post_install:
-      - name: "Install Elasticsearch"
+      - name: "Setup Elasticsearch"
         command: |
 
           # Add Elastic repository
@@ -56,7 +58,3 @@ containers:
             sleep 2
           done
           echo "Elasticsearch is ready!"
-              break
-            fi
-            sleep 2
-          done

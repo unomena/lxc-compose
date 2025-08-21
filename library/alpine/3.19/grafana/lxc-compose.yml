@@ -1,0 +1,26 @@
+# Grafana Server - Alpine 3.19
+# Grafana on Alpine 3.19
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  grafana:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 3000
+    
+    packages:
+
+    
+    tests:
+      external:
+        - grafana:/tests/grafana.sh
+    
+    post_install:
+      - name: "Setup Grafana"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Grafana is ready!"

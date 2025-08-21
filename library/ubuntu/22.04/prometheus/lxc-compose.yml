@@ -13,7 +13,6 @@ containers:
     
     packages:
       - wget
-    
     mounts:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     

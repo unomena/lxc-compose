@@ -1,0 +1,34 @@
+# Postgresql Server - Debian 11
+# Postgresql on Debian 11
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  postgresql:
+    image: debian:11
+    
+    exposed_ports:
+      - 5432
+    
+    packages:
+      - postgresql
+      - postgresql-client
+      - postgresql-contrib
+    
+    tests:
+      external:
+        - crud:/tests/postgresql.sh
+    
+    post_install:
+      - name: "Setup Postgresql"
+        command: |
+
+          # Start PostgreSQL service
+          service postgresql start
+          sleep 3
+          
+          # Get PostgreSQL version
+          PG_VERSION=$(ls /etc/postgresql/ | head -1)
+          
+          echo "Postgresql is ready!"

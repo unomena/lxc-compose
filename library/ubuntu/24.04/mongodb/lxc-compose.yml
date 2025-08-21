@@ -1,12 +1,12 @@
-# MongoDB Server (Docker-style)
-# Simple MongoDB following official Docker patterns
+# Mongodb Server - Ubuntu 24.04
+# Mongodb on Ubuntu 24.04
 # Usage: lxc-compose up
 
 version: '1.0'
 
 containers:
   mongodb:
-    image: ubuntu:22.04
+    image: ubuntu:24.04
     
     exposed_ports:
       - 27017
@@ -16,17 +16,19 @@ containers:
       - gnupg
       - lsb-release
       - apt-transport-https
+
+    
     tests:
       external:
         - mongodb:/tests/mongodb.sh
     
     post_install:
-      - name: "Install MongoDB"
+      - name: "Setup Mongodb"
         command: |
 
           # Install MongoDB
-          wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add -
-          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/6.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | apt-key add -
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
           apt-get update
           apt-get install -y mongodb-org
           

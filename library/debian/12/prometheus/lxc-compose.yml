@@ -1,0 +1,73 @@
+# Prometheus Server - Debian 12
+# Prometheus on Debian 12
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  prometheus:
+    image: debian:12
+    
+    exposed_ports:
+      - 9090
+    
+    packages:
+      - wget
+
+    
+    tests:
+      external:
+        - prometheus:/tests/prometheus.sh
+    
+    post_install:
+      - name: "Setup Prometheus"
+        command: |
+
+          # Download Prometheus
+          PROM_VERSION="2.45.0"
+          ARCH=$(dpkg --print-architecture)
+          if [ "$ARCH" = "arm64" ]; then
+            ARCH="arm64"
+          else
+            ARCH="amd64"
+          fi
+          
+          wget https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-${ARCH}.tar.gz
+          tar xvf prometheus-${PROM_VERSION}.linux-${ARCH}.tar.gz
+          
+          # Install binaries
+          cp prometheus-${PROM_VERSION}.linux-${ARCH}/prometheus /usr/local/bin/
+          cp prometheus-${PROM_VERSION}.linux-${ARCH}/promtool /usr/local/bin/
+          
+          # Create directories
+          mkdir -p /etc/prometheus /var/lib/prometheus
+          
+          # Create basic config
+          cat > /etc/prometheus/prometheus.yml << 'EOF'
+          global:
+            scrape_interval: 15s
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+          EOF
+          
+          # Create systemd service
+          cat > /etc/systemd/system/prometheus.service << 'EOF'
+          [Unit]
+          Description=Prometheus
+          After=network.target
+          
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/prometheus             --config.file=/etc/prometheus/prometheus.yml             --storage.tsdb.path=/var/lib/prometheus/             --web.listen-address=0.0.0.0:9090
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          
+          # Start Prometheus
+          systemctl daemon-reload
+          systemctl enable prometheus
+          systemctl start prometheus
+          echo "Prometheus is ready!"

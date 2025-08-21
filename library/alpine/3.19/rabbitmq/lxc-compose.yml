@@ -1,0 +1,27 @@
+# Rabbitmq Server - Alpine 3.19
+# Rabbitmq on Alpine 3.19
+# Usage: lxc-compose up
+
+version: '1.0'
+
+containers:
+  rabbitmq:
+    image: images:alpine/3.19
+    
+    exposed_ports:
+      - 5672
+      - 15672
+    
+    packages:
+
+    
+    tests:
+      external:
+        - rabbitmq:/tests/rabbitmq.sh
+    
+    post_install:
+      - name: "Setup Rabbitmq"
+        command: |
+# TODO: Implement for this base image
+          
+          echo "Rabbitmq is ready!"
