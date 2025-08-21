@@ -1,0 +1,180 @@
+# SearXNG - Privacy-respecting metasearch engine
+# Single container setup with Redis for caching
+
+version: '1.0'
+
+containers:
+  sample-searxng-app:
+    template: ubuntu-minimal
+    release: lts
+    
+    mounts:
+      - ./config/sample-searxng-app/settings.yml:/etc/searxng/settings.yml
+      - ./config/sample-searxng-app/supervisord.conf:/etc/supervisord.conf
+      - ./config/sample-searxng-app/nginx.conf:/etc/nginx/sites-available/searxng
+      - ./config/sample-searxng-app/uwsgi.ini:/etc/searxng/uwsgi.ini
+    
+    exposed_ports:
+      - 80    # Nginx (serves SearXNG)
+    
+    logs:
+      - searxng:/var/log/searxng/searxng.log
+      - searxng-error:/var/log/searxng/searxng_err.log
+      - uwsgi:/var/log/uwsgi/searxng.log
+      - nginx-access:/var/log/nginx/access.log
+      - nginx-error:/var/log/nginx/error.log
+      - redis:/var/log/redis/redis.log
+      - supervisor:/var/log/supervisord.log
+    
+    packages:
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - build-essential
+      - git
+      - nginx
+      - supervisor
+      - redis-server
+      - uwsgi
+      - uwsgi-plugin-python3
+      - curl
+      - openssl
+      - libxml2-dev
+      - libxslt1-dev
+      - libssl-dev
+      - libffi-dev
+    
+    # Note: Environment variables from .env are automatically available
+    
+    services:
+      searxng:
+        command: /usr/local/searxng/searxng-pyenv/bin/uwsgi --ini /etc/searxng/uwsgi.ini
+        directory: /usr/local/searxng/searxng-src
+        user: searxng
+        autostart: true
+        autorestart: true
+        priority: 20
+        stdout_logfile: /var/log/searxng/searxng.log
+        stderr_logfile: /var/log/searxng/searxng_err.log
+        startsecs: 10
+        stopwaitsecs: 600
+    
+    post_install:
+      - name: "Setup Redis"
+        command: |
+          # Configure Redis for SearXNG caching
+          sed -i 's/^# maxmemory <bytes>/maxmemory 100mb/' /etc/redis/redis.conf
+          sed -i 's/^# maxmemory-policy noeviction/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
+          sed -i 's/^bind 127.0.0.1 ::1/bind 127.0.0.1/' /etc/redis/redis.conf
+          
+          # Start Redis
+          service redis-server start || redis-server --daemonize yes
+          
+          # Verify Redis is running
+          sleep 2
+          redis-cli ping || echo "Redis not responding yet"
+      
+      - name: "Create SearXNG user"
+        command: |
+          # Create dedicated user for SearXNG
+          useradd -r -s /bin/bash -d /usr/local/searxng -m searxng
+          
+          # Create necessary directories
+          mkdir -p /var/log/searxng
+          mkdir -p /var/log/uwsgi
+          mkdir -p /etc/searxng
+          
+          chown -R searxng:searxng /var/log/searxng
+          chown -R searxng:searxng /etc/searxng
+      
+      - name: "Clone and setup SearXNG"
+        command: |
+          cd /usr/local/searxng
+          
+          # Clone SearXNG repository
+          git clone https://github.com/searxng/searxng.git searxng-src
+          
+          # Create Python virtual environment
+          cd searxng-src
+          python3 -m venv searxng-pyenv
+          
+          # Upgrade pip and install dependencies
+          ./searxng-pyenv/bin/pip install --upgrade pip setuptools wheel
+          ./searxng-pyenv/bin/pip install -e .
+          
+          # Set ownership
+          chown -R searxng:searxng /usr/local/searxng
+      
+      - name: "Configure SearXNG"
+        command: |
+          # Generate secret key if not provided in env
+          if [ -z "${SEARXNG_SECRET}" ]; then
+            export SEARXNG_SECRET=$(openssl rand -hex 16)
+            echo "Generated secret key: $SEARXNG_SECRET"
+          fi
+          
+          # Update settings.yml with secret key
+          sed -i "s/secret_key: \".*\"/secret_key: \"${SEARXNG_SECRET}\"/" /etc/searxng/settings.yml
+          
+          # Set proper permissions
+          chmod 600 /etc/searxng/settings.yml
+          chown searxng:searxng /etc/searxng/settings.yml
+      
+      - name: "Test SearXNG installation"
+        command: |
+          # Test that SearXNG can start
+          cd /usr/local/searxng/searxng-src
+          timeout 5 sudo -u searxng ./searxng-pyenv/bin/python searx/webapp.py &
+          sleep 3
+          
+          # Check if it responds
+          if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8888 | grep -q "200"; then
+            echo "SearXNG test successful!"
+          else
+            echo "SearXNG test failed, but continuing..."
+          fi
+          
+          # Kill the test process
+          pkill -f "python searx/webapp.py" || true
+      
+      - name: "Start Supervisor service"
+        command: |
+          # Start supervisord directly
+          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Give it a moment to start
+          sleep 5
+          # Check status
+          supervisorctl status
+          
+          # Wait for SearXNG to be ready
+          echo "Waiting for SearXNG to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8888 | grep -q "200"; then
+              echo "SearXNG is ready!"
+              break
+            fi
+            echo "Waiting for SearXNG... (attempt $i/30)"
+            sleep 2
+          done
+      
+      - name: "Setup Nginx"
+        command: |
+          # Enable the SearXNG site
+          ln -sf /etc/nginx/sites-available/searxng /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          
+          # Test config
+          nginx -t
+          
+          # Stop nginx if running
+          service nginx stop || true
+          
+          # Start nginx with our config
+          service nginx start
+          
+          # Verify it's running
+          sleep 2
+          service nginx status || true
+          
+          echo "SearXNG is now available on port 80!"
