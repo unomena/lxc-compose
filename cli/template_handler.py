@@ -94,9 +94,17 @@ class TemplateHandler:
             containers = service_config['containers']
             if isinstance(containers, dict):
                 # Return the first container (library services typically have one)
-                return list(containers.values())[0]
+                container = list(containers.values())[0]
+                # Store the library service path for test resolution
+                if container:
+                    container['__library_service_path__'] = os.path.dirname(service_file)
+                return container
             elif isinstance(containers, list) and len(containers) > 0:
-                return containers[0]
+                container = containers[0]
+                # Store the library service path for test resolution
+                if container:
+                    container['__library_service_path__'] = os.path.dirname(service_file)
+                return container
         
         return None
     
@@ -124,10 +132,35 @@ class TemplateHandler:
                 merged['post_install'] = []
             merged['post_install'].extend(overlay['post_install'])
         
+        # Handle tests - merge with path metadata
+        if 'tests' in overlay:
+            if 'tests' not in merged:
+                merged['tests'] = {}
+            
+            # Merge each test type
+            for test_type in ['internal', 'external', 'port_forwarding']:
+                if test_type in overlay['tests']:
+                    if test_type not in merged['tests']:
+                        merged['tests'][test_type] = []
+                    
+                    # Add tests with library path metadata if available
+                    library_path = overlay.get('__library_service_path__')
+                    for test in overlay['tests'][test_type]:
+                        if library_path and isinstance(test, str) and ':' in test:
+                            # Add library path metadata to test definition
+                            test_with_path = f"{test}@library:{library_path}"
+                            merged['tests'][test_type].append(test_with_path)
+                        else:
+                            merged['tests'][test_type].append(test)
+        
         # Handle other fields - overlay overrides base
         for key, value in overlay.items():
-            if key not in ['packages', 'environment', 'post_install', 'template', 'includes']:
+            if key not in ['packages', 'environment', 'post_install', 'tests', 'template', 'includes', '__library_service_path__']:
                 merged[key] = value
+        
+        # Preserve library path metadata if present
+        if '__library_service_path__' in overlay:
+            merged['__library_service_path__'] = overlay['__library_service_path__']
         
         return merged
     

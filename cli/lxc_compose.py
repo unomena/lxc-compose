@@ -1437,8 +1437,14 @@ def test(container_name, test_type, file):
                 click.echo(f"  {BLUE}Internal tests:{NC}")
                 for test_entry in internal_tests:
                     if isinstance(test_entry, str) and ':' in test_entry:
-                        name, path = test_entry.split(':', 1)
-                        click.echo(f"    • {name}: {path}")
+                        # Handle library path metadata
+                        if '@library:' in test_entry:
+                            main_part, library_path = test_entry.split('@library:', 1)
+                            name, path = main_part.split(':', 1)
+                            click.echo(f"    • {name}: {path} (from library)")
+                        else:
+                            name, path = test_entry.split(':', 1)
+                            click.echo(f"    • {name}: {path}")
             
             # Show external tests
             external_tests = tests_config.get('external', [])
@@ -1446,8 +1452,14 @@ def test(container_name, test_type, file):
                 click.echo(f"  {BLUE}External tests:{NC}")
                 for test_entry in external_tests:
                     if isinstance(test_entry, str) and ':' in test_entry:
-                        name, path = test_entry.split(':', 1)
-                        click.echo(f"    • {name}: {path}")
+                        # Handle library path metadata
+                        if '@library:' in test_entry:
+                            main_part, library_path = test_entry.split('@library:', 1)
+                            name, path = main_part.split(':', 1)
+                            click.echo(f"    • {name}: {path} (from library)")
+                        else:
+                            name, path = test_entry.split(':', 1)
+                            click.echo(f"    • {name}: {path}")
             
             # Show port forwarding tests
             port_forwarding_tests = tests_config.get('port_forwarding', [])
@@ -1455,8 +1467,14 @@ def test(container_name, test_type, file):
                 click.echo(f"  {BLUE}Port forwarding tests:{NC}")
                 for test_entry in port_forwarding_tests:
                     if isinstance(test_entry, str) and ':' in test_entry:
-                        name, path = test_entry.split(':', 1)
-                        click.echo(f"    • {name}: {path}")
+                        # Handle library path metadata
+                        if '@library:' in test_entry:
+                            main_part, library_path = test_entry.split('@library:', 1)
+                            name, path = main_part.split(':', 1)
+                            click.echo(f"    • {name}: {path} (from library)")
+                        else:
+                            name, path = test_entry.split(':', 1)
+                            click.echo(f"    • {name}: {path}")
     
     # Helper function to run tests for a container
     def run_container_tests(container_name, container_config, test_type):
@@ -1503,13 +1521,22 @@ def test(container_name, test_type, file):
         elif isinstance(tests_config, list):
             internal_tests = tests_config
         
-        # Parse test entries
+        # Parse test entries with library path resolution support
         def parse_tests(test_list):
             tests = {}
             for test_entry in test_list:
                 if isinstance(test_entry, str) and ':' in test_entry:
-                    name, path = test_entry.split(':', 1)
-                    tests[name] = path
+                    # Check if test has library path metadata
+                    if '@library:' in test_entry:
+                        # Format: name:path@library:/library/path
+                        main_part, library_path = test_entry.split('@library:', 1)
+                        name, path = main_part.split(':', 1)
+                        # Store both the path and library location
+                        tests[name] = {'path': path, 'library_path': library_path}
+                    else:
+                        # Regular test definition
+                        name, path = test_entry.split(':', 1)
+                        tests[name] = {'path': path, 'library_path': None}
             return tests
         
         internal_test_map = parse_tests(internal_tests)
@@ -1527,8 +1554,11 @@ def test(container_name, test_type, file):
         # Run internal tests
         if test_type in ['all', 'internal'] and internal_test_map:
             click.echo(f"{BLUE}=== Internal Tests (running inside container) ==={NC}")
-            for test_name, test_path in internal_test_map.items():
+            for test_name, test_info in internal_test_map.items():
                 click.echo(f"\nRunning internal test: {test_name}")
+                
+                # Extract test path
+                test_path = test_info['path'] if isinstance(test_info, dict) else test_info
                 
                 # First, make the script executable
                 chmod_cmd = ['lxc', 'exec', container_name, '--', 'chmod', '+x', test_path]
@@ -1546,15 +1576,30 @@ def test(container_name, test_type, file):
         # Run external tests
         if test_type in ['all', 'external'] and external_test_map:
             click.echo(f"\n{BLUE}=== External Tests (running from host) ==={NC}")
-            for test_name, test_path in external_test_map.items():
+            for test_name, test_info in external_test_map.items():
                 click.echo(f"\nRunning external test: {test_name}")
                 
-                # External tests run on the host
-                config_dir = os.path.dirname(os.path.abspath(file))
-                actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
+                # Extract test path and library path
+                if isinstance(test_info, dict):
+                    test_path = test_info['path']
+                    library_path = test_info.get('library_path')
+                else:
+                    test_path = test_info
+                    library_path = None
+                
+                # Resolve the actual test path
+                if library_path:
+                    # Test is from a library service
+                    actual_test_path = os.path.join(library_path, test_path.lstrip('/'))
+                else:
+                    # Test is from local config
+                    config_dir = os.path.dirname(os.path.abspath(file))
+                    actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
                 
                 if not os.path.exists(actual_test_path):
                     click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
+                    if library_path:
+                        click.echo(f"  Library path: {library_path}")
                     results['failed'] += 1
                     continue
                 
@@ -1572,15 +1617,30 @@ def test(container_name, test_type, file):
         # Run port forwarding tests
         if test_type in ['all', 'port_forwarding'] and port_forwarding_test_map:
             click.echo(f"\n{BLUE}=== Port Forwarding Tests (checking iptables rules) ==={NC}")
-            for test_name, test_path in port_forwarding_test_map.items():
+            for test_name, test_info in port_forwarding_test_map.items():
                 click.echo(f"\nRunning port forwarding test: {test_name}")
                 
-                # Port forwarding tests run on the host
-                config_dir = os.path.dirname(os.path.abspath(file))
-                actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
+                # Extract test path and library path
+                if isinstance(test_info, dict):
+                    test_path = test_info['path']
+                    library_path = test_info.get('library_path')
+                else:
+                    test_path = test_info
+                    library_path = None
+                
+                # Resolve the actual test path
+                if library_path:
+                    # Test is from a library service
+                    actual_test_path = os.path.join(library_path, test_path.lstrip('/'))
+                else:
+                    # Port forwarding tests run on the host
+                    config_dir = os.path.dirname(os.path.abspath(file))
+                    actual_test_path = os.path.join(config_dir, test_path.lstrip('/app/'))
                 
                 if not os.path.exists(actual_test_path):
                     click.echo(f"{YELLOW}⚠{NC} Test script not found: {actual_test_path}")
+                    if library_path:
+                        click.echo(f"  Library path: {library_path}")
                     results['failed'] += 1
                     continue
                 

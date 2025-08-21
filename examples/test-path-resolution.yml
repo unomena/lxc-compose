@@ -1,0 +1,28 @@
+# Test configuration to verify test path resolution for library includes
+# This example shows how tests from included library services are inherited
+
+version: '1.0'
+
+containers:
+  test-postgres:
+    template: alpine-3.19
+    includes:
+      - postgresql      # This should include PostgreSQL tests from library
+    environment:
+      POSTGRES_PASSWORD: testpass123
+    
+  test-redis:
+    template: ubuntu-24.04  
+    includes:
+      - redis          # This should include Redis tests from library
+    
+  test-combo:
+    template: ubuntu-minimal-22.04
+    includes:
+      - nginx          # Multiple library services
+      - memcached      
+    packages:
+      - htop           # Additional local packages
+    tests:
+      external:
+        - local:/tests/local_test.sh  # Local test in addition to library tests
