@@ -34,19 +34,74 @@ NC = '\033[0m'  # No Color
 DEFAULT_CONFIG = 'lxc-compose.yml'
 DEFAULT_ENV_FILE = '.env'
 
-# Data directory setup
-if os.geteuid() == 0:
-    DATA_DIR = '/etc/lxc-compose'
-else:
-    XDG_DATA_HOME = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
-    DATA_DIR = os.path.join(XDG_DATA_HOME, 'lxc-compose')
+# Data directory setup - keep everything in /srv/lxc-compose/etc/
+DATA_DIR = '/srv/lxc-compose/etc'
 
 # Shared hosts file location
-SHARED_HOSTS_DIR = '/srv/lxc-compose/etc'
+SHARED_HOSTS_DIR = DATA_DIR
 SHARED_HOSTS_FILE = os.path.join(SHARED_HOSTS_DIR, 'hosts')
 
-# Container IP tracking file
-CONTAINER_IPS_FILE = os.path.join(DATA_DIR, 'container-ips.json')
+# Container metadata (IPs, ports, etc.) for persistence
+CONTAINER_METADATA_FILE = os.path.join(DATA_DIR, 'container-metadata.json')
+
+# Port forwarding mappings file
+PORT_MAPPINGS_FILE = os.path.join(DATA_DIR, 'port-mappings.json')
+
+# Web ports that should be auto-forwarded (common HTTP/HTTPS and app server ports)
+WEB_PORTS = {
+    80,    # HTTP
+    443,   # HTTPS
+    3000,  # Node.js, React dev server
+    3001,  # Alternative Node.js
+    4000,  # Phoenix, Jekyll
+    4200,  # Angular
+    5000,  # Flask, ASP.NET
+    5173,  # Vite
+    8000,  # Django, Python HTTP server
+    8001,  # Alternative Django
+    8080,  # Alternative HTTP, Tomcat
+    8081,  # Alternative HTTP
+    8888,  # Jupyter
+    9000,  # PHP-FPM, SonarQube
+}
+
+# Internal service ports that should NOT be auto-forwarded
+INTERNAL_PORTS = {
+    22,     # SSH
+    25,     # SMTP
+    110,    # POP3
+    143,    # IMAP
+    465,    # SMTPS
+    587,    # SMTP
+    993,    # IMAPS
+    995,    # POP3S
+    1433,   # MS SQL Server
+    1521,   # Oracle
+    2181,   # Zookeeper
+    3306,   # MySQL/MariaDB
+    3307,   # Alternative MySQL
+    5432,   # PostgreSQL
+    5433,   # Alternative PostgreSQL
+    5672,   # RabbitMQ
+    5984,   # CouchDB
+    6379,   # Redis
+    6380,   # Alternative Redis
+    7000,   # Cassandra
+    7001,   # Cassandra
+    8086,   # InfluxDB
+    8529,   # ArangoDB
+    9042,   # Cassandra
+    9092,   # Kafka
+    9200,   # Elasticsearch
+    9300,   # Elasticsearch
+    11211,  # Memcached
+    15672,  # RabbitMQ Management
+    27017,  # MongoDB
+    27018,  # MongoDB
+    27019,  # MongoDB
+    28015,  # RethinkDB
+    29015,  # RethinkDB
+}
 
 class LXCCompose:
     def __init__(self, config_file: str = None, all_containers: bool = False):
@@ -368,11 +423,172 @@ class LXCCompose:
             self.run_command(['lxc', 'exec', name, '--', 'sh', '-c',
                             f'echo \'{profile_script}\' > /etc/profile.d/lxc-compose.sh && chmod +x /etc/profile.d/lxc-compose.sh'])
     
-    def manage_exposed_ports(self, action: str, ip: str, ports: List[int]):
-        """Add or remove iptables rules for exposed ports"""
+    def get_next_available_port(self, preferred_port, used_ports=None):
+        """Find next available port for forwarding
+        
+        Args:
+            preferred_port: The port we'd like to use
+            used_ports: Set of already used ports (will be fetched if not provided)
+        
+        Returns:
+            Available port number
+        """
+        if used_ports is None:
+            # Check existing UPF rules
+            result = self.run_command(['sudo', 'upf', 'list', '--json'], check=False)
+            used_ports = set()
+            if result.returncode == 0:
+                try:
+                    data = json.loads(result.stdout)
+                    for rule in data.get('rules', []):
+                        used_ports.add(rule['local_port'])
+                except json.JSONDecodeError:
+                    pass
+        
+        # First try the preferred port
+        if preferred_port not in used_ports:
+            return preferred_port
+        
+        # If it's a standard port like 80, 443, 3000, 8000, try incrementing by 1
+        # For port 8000, try 8001, 8002, etc.
+        # For port 3000, try 3001, 3002, etc.
+        if preferred_port in [80, 443, 3000, 4000, 5000, 8000, 8080]:
+            base_port = preferred_port
+            for offset in range(1, 100):
+                candidate = base_port + offset
+                if candidate not in used_ports:
+                    return candidate
+        
+        # For other ports, try to find something in the 8000-9000 range
+        for port in range(8000, 9000):
+            if port not in used_ports:
+                return port
+        
+        # Fallback to any port above 9000
+        port = 9000
+        while port in used_ports:
+            port += 1
+        return port
+    
+    def setup_port_forwarding(self, name: str, ip: str, ports: List[int]):
+        """Setup UPF port forwarding rules for web ports only
+        
+        Only forwards ports that are in WEB_PORTS or are likely web ports (not in INTERNAL_PORTS).
+        Tries to use the same port number on the host if available, otherwise finds the next available.
+        """
+        if not ports:
+            return
+            
+        # Check if UPF is installed
+        upf_check = self.run_command(['which', 'upf'], check=False)
+        if upf_check.returncode != 0:
+            click.echo(f"  {YELLOW}Warning: UPF not installed, skipping port forwarding{NC}")
+            return
+        
+        # Get currently used ports for intelligent allocation
+        result = self.run_command(['sudo', 'upf', 'list', '--json'], check=False)
+        used_ports = set()
+        if result.returncode == 0:
+            try:
+                data = json.loads(result.stdout)
+                for rule in data.get('rules', []):
+                    used_ports.add(rule['local_port'])
+            except json.JSONDecodeError:
+                pass
+        
+        # Load existing port mappings
+        port_mappings = {}
+        if os.path.exists(PORT_MAPPINGS_FILE):
+            try:
+                with open(PORT_MAPPINGS_FILE, 'r') as f:
+                    content = f.read()
+                    if content:
+                        port_mappings = json.loads(content)
+            except (PermissionError, json.JSONDecodeError, FileNotFoundError):
+                pass
+        
+        # Get or create port mappings for this container
+        container_mappings = port_mappings.get(name, {})
+        forwarded_any = False
+        
+        for container_port in ports:
+            # Skip internal service ports (databases, caches, etc.)
+            if container_port in INTERNAL_PORTS:
+                click.echo(f"    Skipping internal service port {container_port}")
+                continue
+            
+            # Auto-forward if it's a known web port or not a known internal port
+            # This allows forwarding of custom web ports while blocking databases
+            should_forward = (container_port in WEB_PORTS or 
+                            (container_port > 1024 and container_port not in INTERNAL_PORTS))
+            
+            if not should_forward:
+                continue
+            
+            # Check if we already have a host port mapping for this container:port combo
+            mapping_key = str(container_port)
+            if mapping_key in container_mappings:
+                # Reuse previously allocated port
+                host_port = container_mappings[mapping_key]
+            else:
+                # Allocate new host port - try to use the same port number first
+                host_port = self.get_next_available_port(container_port, used_ports)
+                container_mappings[mapping_key] = host_port
+                used_ports.add(host_port)  # Add to used ports for next iteration
+            
+            # Create UPF rule using hostname for resilience
+            destination = f"{name}:{container_port}"
+            result = self.run_command(['sudo', 'upf', 'add', str(host_port), destination], check=False)
+            if result.returncode == 0:
+                click.echo(f"    Auto-forwarded port {host_port} -> {name}:{container_port}")
+                forwarded_any = True
+            else:
+                # Try to remove existing rule and re-add
+                self.run_command(['sudo', 'upf', 'remove', str(host_port)], check=False)
+                result = self.run_command(['sudo', 'upf', 'add', str(host_port), destination], check=False)
+                if result.returncode == 0:
+                    click.echo(f"    Updated forwarding {host_port} -> {name}:{container_port}")
+                    forwarded_any = True
+        
+        # Only save if we forwarded any ports
+        if forwarded_any:
+            port_mappings[name] = container_mappings
+            try:
+                os.makedirs(os.path.dirname(PORT_MAPPINGS_FILE), exist_ok=True)
+                with open(PORT_MAPPINGS_FILE, 'w') as f:
+                    json.dump(port_mappings, f, indent=2)
+            except (PermissionError, OSError):
+                # Use sudo to write
+                content = json.dumps(port_mappings, indent=2)
+                subprocess.run(['sudo', 'mkdir', '-p', os.path.dirname(PORT_MAPPINGS_FILE)], check=True)
+                subprocess.run(['sudo', 'bash', '-c', f"echo '{content}' > {PORT_MAPPINGS_FILE}"], check=True)
+    
+    def remove_port_forwarding(self, name: str):
+        """Remove UPF port forwarding rules for a container"""
+        # Check if UPF is installed
+        upf_check = self.run_command(['which', 'upf'], check=False)
+        if upf_check.returncode != 0:
+            return
+        
+        # Get current UPF rules
+        result = self.run_command(['sudo', 'upf', 'list', '--json'], check=False)
+        if result.returncode == 0:
+            try:
+                data = json.loads(result.stdout)
+                for rule in data.get('rules', []):
+                    # Remove rules that target this container
+                    if rule.get('hostname') == name:
+                        self.run_command(['sudo', 'upf', 'remove', str(rule['local_port'])], check=False)
+                        click.echo(f"    Removed port forwarding {rule['local_port']}")
+            except json.JSONDecodeError:
+                pass
+    
+    def manage_exposed_ports(self, action: str, ip: str, ports: List[int], name: str = None):
+        """Add or remove iptables rules for exposed ports and setup UPF forwarding"""
         if action == "add" and ports:
             click.echo(f"  Setting up exposed ports: {ports}")
             
+            # Setup firewall rules
             # Allow established connections
             self.run_command(['sudo', 'iptables', '-A', 'FORWARD',
                             '-d', ip, '-m', 'state', '--state',
@@ -392,6 +608,10 @@ class LXCCompose:
             # Drop all other inbound traffic to this container
             self.run_command(['sudo', 'iptables', '-A', 'FORWARD',
                             '-d', ip, '-j', 'DROP'], check=False)
+            
+            # Setup UPF port forwarding if container name is provided
+            if name:
+                self.setup_port_forwarding(name, ip, ports)
             
         elif action == "remove":
             click.echo(f"  Removing iptables rules...")
@@ -418,37 +638,43 @@ class LXCCompose:
                                     str(rule_num)], check=False)
     
     def save_container_ip(self, name: str, ip: str, ports: List[int] = None):
-        """Save container IP and exposed ports for later cleanup"""
+        """Save container IP for persistence and future reuse"""
         data = {}
-        if os.path.exists(CONTAINER_IPS_FILE):
+        
+        # Read existing data if file exists
+        if os.path.exists(CONTAINER_METADATA_FILE):
             try:
-                with open(CONTAINER_IPS_FILE, 'r') as f:
-                    data = json.load(f)
-            except PermissionError:
-                # Read with sudo
-                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
-                if result.returncode == 0:
-                    data = json.loads(result.stdout)
+                with open(CONTAINER_METADATA_FILE, 'r') as f:
+                    content = f.read()
+                    if content:
+                        data = json.loads(content)
+            except (PermissionError, json.JSONDecodeError, FileNotFoundError):
+                pass
         
-        # Store both IP and ports
-        container_info = {'ip': ip}
-        if ports:
-            container_info['ports'] = ports
-        data[name] = container_info
+        # Store or update container info
+        data[name] = {
+            'ip': ip,
+            'ports': ports if ports else [],
+            'last_updated': time.time()
+        }
         
+        # Write back to file with sudo if needed
         try:
-            with open(CONTAINER_IPS_FILE, 'w') as f:
+            os.makedirs(os.path.dirname(CONTAINER_METADATA_FILE), exist_ok=True)
+            with open(CONTAINER_METADATA_FILE, 'w') as f:
                 json.dump(data, f, indent=2)
-        except PermissionError:
-            # Write with sudo
+        except (PermissionError, OSError):
+            # Use sudo to create directory and write file
             content = json.dumps(data, indent=2)
-            subprocess.run(['sudo', 'bash', '-c', f'echo \'{content}\' > {CONTAINER_IPS_FILE}'], check=True)
+            subprocess.run(['sudo', 'mkdir', '-p', os.path.dirname(CONTAINER_METADATA_FILE)], check=True)
+            subprocess.run(['sudo', 'bash', '-c', f"echo '{content}' > {CONTAINER_METADATA_FILE}"], check=True)
+            subprocess.run(['sudo', 'chmod', '666', CONTAINER_METADATA_FILE], check=True)
     
     def get_saved_container_ip(self, name: str) -> Optional[str]:
         """Get saved container IP"""
-        if os.path.exists(CONTAINER_IPS_FILE):
+        if os.path.exists(CONTAINER_METADATA_FILE):
             try:
-                with open(CONTAINER_IPS_FILE, 'r') as f:
+                with open(CONTAINER_METADATA_FILE, 'r') as f:
                     data = json.load(f)
                     container_info = data.get(name)
                     if isinstance(container_info, dict):
@@ -457,7 +683,7 @@ class LXCCompose:
                     return container_info
             except PermissionError:
                 # Read with sudo
-                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
+                result = subprocess.run(['sudo', 'cat', CONTAINER_METADATA_FILE], capture_output=True, text=True)
                 if result.returncode == 0:
                     data = json.loads(result.stdout)
                     container_info = data.get(name)
@@ -468,16 +694,16 @@ class LXCCompose:
     
     def get_saved_container_ports(self, name: str) -> List[int]:
         """Get saved container exposed ports"""
-        if os.path.exists(CONTAINER_IPS_FILE):
+        if os.path.exists(CONTAINER_METADATA_FILE):
             try:
-                with open(CONTAINER_IPS_FILE, 'r') as f:
+                with open(CONTAINER_METADATA_FILE, 'r') as f:
                     data = json.load(f)
                     container_info = data.get(name)
                     if isinstance(container_info, dict):
                         return container_info.get('ports', [])
             except PermissionError:
                 # Read with sudo
-                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
+                result = subprocess.run(['sudo', 'cat', CONTAINER_METADATA_FILE], capture_output=True, text=True)
                 if result.returncode == 0:
                     data = json.loads(result.stdout)
                     container_info = data.get(name)
@@ -486,28 +712,10 @@ class LXCCompose:
         return []
     
     def remove_saved_container_ip(self, name: str):
-        """Remove saved container IP and ports"""
-        if os.path.exists(CONTAINER_IPS_FILE):
-            try:
-                with open(CONTAINER_IPS_FILE, 'r') as f:
-                    data = json.load(f)
-            except PermissionError:
-                # Read with sudo
-                result = subprocess.run(['sudo', 'cat', CONTAINER_IPS_FILE], capture_output=True, text=True)
-                if result.returncode == 0:
-                    data = json.loads(result.stdout)
-                else:
-                    data = {}
-            
-            if name in data:
-                del data[name]
-                try:
-                    with open(CONTAINER_IPS_FILE, 'w') as f:
-                        json.dump(data, f, indent=2)
-                except PermissionError:
-                    # Write with sudo
-                    content = json.dumps(data, indent=2)
-                    subprocess.run(['sudo', 'bash', '-c', f'echo \'{content}\' > {CONTAINER_IPS_FILE}'], check=True)
+        """Do nothing - we keep metadata for reuse after destroy"""
+        # We intentionally keep the container metadata in the file
+        # so ports and IPs can be reused when the container is recreated
+        pass
     
     def get_all_containers(self) -> List[str]:
         """Get all containers on the system"""
@@ -589,9 +797,9 @@ class LXCCompose:
             # Setup system-wide environment variables
             self.setup_container_environment(name)
             
-            # Setup iptables rules for exposed ports
+            # Setup iptables rules and UPF port forwarding for exposed ports
             if exposed_ports:
-                self.manage_exposed_ports("add", ip, exposed_ports)
+                self.manage_exposed_ports("add", ip, exposed_ports, name)
             
         except Exception as e:
             # Rollback on failure
@@ -600,7 +808,7 @@ class LXCCompose:
             raise
     
     def cleanup_container_networking(self, name: str):
-        """Remove hosts entry and iptables rules"""
+        """Remove hosts entry, iptables rules, and UPF port forwarding"""
         # Try to get IP from saved data first, then from container
         ip = self.get_saved_container_ip(name)
         if not ip:
@@ -614,8 +822,37 @@ class LXCCompose:
         if ip:
             self.manage_exposed_ports("remove", ip, [])
         
+        # Remove UPF port forwarding rules
+        self.remove_port_forwarding(name)
+        
         # Remove saved IP
         self.remove_saved_container_ip(name)
+    
+    def try_assign_static_ip(self, name: str, preferred_ip: str) -> bool:
+        """Try to assign a static IP to a container"""
+        # Get the default network (usually lxdbr0)
+        result = self.run_command(['lxc', 'network', 'list', '--format=csv'], check=False)
+        if result.returncode != 0:
+            return False
+        
+        network = None
+        for line in result.stdout.strip().split('\n'):
+            if line and 'bridge' in line:
+                network = line.split(',')[0]
+                break
+        
+        if not network:
+            network = 'lxdbr0'  # Default fallback
+        
+        # Try to set static IP using network attach
+        result = self.run_command(['lxc', 'config', 'device', 'add', name, 'eth0', 
+                                 'nic', f'network={network}', f'ipv4.address={preferred_ip}'], 
+                                check=False)
+        
+        if result.returncode == 0:
+            click.echo(f"  Assigned previous IP: {preferred_ip}")
+            return True
+        return False
     
     def create_container(self, container: Dict):
         """Create a single container"""
@@ -623,6 +860,13 @@ class LXCCompose:
         
         # Get base image (template processing already done)
         image = container.get('image', 'ubuntu:24.04')  # Default to latest LTS
+        
+        # Check for previously assigned IP
+        previous_ip = self.get_saved_container_ip(name)
+        reuse_ip = False
+        if previous_ip:
+            click.echo(f"  Found previous IP: {previous_ip}")
+            reuse_ip = True
         
         # Check if storage pool exists before creating container
         storage_check = self.run_command(['lxc', 'storage', 'list', '--format=csv'], check=False)
@@ -644,9 +888,14 @@ class LXCCompose:
                     self.run_command(['lxc', 'profile', 'device', 'add', 'default', 'root', 
                                     'disk', 'path=/', 'pool=default'], check=False)
         
-        # Create container
+        # Create container (without starting it yet if we want to set static IP)
         click.echo(f"  Creating from {image}...")
-        result = self.run_command(['lxc', 'launch', image, name], check=False)
+        if reuse_ip:
+            # Create without starting
+            result = self.run_command(['lxc', 'init', image, name], check=False)
+        else:
+            # Create and start normally
+            result = self.run_command(['lxc', 'launch', image, name], check=False)
         if result.returncode != 0:
             if "No root device could be found" in result.stderr:
                 click.echo(f"  {YELLOW}⚠ Fixing storage configuration...{NC}")
@@ -654,10 +903,24 @@ class LXCCompose:
                 self.run_command(['lxc', 'profile', 'device', 'add', 'default', 'root', 
                                 'disk', 'path=/', 'pool=default'], check=False)
                 # Retry container creation
-                self.run_command(['lxc', 'launch', image, name])
+                if reuse_ip:
+                    self.run_command(['lxc', 'init', image, name])
+                else:
+                    self.run_command(['lxc', 'launch', image, name])
             else:
                 click.echo(f"{RED}✗ Failed to create container: {result.stderr}{NC}")
                 sys.exit(1)
+        
+        # If we're reusing IP, try to set it before starting
+        if reuse_ip and previous_ip:
+            # Try to assign the static IP
+            if self.try_assign_static_ip(name, previous_ip):
+                # Start the container with the static IP
+                self.run_command(['lxc', 'start', name])
+            else:
+                # Fallback to DHCP
+                click.echo(f"  {YELLOW}Could not reuse IP {previous_ip}, using DHCP{NC}")
+                self.run_command(['lxc', 'start', name])
         
         # Wait for network
         ip = self.wait_for_network(name)
@@ -987,7 +1250,7 @@ class LXCCompose:
                             if 'mounts' in container:
                                 self.setup_mounts(name, container['mounts'])
                             if exposed_ports:
-                                self.manage_exposed_ports("add", ip, exposed_ports)
+                                self.manage_exposed_ports("add", ip, exposed_ports, name)
                 else:
                     click.echo(f"  Creating new container...")
                     self.create_container(container)

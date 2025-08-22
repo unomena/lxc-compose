@@ -24,7 +24,7 @@ User → CLI (lxc_compose.py) → LXC/LXD API → Containers
 - **Installation**: `install.sh` - System-wide installation to `/usr/local/bin/lxc-compose`
 
 ### Critical Design Decisions
-- **Stateless Operation**: No database or state files - all state derived from LXC runtime and `/etc/lxc-compose/container-ips.json`
+- **Stateless Operation**: No database or state files - all state derived from LXC runtime and `/srv/lxc-compose/etc/container-metadata.json`
 - **Security Model**: iptables DNAT rules for port forwarding, FORWARD chain blocking for non-exposed ports
 - **Networking**: Static IP assignment with shared hosts file at `/srv/lxc-compose/etc/hosts`
 - **Template Inheritance**: Base template → Library includes → Local configuration
@@ -153,8 +153,9 @@ Key methods that handle core functionality:
 - **DNS**: Shared hosts file mounted at `/etc/hosts` in all containers
 
 ### State Persistence
-- `/etc/lxc-compose/container-ips.json`: Maps container names to IPs and ports
+- `/srv/lxc-compose/etc/container-metadata.json`: Stores container metadata (IPs, ports) for persistence across recreations
 - `/srv/lxc-compose/etc/hosts`: Shared hosts file for container DNS
+- `/srv/lxc-compose/etc/port-mappings.json`: Host-to-container port mappings for UPF integration
 - No other state files - everything else derived from LXC runtime
 
 ## Testing Architecture
@@ -199,8 +200,8 @@ tests:
 
 ### Container IP Issues
 ```bash
-# Check saved IPs
-cat /etc/lxc-compose/container-ips.json
+# Check saved container metadata
+cat /srv/lxc-compose/etc/container-metadata.json
 
 # Reset container networking
 lxc-compose down -f config.yml
