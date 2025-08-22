@@ -3,7 +3,22 @@ const { MongoClient } = require('mongodb');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const MONGO_URL = process.env.MONGO_URL || 'mongodb://nodejs-mongo:27017/myapp';
+
+// Build MongoDB URL from environment variables
+const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
+const MONGO_PORT = process.env.MONGO_PORT || '27017';
+const MONGO_DB = process.env.MONGO_DB || 'nodeapp';
+const MONGO_USER = process.env.MONGO_USER;
+const MONGO_PASSWORD = process.env.MONGO_PASSWORD;
+
+let MONGO_URL;
+if (MONGO_USER && MONGO_PASSWORD) {
+  MONGO_URL = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}`;
+} else {
+  MONGO_URL = `mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}`;
+}
+
+console.log('MongoDB URL:', MONGO_URL.replace(/:[^:@]+@/, ':****@')); // Log URL with masked password
 
 let db = null;
 let visitCollection = null;
