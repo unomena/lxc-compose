@@ -1,0 +1,76 @@
+# Python 3 Development Environment
+# Complete Python 3 setup with pip, venv, and build tools
+# Usage: Include this service for Python applications
+
+version: '1.0'
+
+containers:
+  python3-alpine-3-19:
+    template: alpine-3.19
+    
+    packages:
+      # Core Python packages
+      - python3
+      - python3-dev
+      - py3-pip
+      - py3-setuptools
+      - py3-wheel
+      
+      # Build tools for compiling C extensions
+      - gcc
+      - g++
+      - make
+      - musl-dev
+      
+      # Essential libraries for common Python packages
+      - libffi-dev     # Required for cryptography and many packages
+      - openssl-dev    # Required for SSL/TLS support
+      - jpeg-dev       # Required for Pillow/image processing
+      - zlib-dev       # Required for compression support
+    
+    environment:
+      # Python environment variables
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_NO_CACHE_DIR: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    
+    post_install:
+      - name: "Setup Python environment"
+        command: |
+          # Create symlinks for consistency
+          ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
+          
+          # Install pip if not available (Alpine sometimes needs explicit pip installation)
+          if ! command -v pip3 >/dev/null 2>&1; then
+              python3 -m ensurepip
+          fi
+          
+          ln -sf /usr/bin/pip3 /usr/bin/pip 2>/dev/null || true
+          
+          # Upgrade pip to latest version
+          python3 -m pip install --upgrade pip setuptools wheel
+          
+          # Install commonly used Python tools
+          python3 -m pip install --upgrade \
+            virtualenv \
+            pipenv \
+            poetry \
+            black \
+            flake8 \
+            mypy \
+            pytest \
+            ipython \
+            requests \
+            python-dotenv
+          
+          # Create standard directories for Python apps
+          mkdir -p /app /var/log/python
+          
+          echo "Python 3 environment ready!"
+          python3 --version
+          pip3 --version
+    
+    tests:
+      internal:
+        - python:/tests/python3.sh

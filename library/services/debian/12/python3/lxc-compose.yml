@@ -1,0 +1,69 @@
+# Python 3 Development Environment for debian-12
+# Complete Python 3 setup with pip, venv, and build tools
+# Usage: Include this service for Python applications
+
+version: '1.0'
+
+containers:
+  python3-debian-12:
+    template: debian-12
+    
+    packages:
+      # Core Python packages
+      - python3
+      - python3-dev
+      - python3-pip
+      - python3-venv
+      - python3-setuptools
+      - python3-wheel
+      
+      # Build essentials for compiling C extensions
+      - build-essential
+      - gcc
+      - g++
+      - make
+      - pkg-config
+      
+      # Essential libraries for common Python packages
+      - libssl-dev       # Required for SSL/TLS support
+      - libffi-dev       # Required for cryptography and many packages
+      - zlib1g-dev       # Required for compression support
+    
+    environment:
+      # Python environment variables
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_NO_CACHE_DIR: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      DEBIAN_FRONTEND: "noninteractive"
+    
+    post_install:
+      - name: "Setup Python environment"
+        command: |
+          # Update package index
+          apt-get update
+          
+          # Create symlinks for consistency
+          ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
+          
+          # Upgrade pip to latest version
+          python3 -m pip install --upgrade pip setuptools wheel
+          
+          # Install essential Python tools
+          python3 -m pip install --upgrade \
+            virtualenv \
+            black \
+            pytest \
+            requests \
+            python-dotenv
+          
+          # Create standard directories for Python apps
+          mkdir -p /app /var/log/python
+          
+          echo "Python 3 environment ready!"
+          python3 --version
+          pip3 --version
+    
+    tests:
+      internal:
+        - python:/tests/python3.sh

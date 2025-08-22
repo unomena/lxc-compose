@@ -1,0 +1,170 @@
+# Node.js Application with MongoDB
+# Multi-container setup following project standards
+
+version: '1.0'
+
+containers:
+  sample-nodejs-datastore:
+    image: ubuntu-minimal:lts
+    
+    packages:
+      - wget
+      - curl
+      - gnupg
+    
+    exposed_ports:
+      - 27017    # MongoDB
+    
+    logs:
+      - mongodb:/var/log/mongodb/mongod.log
+    
+    tests:
+      internal:
+        - health:/app/tests/internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
+      port_forwarding:
+        - iptables:/app/tests/port_forwarding_tests.sh
+    
+    post_install:
+      - name: "Install MongoDB"
+        command: |
+          # Install MongoDB from official repository
+          wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add -
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          apt-get update
+          apt-get install -y mongodb-org
+          
+          # Configure MongoDB for container
+          sed -i 's/bindIp: 127.0.0.1/bindIp: 0.0.0.0/g' /etc/mongod.conf
+          
+          # Create MongoDB data directory
+          mkdir -p /data/db
+          chown -R mongodb:mongodb /data/db
+          
+          # Start MongoDB
+          systemctl daemon-reload
+          systemctl enable mongod
+          systemctl start mongod
+          
+          # Wait for MongoDB to be ready
+          sleep 5
+          
+          # Create database and user (using env vars from .env)
+          mongosh --eval "use ${MONGO_DB}" --eval "db.createUser({user: '${MONGO_USER}', pwd: '${MONGO_PASSWORD}', roles: [{role: 'readWrite', db: '${MONGO_DB}'}]})" || true
+
+  sample-nodejs-app:
+    image: ubuntu-minimal:lts
+    
+    depends_on:
+      - sample-nodejs-datastore
+    
+    mounts:
+      - .:/app
+      - ./config/sample-nodejs-app/supervisord.conf:/etc/supervisord.conf
+    
+    exposed_ports:
+      - 3000    # Node.js app port
+    
+    logs:
+      - nodejs:/var/log/nodejs.log
+      - nodejs-error:/var/log/nodejs_err.log
+      - supervisor:/var/log/supervisord.log
+    
+    tests:
+      internal:
+        - health:/app/tests/internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
+      port_forwarding:
+        - iptables:/app/tests/port_forwarding_tests.sh
+    
+    packages:
+      - curl
+      - supervisor
+      - build-essential
+    
+    # Note: Environment variables from .env are automatically available
+    
+    services:
+      nodejs:
+        command: /usr/bin/node /app/server.js
+        directory: /app
+        user: www-data
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/nodejs.log
+        stderr_logfile: /var/log/nodejs_err.log
+        startsecs: 10
+        stopwaitsecs: 600
+    
+    post_install:
+      - name: "Install Node.js"
+        command: |
+          # Install Node.js 18.x from NodeSource
+          curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+          apt-get install -y nodejs
+          
+          # Verify installation
+          ln -sf /usr/bin/node /usr/local/bin/node || true
+          ln -sf /usr/bin/npm /usr/local/bin/npm || true
+          node --version
+          npm --version
+      
+      - name: "Create directories"
+        command: |
+          mkdir -p /var/log/nginx
+          mkdir -p /var/log
+          chmod 755 /var/log
+      
+      - name: "Setup Node.js application"
+        command: |
+          cd /app
+          # Install dependencies
+          npm install
+          # Build if needed
+          npm run build || true
+      
+      - name: "Wait for MongoDB"
+        command: |
+          # Wait for MongoDB to be ready
+          echo "Waiting for MongoDB to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s ${MONGO_HOST}:27017 > /dev/null 2>&1; then
+              echo "MongoDB is ready!"
+              break
+            fi
+            echo "Waiting for MongoDB... (attempt $i/30)"
+            sleep 2
+          done
+      
+      - name: "Set permissions"
+        command: |
+          # Create www-data user if it doesn't exist
+          id -u www-data &>/dev/null || useradd -r -s /bin/false www-data
+          chown -R www-data:www-data /app
+          chmod -R 755 /app
+      
+      - name: "Start Supervisor service"
+        command: |
+          # Start supervisord directly
+          /usr/bin/supervisord -c /etc/supervisord.conf
+          # Give it a moment to start
+          sleep 5
+          # Check status
+          supervisorctl status
+          # Wait a bit more for Node.js to start
+          sleep 5
+          # Test if Node.js is responding
+          curl -I http://127.0.0.1:3000 || echo "Node.js not responding yet"
+          # Wait for Node.js to be ready
+          echo "Waiting for Node.js to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 | grep -q "200\|301\|302"; then
+              echo "Node.js is ready!"
+              break
+            fi
+            echo "Waiting for Node.js... (attempt $i/30)"
+            sleep 2
+          done
+      

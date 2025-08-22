@@ -1,58 +1,98 @@
 # Django + Celery Application with PostgreSQL and Redis
-# Multi-container setup using library services via includes
-#
-# This version uses the template inheritance system to include
-# pre-configured PostgreSQL and Redis services instead of manual setup
+# Multi-container setup with proper dependencies
 
 version: "1.0"
 
 containers:
   sample-django-celery-app-datastore:
-    template: alpine-3.19  # Use Alpine for minimal footprint
+    image: images:alpine/3.19
+
+    packages:
+      - postgresql
+      - postgresql-client
+      - redis
+
+    exposed_ports:
+      - 5432 # PostgreSQL
+      - 6379 # Redis
+
+    mounts:
+      - ./config/datastore/redis.conf:/etc/redis.conf
+
+    logs:
+      - postgres:/var/lib/postgresql/logfile
+      - redis:/var/log/redis/redis.log
     
-    # Include pre-configured services from library
-    includes:
-      - postgresql  # Includes PostgreSQL with all setup
-      - redis       # Includes Redis with all setup
-    
-    # Override environment for PostgreSQL setup
-    environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    
-    # The includes already provide:
-    # - All necessary packages
-    # - Exposed ports (5432 for PostgreSQL, 6379 for Redis)
-    # - Service setup and initialization
-    # - Log configurations
-    # - Health check tests
-    
-    # Additional configuration for Django-specific setup
+    tests:
+      internal:
+        - health:/app/tests/datastore_internal_tests.sh
+      external:
+        - health:/app/tests/external_tests.sh
+      port_forwarding:
+        - iptables:/app/tests/port_forwarding_tests.sh
+
     post_install:
-      - name: "Configure PostgreSQL for Django"
+      - name: "Setup PostgreSQL"
         command: |
-          # Wait for PostgreSQL to start (from included service)
+          # Create PostgreSQL directories with proper ownership
+          mkdir -p /run/postgresql
+          mkdir -p /var/lib/postgresql/data
+          chown -R postgres:postgres /run/postgresql
+          chown -R postgres:postgres /var/lib/postgresql
+
+          # Initialize PostgreSQL
+          su postgres -c "initdb -D /var/lib/postgresql/data"
+
+          # Configure PostgreSQL
+          echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
+
+          # Start PostgreSQL temporarily for setup
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
           sleep 5
-          
-          # Create Django database user if different from postgres
-          if [ "${DB_USER}" != "postgres" ]; then
-            su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\"" || true
-            su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\"" || true
-            su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\"" || true
-          fi
-          
-          # Add any Django-specific extensions
-          su postgres -c "psql -d ${DB_NAME} -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'" || true
+
+          # Create database and user (using env vars from .env)
+          su postgres -c "createdb ${DB_NAME}"
+          su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
+          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
+          su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
+
+          # Stop PostgreSQL to restart it as a daemon
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
+
+      - name: "Start PostgreSQL"
+        command: |
+          # Start PostgreSQL as a daemon
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          # Verify it's running
+          sleep 2
+          su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
+
+      - name: "Setup Redis"
+        command: |
+          # Create Redis directories with proper ownership
+          mkdir -p /var/lib/redis
+          mkdir -p /var/log/redis
+          mkdir -p /run/redis
+
+          # Create redis user if it doesn't exist
+          adduser -D -H -s /sbin/nologin redis 2>/dev/null || true
+
+          chown -R redis:redis /var/lib/redis
+          chown -R redis:redis /var/log/redis
+          chown -R redis:redis /run/redis
+
+          # Set permissions on redis config
+          chmod 644 /etc/redis.conf
+
+      - name: "Start Redis"
+        command: |
+          # Start Redis directly (OpenRC might not work properly in LXC)
+          /usr/bin/redis-server /etc/redis.conf --daemonize yes
 
   sample-django-celery-app:
-    template: ubuntu-minimal-lts  # Use latest Ubuntu minimal
-    
-    # Include nginx for serving static files (optional)
-    # includes:
-    #   - nginx
-    
+    image: ubuntu-minimal:lts
+
     # Dependencies must exist before this container can start
     depends_on:
       - sample-django-celery-app-datastore
@@ -203,3 +243,4 @@ containers:
             echo "Waiting for Django... (attempt $i/30)"
             sleep 2
           done
+

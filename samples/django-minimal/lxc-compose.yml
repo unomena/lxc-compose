@@ -1,86 +1,51 @@
 # Minimal Django Application with PostgreSQL
-# Multi-container setup following project standards
+# Multi-container setup using library services
 
 version: '1.0'
 
 containers:
   sample-django-minimal-database:
-    image: images:alpine/3.19
+    template: alpine-3.19
     
-    packages:
+    # Use pre-configured PostgreSQL from library
+    includes:
       - postgresql
-      - postgresql-client
-
-    exposed_ports:
-      - 5432    # PostgreSQL
     
-    logs:
-      - postgres:/var/lib/postgresql/logfile
+    # Configure PostgreSQL for Django
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}  
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     
-    tests:
-      internal:
-        - health:/app/tests/internal_tests.sh
-      external:
-        - health:/app/tests/external_tests.sh
-      port_forwarding:
-        - iptables:/app/tests/port_forwarding_tests.sh
-    
+    # Additional Django-specific setup
     post_install:
-      - name: "Setup PostgreSQL"
+      - name: "Configure PostgreSQL for Django"
         command: |
-          # Create PostgreSQL directories with proper ownership
-          mkdir -p /run/postgresql
-          mkdir -p /var/lib/postgresql/data
-          chown -R postgres:postgres /run/postgresql
-          chown -R postgres:postgres /var/lib/postgresql
-          
-          # Initialize PostgreSQL
-          su postgres -c "initdb -D /var/lib/postgresql/data"
-          
-          # Configure PostgreSQL
-          echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
-          echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
-          
-          # Start PostgreSQL temporarily for setup
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
+          # Wait for PostgreSQL to start
           sleep 5
           
-          # Create database and user (using env vars from .env)
-          su postgres -c "createdb ${DB_NAME}"
-          su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\""
-          su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
-          # PostgreSQL 15+ requires explicit schema permissions
-          su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
-          
-          # Stop PostgreSQL to restart it as a daemon
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
-          
-      - name: "Start PostgreSQL"
-        command: |
-          # Start PostgreSQL as a daemon
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data -l /var/lib/postgresql/logfile start"
-          # Verify it's running
-          sleep 2
-          su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
+          # Create Django user if different from postgres
+          if [ "${DB_USER}" != "postgres" ]; then
+            su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\"" || true
+            su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\"" || true
+            su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\"" || true
+          fi
 
   sample-django-minimal-app:
-    image: ubuntu-minimal:lts
+    image: ubuntu:22.04
     
-    # Dependencies must exist before this container can start
     depends_on:
       - sample-django-minimal-database
     
     mounts:
       - .:/app
-      - ./config/app/supervisord.conf:/etc/supervisord.conf
     
     exposed_ports:
       - 8000    # Django development server
     
     logs:
-      - django:/var/log/django.log
-      - django-error:/var/log/django_err.log
-      - supervisor:/var/log/supervisord.log
+      - django:/var/log/django/django.log
+      - django-error:/var/log/django/django_err.log
     
     tests:
       internal:
@@ -97,35 +62,26 @@ containers:
       - python3-dev
       - build-essential
       - libpq-dev
-      - supervisor
+      - git
       - postgresql-client
       - curl
-    
-    # Note: Environment variables from .env are automatically available
     
     services:
       django:
         command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
         directory: /app/src
-        user: www-data
         autostart: true
         autorestart: true
-        priority: 20
-        stdout_logfile: /var/log/django.log
-        stderr_logfile: /var/log/django_err.log
+        stdout_logfile: /var/log/django/django.log
+        stderr_logfile: /var/log/django/django_err.log
         startsecs: 10
         stopwaitsecs: 600
     
     post_install:
-      - name: "Update package lists"
-        command: |
-          apt-get update
-          
-      - name: "Create directories"
+      - name: "Setup Django directories"
         command: |
           mkdir -p /var/log/django /run/django
           mkdir -p /app/static /app/media
-          mkdir -p /var/log/nginx
       
       - name: "Setup Python environment"
         command: |
@@ -134,10 +90,11 @@ containers:
           ./venv/bin/pip install --upgrade pip setuptools wheel
           ./venv/bin/pip install -r requirements.txt
       
-      - name: "Wait for PostgreSQL"
+      - name: "Run Django migrations"
         command: |
-          # Wait for PostgreSQL to be ready
-          echo "Waiting for PostgreSQL to be ready..."
+          cd /app/src
+          # Wait for PostgreSQL
+          echo "Waiting for PostgreSQL..."
           for i in $(seq 1 30); do
             if PGPASSWORD=${DB_PASSWORD} psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME} -c "SELECT 1" > /dev/null 2>&1; then
               echo "PostgreSQL is ready!"
@@ -146,51 +103,11 @@ containers:
             echo "Waiting for PostgreSQL... (attempt $i/30)"
             sleep 2
           done
-      
-      - name: "Run migrations"
-        command: |
-          cd /app/src
-          # Environment variables are already available from .env
           ../venv/bin/python manage.py migrate
-          ../venv/bin/python manage.py collectstatic --noinput || true
+          ../venv/bin/python manage.py collectstatic --noinput
       
-      - name: "Create superuser"
+      - name: "Create Django superuser"
         command: |
           cd /app/src
-          # Using env vars from .env
-          # Try to create superuser, but don't fail if tables don't exist yet
-          ../venv/bin/python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} 2>/dev/null || true
-          # Set password if user exists
-          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.filter(username='${ADMIN_USER}').first(); u and u.set_password('${ADMIN_PASSWORD}'); u and u.save()" | ../venv/bin/python manage.py shell 2>/dev/null || true
-      
-      - name: "Set permissions"
-        command: |
-          # Create www-data user if it doesn't exist
-          id -u www-data &>/dev/null || useradd -r -s /bin/false www-data
-          chown -R www-data:www-data /app
-          chmod -R 755 /app
-          chmod -R 775 /app/media /app/static /var/log/django
-      
-      - name: "Start Supervisor service"
-        command: |
-          # Start supervisord directly
-          /usr/bin/supervisord -c /etc/supervisord.conf
-          # Give it a moment to start
-          sleep 5
-          # Check status
-          supervisorctl status
-          # Wait a bit more for Django to start
-          sleep 5
-          # Test if Django is responding
-          curl -I http://127.0.0.1:8000 || echo "Django not responding yet"
-          # Wait for Django to be ready
-          echo "Waiting for Django to be ready..."
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000 | grep -q "200\|301\|302"; then
-              echo "Django is ready!"
-              break
-            fi
-            echo "Waiting for Django... (attempt $i/30)"
-            sleep 2
-          done
-      
+          ../venv/bin/python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
+          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | ../venv/bin/python manage.py shell
