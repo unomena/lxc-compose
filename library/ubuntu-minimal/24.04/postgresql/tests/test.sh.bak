@@ -11,7 +11,7 @@ NC='\033[0m'
 
 # Get container name - check which one exists
 CONTAINER_NAME=""
-for name in postgresql-minimal-22-04 postgresql-minimal-22-04ql-server; do
+for name in postgres postgresql-minimal-24-04-server; do
     if lxc info $name >/dev/null 2>&1; then
         CONTAINER_NAME=$name
         break
@@ -19,7 +19,7 @@ for name in postgresql-minimal-22-04 postgresql-minimal-22-04ql-server; do
 done
 
 if [ -z "$CONTAINER_NAME" ]; then
-    echo -e "${RED}✗${NC} PostgreSQL container not found (tried: postgresql-minimal-22-04, postgresql-minimal-22-04ql-server)"
+    echo -e "${RED}✗${NC} PostgreSQL container not found (tried: postgres, postgresql-minimal-24-04-server)"
     exit 1
 fi
 
