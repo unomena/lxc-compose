@@ -207,8 +207,18 @@ class TemplateHandler:
             merged['image'] = container_config['image']
         
         # Step 2: Apply includes (library services)
-        if 'includes' in container_config and 'template' in container_config:
-            for include in container_config['includes']:
+        # Auto-include supervisor if services are defined
+        includes_to_process = []
+        if 'includes' in container_config:
+            includes_to_process = container_config['includes'].copy() if isinstance(container_config['includes'], list) else [container_config['includes']]
+        
+        # Add supervisor automatically if services are defined and not already included
+        if 'services' in container_config and 'supervisor' not in includes_to_process:
+            includes_to_process.insert(0, 'supervisor')  # Add supervisor first
+            print(f"  Auto-including supervisor service (services defined)")
+        
+        if includes_to_process and 'template' in container_config:
+            for include in includes_to_process:
                 # Load the library service for this template
                 library_service = self.load_library_service(container_config['template'], include)
                 

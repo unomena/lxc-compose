@@ -32,7 +32,11 @@ containers:
           fi
 
   sample-django-minimal-app:
-    image: ubuntu:22.04
+    template: ubuntu-22.04
+    
+    # Include Python3 with all build tools
+    includes:
+      - python3
     
     depends_on:
       - sample-django-minimal-database
@@ -56,15 +60,10 @@ containers:
         - iptables:/app/tests/port_forwarding_tests.sh
     
     packages:
-      - python3
-      - python3-pip
-      - python3-venv
-      - python3-dev
-      - build-essential
-      - libpq-dev
-      - git
-      - postgresql-client
-      - curl
+      # Only packages not provided by python3 include
+      - libpq-dev           # For psycopg2
+      - postgresql-client   # For psql CLI
+      - curl                # For testing
     
     services:
       django:

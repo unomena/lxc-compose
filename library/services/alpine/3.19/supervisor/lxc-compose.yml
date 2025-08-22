@@ -1,0 +1,52 @@
+# Supervisor Process Management Service
+# Provides supervisor for managing long-running processes
+# Usage: Automatically included when services are defined
+
+version: '1.0'
+
+containers:
+  supervisor-alpine-3-19:
+    template: alpine-3.19
+    
+    packages:
+      - supervisor      # Process management system
+      - supervisor-openrc  # OpenRC integration (optional)
+    
+    post_install:
+      - name: "Setup Supervisor"
+        command: |
+          # Create default supervisor directories
+          mkdir -p /etc/supervisor.d /var/log/supervisor
+          
+          # Create a base supervisord.conf if it doesn't exist
+          if [ ! -f /etc/supervisord.conf ]; then
+            cat > /etc/supervisord.conf << 'EOF'
+          [unix_http_server]
+          file=/run/supervisord.sock
+          
+          [supervisord]
+          logfile=/var/log/supervisor/supervisord.log
+          logfile_maxbytes=50MB
+          logfile_backups=10
+          loglevel=info
+          pidfile=/run/supervisord.pid
+          nodaemon=false
+          minfds=1024
+          minprocs=200
+          
+          [rpcinterface:supervisor]
+          supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+          
+          [supervisorctl]
+          serverurl=unix:///run/supervisord.sock
+          
+          [include]
+          files = /etc/supervisor.d/*.ini
+          EOF
+          fi
+          
+          echo "Supervisor configured successfully"
+    
+    tests:
+      internal:
+        - supervisor:/tests/supervisor.sh

@@ -49,9 +49,10 @@ containers:
   sample-django-celery-app:
     template: ubuntu-minimal-lts  # Use latest Ubuntu minimal
     
-    # Include nginx for serving static files (optional)
-    # includes:
-    #   - nginx
+    # Include pre-configured services
+    includes:
+      - python3  # Includes Python3 with pip, venv, build tools
+    #   - nginx  # Optional: for serving static files
     
     # Dependencies must exist before this container can start
     depends_on:
@@ -82,17 +83,11 @@ containers:
         - iptables:/app/tests/port_forwarding_tests.sh
 
     packages:
-      - python3
-      - python3-pip
-      - python3-venv
-      - python3-dev
-      - build-essential
-      - libpq-dev
-      - supervisor
-      - git
-      - redis-tools
-      - postgresql-client
-      - curl
+      # Only packages not provided by python3 or supervisor includes
+      - libpq-dev       # For psycopg2
+      - redis-tools     # For Redis CLI
+      - postgresql-client  # For psql CLI
+      - curl            # For testing
 
     # Note: Environment variables from .env are automatically available
 
@@ -131,10 +126,6 @@ containers:
         stopwaitsecs: 600
 
     post_install:
-      - name: "Update package lists"
-        command: |
-          apt-get update
-          
       - name: "Create directories"
         command: |
           mkdir -p /var/log/django /var/log/celery /run/django

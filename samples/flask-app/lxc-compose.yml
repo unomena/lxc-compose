@@ -24,8 +24,10 @@ containers:
   sample-flask-app:
     template: alpine-3.19
     
+    # Include Python3 with all build tools
+    includes:
+      - python3
     # Optional: include nginx for production serving
-    # includes:
     #   - nginx
     
     depends_on:
@@ -50,13 +52,9 @@ containers:
         - iptables:/app/tests/port_forwarding_tests.sh
     
     packages:
-      - python3
-      - py3-pip
-      - python3-dev
-      - gcc
-      - musl-dev
-      - redis
-      - curl
+      # Only packages not provided by python3 or supervisor includes
+      - redis   # For redis-cli
+      - curl    # For testing
     
     services:
       flask:

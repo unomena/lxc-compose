@@ -1,0 +1,41 @@
+# Supervisor Process Management Service for debian-12
+# Provides supervisor for managing long-running processes
+# Usage: Automatically included when services are defined
+
+version: '1.0'
+
+containers:
+  supervisor-debian-12:
+    template: debian-12
+    
+    packages:
+      - supervisor      # Process management system
+    
+    post_install:
+      - name: "Setup Supervisor"
+        command: |
+          # Create default supervisor directories
+          mkdir -p /etc/supervisor/conf.d /var/log/supervisor
+          
+          # Update supervisor configuration to use conf.d
+          if ! grep -q "files = /etc/supervisor/conf.d/\*.conf" /etc/supervisor/supervisord.conf; then
+            cat >> /etc/supervisor/supervisord.conf << 'CONF'
+          
+          [include]
+          files = /etc/supervisor/conf.d/*.conf
+          CONF
+          fi
+          
+          # Ensure supervisor can run without systemd
+          # Create a startup script for non-systemd environments
+          cat > /usr/local/bin/start-supervisor << 'SCRIPT'
+          #!/bin/bash
+          /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf
+          SCRIPT
+          chmod +x /usr/local/bin/start-supervisor
+          
+          echo "Supervisor configured successfully"
+    
+    tests:
+      internal:
+        - supervisor:/tests/supervisor.sh
