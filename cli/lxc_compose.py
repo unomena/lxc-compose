@@ -507,7 +507,7 @@ class LXCCompose:
     
     def container_exists(self, name: str) -> bool:
         """Check if container exists"""
-        result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
+        result = self.run_command(['lxc', 'list', f'^{name}$', '--format=json'], check=False)
         if result.returncode != 0:
             return False
         containers = json.loads(result.stdout)
@@ -515,7 +515,7 @@ class LXCCompose:
     
     def container_running(self, name: str) -> bool:
         """Check if container is running"""
-        result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
+        result = self.run_command(['lxc', 'list', f'^{name}$', '--format=json'], check=False)
         if result.returncode != 0:
             return False
         containers = json.loads(result.stdout)
@@ -523,7 +523,7 @@ class LXCCompose:
     
     def get_container_ip(self, name: str) -> Optional[str]:
         """Get container IP address"""
-        result = self.run_command(['lxc', 'list', name, '--format=json'], check=False)
+        result = self.run_command(['lxc', 'list', f'^{name}$', '--format=json'], check=False)
         if result.returncode != 0:
             return None
         
