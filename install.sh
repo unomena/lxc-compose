@@ -22,10 +22,8 @@ error() { echo -e "${RED}✗${NC} $1" >&2; exit 1; }
 warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 info() { echo -e "${BLUE}ℹ${NC} $1"; }
 
-# Script directory detection
-SCRIPT_DIR=""
-TEMP_DIR=""
-IS_REMOTE_INSTALL=false
+# Installation type detection
+IS_LOCAL_INSTALL=false
 
 # Display banner
 display_banner() {
@@ -37,63 +35,88 @@ display_banner() {
     echo -e "${NC}"
 }
 
-# Cleanup function
-cleanup() {
-    if [[ -n "$TEMP_DIR" ]] && [[ -d "$TEMP_DIR" ]]; then
-        rm -rf "$TEMP_DIR"
-    fi
-}
-
-# Set up trap for cleanup
-trap cleanup EXIT
-
 # Detect installation method and prepare files
 prepare_installation() {
     # Check if we're running from a local repository
     if [[ -f "cli/lxc_compose.py" ]] && [[ -d "samples" ]]; then
-        # Local installation - files are in current directory
-        SCRIPT_DIR="$(pwd)"
+        # Local installation - copy entire repo to /srv/lxc-compose
+        IS_LOCAL_INSTALL=true
         info "Installing from local repository..."
+        
+        # Backup existing installation if it exists
+        if [[ -d "$INSTALL_DIR" ]]; then
+            warning "Existing installation found. Creating backup..."
+            mv "$INSTALL_DIR" "${INSTALL_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
+        fi
+        
+        # Copy entire repository to /srv/lxc-compose
+        info "Copying repository to $INSTALL_DIR..."
+        cp -r "$(pwd)" "$INSTALL_DIR"
+        
     elif [[ -f "../cli/lxc_compose.py" ]] && [[ -d "../samples" ]]; then
         # Running from within a subdirectory of the repo
-        SCRIPT_DIR="$(cd .. && pwd)"
+        IS_LOCAL_INSTALL=true
         info "Installing from local repository..."
+        
+        # Backup existing installation if it exists
+        if [[ -d "$INSTALL_DIR" ]]; then
+            warning "Existing installation found. Creating backup..."
+            mv "$INSTALL_DIR" "${INSTALL_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
+        fi
+        
+        # Copy entire repository to /srv/lxc-compose
+        info "Copying repository to $INSTALL_DIR..."
+        cp -r "$(cd .. && pwd)" "$INSTALL_DIR"
+        
     else
-        # Remote installation - need to download
-        IS_REMOTE_INSTALL=true
+        # Remote installation - clone directly to /srv/lxc-compose
         info "Downloading LXC Compose from GitHub..."
         
-        # Create temporary directory
-        TEMP_DIR=$(mktemp -d)
-        cd "$TEMP_DIR"
+        # Backup existing installation if it exists
+        if [[ -d "$INSTALL_DIR" ]]; then
+            warning "Existing installation found. Creating backup..."
+            mv "$INSTALL_DIR" "${INSTALL_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
+        fi
         
-        # Download repository
-        if command -v curl >/dev/null 2>&1; then
-            curl -fsSL "https://github.com/${GITHUB_REPO}/archive/${GITHUB_BRANCH}.tar.gz" -o lxc-compose.tar.gz || \
-                error "Failed to download LXC Compose"
-        elif command -v wget >/dev/null 2>&1; then
-            wget -q "https://github.com/${GITHUB_REPO}/archive/${GITHUB_BRANCH}.tar.gz" -O lxc-compose.tar.gz || \
-                error "Failed to download LXC Compose"
+        # Clone repository directly to /srv/lxc-compose
+        if command -v git >/dev/null 2>&1; then
+            git clone --branch "$GITHUB_BRANCH" "https://github.com/${GITHUB_REPO}.git" "$INSTALL_DIR" || \
+                error "Failed to clone LXC Compose repository"
         else
-            error "Neither curl nor wget is available. Please install one of them."
+            # If git is not available, download and extract
+            info "Git not found, downloading archive..."
+            
+            # Create temporary directory for download
+            TEMP_DIR=$(mktemp -d)
+            cd "$TEMP_DIR"
+            
+            if command -v curl >/dev/null 2>&1; then
+                curl -fsSL "https://github.com/${GITHUB_REPO}/archive/${GITHUB_BRANCH}.tar.gz" -o lxc-compose.tar.gz || \
+                    error "Failed to download LXC Compose"
+            elif command -v wget >/dev/null 2>&1; then
+                wget -q "https://github.com/${GITHUB_REPO}/archive/${GITHUB_BRANCH}.tar.gz" -O lxc-compose.tar.gz || \
+                    error "Failed to download LXC Compose"
+            else
+                error "Neither curl nor wget is available. Please install one of them."
+            fi
+            
+            # Extract archive directly to /srv
+            tar -xzf lxc-compose.tar.gz -C /srv || error "Failed to extract archive"
+            
+            # Rename extracted directory to lxc-compose
+            if [[ -d "/srv/lxc-compose-${GITHUB_BRANCH}" ]]; then
+                mv "/srv/lxc-compose-${GITHUB_BRANCH}" "$INSTALL_DIR"
+            elif [[ -d "/srv/lxc-compose-main" ]]; then
+                mv "/srv/lxc-compose-main" "$INSTALL_DIR"
+            else
+                error "Failed to find extracted files"
+            fi
+            
+            # Clean up temporary directory
+            rm -rf "$TEMP_DIR"
         fi
         
-        # Extract archive
-        tar -xzf lxc-compose.tar.gz || error "Failed to extract archive"
-        
-        # Set script directory to extracted location
-        SCRIPT_DIR="${TEMP_DIR}/lxc-compose-${GITHUB_BRANCH}"
-        
-        if [[ ! -d "$SCRIPT_DIR" ]]; then
-            # Try alternative directory name
-            SCRIPT_DIR="${TEMP_DIR}/lxc-compose-main"
-        fi
-        
-        if [[ ! -d "$SCRIPT_DIR" ]]; then
-            error "Failed to find extracted files"
-        fi
-        
-        log "Downloaded LXC Compose successfully"
+        log "Downloaded LXC Compose successfully to $INSTALL_DIR"
     fi
 }
 
@@ -154,7 +177,8 @@ install_dependencies() {
         python3-yaml \
         iptables \
         curl \
-        wget
+        wget \
+        git
     
     # Initialize LXD if not already initialized
     if command -v lxd >/dev/null 2>&1; then
@@ -281,19 +305,12 @@ EOF
 
 # Setup directories
 setup_directories() {
-    info "Setting up directories..."
-
-    # Backup existing installation if it exists
-    if [[ -d "$INSTALL_DIR" ]]; then
-        warning "Existing installation found. Creating backup..."
-        mv "$INSTALL_DIR" "${INSTALL_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
-    fi
+    info "Setting up additional directories..."
     
-    # Create required directories
-    mkdir -p "$INSTALL_DIR/cli"
-    mkdir -p "$INSTALL_DIR/docs"
-    mkdir -p "$INSTALL_DIR/samples"
-    mkdir -p "$INSTALL_DIR/etc"  # For shared hosts file
+    # Create etc directory for shared hosts file if it doesn't exist
+    mkdir -p "$INSTALL_DIR/etc"
+    
+    # Create system directories
     mkdir -p "/etc/lxc-compose"
     mkdir -p "/var/log/lxc-compose"
     
@@ -314,33 +331,7 @@ EOF
         log "Created shared hosts file"
     fi
     
-    log "Directories created"
-}
-
-# Copy files
-copy_files() {
-    info "Copying files..."
-    
-    # Copy CLI files
-    if [[ -d "$SCRIPT_DIR/cli" ]]; then
-        cp -r "$SCRIPT_DIR/cli/"* "$INSTALL_DIR/cli/" 2>/dev/null || true
-    fi
-    
-    # Copy docs
-    if [[ -d "$SCRIPT_DIR/docs" ]]; then
-        cp -r "$SCRIPT_DIR/docs/"* "$INSTALL_DIR/docs/" 2>/dev/null || true
-    fi
-    
-    # Copy samples
-    if [[ -d "$SCRIPT_DIR/samples" ]]; then
-        cp -r "$SCRIPT_DIR/samples/"* "$INSTALL_DIR/samples/" 2>/dev/null || true
-    fi
-    
-    # Make scripts executable
-    chmod +x "$INSTALL_DIR/cli/lxc_compose.py"
-    chmod +x "$INSTALL_DIR/cli/lxc-compose-wrapper.sh" 2>/dev/null || true
-    
-    log "Files copied"
+    log "Additional directories configured"
 }
 
 # Setup CLI wrapper
@@ -388,14 +379,15 @@ setup_network() {
 
 # Copy sample projects
 copy_sample_projects() {
-    info "Sample projects available..."
+    info "Sample projects available in $INSTALL_DIR/samples/:"
     echo "  - django-celery-app: Django + Celery + PostgreSQL + Redis"
     echo "  - django-minimal: Django + PostgreSQL in Alpine (150MB)"
     echo "  - flask-app: Flask with Redis cache"
     echo "  - nodejs-app: Express.js with MongoDB"
-    echo "  - searxng-app: Privacy-respecting search engine"
+    echo "  - searxng: Privacy-respecting search engine"
+    echo "  - docs-server: Documentation server with MkDocs"
     echo ""
-    info "Copying sample projects to ~/lxc-samples..."
+    info "Creating symbolic link to samples for easy access..."
     
     # Get the real user's home directory (not root)
     if [ -n "$SUDO_USER" ]; then
@@ -406,17 +398,17 @@ copy_sample_projects() {
         USER_NAME="$USER"
     fi
     
-    # Copy samples
-    if [[ -d "$USER_HOME/lxc-samples" ]]; then
+    # Create symbolic link to samples
+    if [[ -L "$USER_HOME/lxc-samples" ]] || [[ -d "$USER_HOME/lxc-samples" ]]; then
         rm -rf "$USER_HOME/lxc-samples"
     fi
     
-    if [[ -d "$SCRIPT_DIR/samples" ]]; then
-        cp -r "$SCRIPT_DIR/samples" "$USER_HOME/lxc-samples"
-        chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/lxc-samples"
-        log "Sample projects copied to $USER_HOME/lxc-samples"
+    if [[ -d "$INSTALL_DIR/samples" ]]; then
+        ln -s "$INSTALL_DIR/samples" "$USER_HOME/lxc-samples"
+        chown -h "$USER_NAME:$USER_NAME" "$USER_HOME/lxc-samples"
+        log "Created symbolic link to samples at $USER_HOME/lxc-samples"
     else
-        warning "Sample projects not found in installation files"
+        warning "Sample projects not found in installation"
     fi
     
     echo ""
@@ -455,14 +447,15 @@ verify_installation() {
 main() {
     display_banner
     
-    # Prepare installation (download if needed)
+    # Check prerequisites first
+    check_prerequisites
+    
+    # Prepare installation (clone/copy repository to /srv/lxc-compose)
     prepare_installation
     
     # Run installation steps
-    check_prerequisites
     install_dependencies
     setup_directories
-    copy_files
     setup_cli
     setup_network
     copy_sample_projects
@@ -472,19 +465,24 @@ main() {
     echo -e "${GREEN}${BOLD}✓ Installation complete!${NC}"
     echo ""
     
-    if [[ "$IS_REMOTE_INSTALL" == true ]]; then
-        echo "Installation method: Remote (downloaded from GitHub)"
+    if [[ "$IS_LOCAL_INSTALL" == true ]]; then
+        echo "Installation method: Local repository copied to $INSTALL_DIR"
     else
-        echo "Installation method: Local repository"
+        echo "Installation method: Remote (cloned from GitHub to $INSTALL_DIR)"
     fi
     
+    echo ""
+    echo "Repository location: $INSTALL_DIR"
     echo ""
     echo "Quick start:"
     echo "  1. Create a lxc-compose.yml file in your project"
     echo "  2. Add a .env file for environment variables (optional)"
     echo "  3. Run: lxc-compose up"
     echo ""
-    echo "Sample projects available in: ~/lxc-samples/"
+    echo "Sample projects available in:"
+    echo "  - $INSTALL_DIR/samples/"
+    echo "  - ~/lxc-samples/ (symbolic link)"
+    echo ""
     echo "Try one:"
     echo "  cd ~/lxc-samples/django-celery-app"
     echo "  lxc-compose up"
