@@ -32,3 +32,6 @@ containers:
           PG_VERSION=$(ls /etc/postgresql/ | head -1)
           
           echo "Postgresql is ready!"
+    
+    logs:
+      - postgresql:/var/log/postgresql/postgresql.log

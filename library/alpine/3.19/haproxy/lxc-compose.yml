@@ -55,4 +55,6 @@ containers:
           
           # Start HAProxy
           haproxy -f /etc/haproxy/haproxy.cfg
-          echo "HAProxy is ready!"
+          echo "HAProxy is ready!"    
+    logs:
+      - haproxy:/var/log/haproxy.log

@@ -28,3 +28,7 @@ containers:
           systemctl start nginx
           
           echo "Nginx is ready!"
+    
+    logs:
+      - access:/var/log/nginx/access.log
+      - error:/var/log/nginx/error.log

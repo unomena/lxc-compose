@@ -71,3 +71,6 @@ containers:
           systemctl enable prometheus
           systemctl start prometheus
           echo "Prometheus is ready!"
+    
+    logs:
+      - prometheus:/opt/prometheus/prometheus.log

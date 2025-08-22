@@ -13,8 +13,8 @@ containers:
       - 9300
     
     packages:
-
-    
+      - curl
+      - openjdk-11-jre-headless
     tests:
       external:
         - elasticsearch:/tests/elasticsearch.sh
@@ -22,6 +22,32 @@ containers:
     post_install:
       - name: "Setup Elasticsearch"
         command: |
-# TODO: Implement for this base image
+          # Download and install Elasticsearch manually
+          cd /tmp
+          wget https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.17.9-linux-x86_64.tar.gz
+          tar -xzf elasticsearch-7.17.9-linux-x86_64.tar.gz
+          mv elasticsearch-7.17.9 /opt/elasticsearch
           
+          # Create elasticsearch user
+          useradd -r -s /bin/false -d /opt/elasticsearch elasticsearch
+          chown -R elasticsearch:elasticsearch /opt/elasticsearch
+          
+          # Configure Elasticsearch
+          cat > /opt/elasticsearch/config/elasticsearch.yml << EOF
+          network.host: 0.0.0.0
+          discovery.type: single-node
+          xpack.security.enabled: false
+          EOF
+          
+          # Start Elasticsearch
+          sudo -u elasticsearch ES_JAVA_OPTS="-Xms512m -Xmx512m" /opt/elasticsearch/bin/elasticsearch -d
+          
+          # Wait for Elasticsearch to start
+          sleep 30
+          
+          # Test connection
+          curl -X GET "localhost:9200/" || echo "Elasticsearch starting..."
           echo "Elasticsearch is ready!"
+    
+    logs:
+      - elasticsearch:/opt/elasticsearch/logs/elasticsearch.log

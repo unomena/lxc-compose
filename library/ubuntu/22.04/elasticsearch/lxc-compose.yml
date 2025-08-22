@@ -59,4 +59,6 @@ containers:
               break
             fi
             sleep 2
-          done
+          done    
+    logs:
+      - elasticsearch:/opt/elasticsearch/logs/elasticsearch.log

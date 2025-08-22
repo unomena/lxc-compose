@@ -1,0 +1,208 @@
+# WordPress Composite Container Example
+# Demonstrates using library services to build a complete WordPress stack in one container
+
+version: '1.0'
+
+containers:
+  wordpress:
+    # Use Ubuntu for full compatibility
+    template: ubuntu-24.04
+    
+    # Include services from library
+    includes:
+      - mysql       # Database
+      - nginx       # Web server
+      - redis       # Object cache
+    
+    # Add PHP and WordPress dependencies
+    packages:
+      - php8.3-fpm
+      - php8.3-mysql
+      - php8.3-redis
+      - php8.3-curl
+      - php8.3-gd
+      - php8.3-mbstring
+      - php8.3-xml
+      - php8.3-zip
+      - php8.3-imagick
+      - wget
+      - unzip
+    
+    # Expose web ports (MySQL and Redis ports inherited)
+    exposed_ports:
+      - 80
+      - 443
+    
+    # Mount WordPress directory
+    mounts:
+      - ./wordpress:/var/www/wordpress
+      - ./uploads:/var/www/wordpress/wp-content/uploads
+    
+    # WordPress doesn't need a service definition as it runs via PHP-FPM
+    
+    # Logs (MySQL, Nginx, Redis logs inherited)
+    logs:
+      - php:/var/log/php8.3-fpm.log
+      - wordpress:/var/www/wordpress/wp-content/debug.log
+    
+    # Tests (MySQL and Redis tests inherited)
+    tests:
+      external:
+        - wordpress:/tests/check_wordpress.sh
+    
+    # WordPress setup
+    post_install:
+      - name: "Download WordPress"
+        command: |
+          if [ ! -f /var/www/wordpress/wp-config.php ]; then
+            cd /tmp
+            wget https://wordpress.org/latest.zip
+            unzip -q latest.zip
+            mv wordpress/* /var/www/wordpress/
+            chown -R www-data:www-data /var/www/wordpress
+          fi
+      
+      - name: "Configure WordPress database"
+        command: |
+          # Create WordPress database
+          mysql -u root -e "CREATE DATABASE IF NOT EXISTS wordpress;"
+          mysql -u root -e "CREATE USER IF NOT EXISTS 'wordpress'@'localhost' IDENTIFIED BY 'wordpress';"
+          mysql -u root -e "GRANT ALL PRIVILEGES ON wordpress.* TO 'wordpress'@'localhost';"
+          mysql -u root -e "FLUSH PRIVILEGES;"
+      
+      - name: "Configure WordPress"
+        command: |
+          if [ ! -f /var/www/wordpress/wp-config.php ]; then
+            cp /var/www/wordpress/wp-config-sample.php /var/www/wordpress/wp-config.php
+            
+            # Set database credentials
+            sed -i "s/database_name_here/wordpress/" /var/www/wordpress/wp-config.php
+            sed -i "s/username_here/wordpress/" /var/www/wordpress/wp-config.php
+            sed -i "s/password_here/wordpress/" /var/www/wordpress/wp-config.php
+            sed -i "s/localhost/127.0.0.1/" /var/www/wordpress/wp-config.php
+            
+            # Add Redis cache configuration
+            cat >> /var/www/wordpress/wp-config.php << 'EOF'
+            
+            // Redis Object Cache
+            define('WP_REDIS_HOST', '127.0.0.1');
+            define('WP_REDIS_PORT', 6379);
+            define('WP_REDIS_DATABASE', 0);
+            define('WP_CACHE', true);
+            EOF
+            
+            # Generate salts
+            SALT=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/)
+            printf '%s\n' "g/put your unique phrase here/d" a "$SALT" . w | ed -s /var/www/wordpress/wp-config.php
+          fi
+      
+      - name: "Configure PHP-FPM"
+        command: |
+          # Configure PHP-FPM pool
+          cat > /etc/php/8.3/fpm/pool.d/wordpress.conf << EOF
+          [wordpress]
+          user = www-data
+          group = www-data
+          listen = /run/php/php8.3-fpm-wordpress.sock
+          listen.owner = www-data
+          listen.group = www-data
+          pm = dynamic
+          pm.max_children = 5
+          pm.start_servers = 2
+          pm.min_spare_servers = 1
+          pm.max_spare_servers = 3
+          EOF
+          
+          # Start PHP-FPM
+          systemctl restart php8.3-fpm
+      
+      - name: "Configure Nginx for WordPress"
+        command: |
+          cat > /etc/nginx/sites-available/wordpress << 'EOF'
+          server {
+              listen 80;
+              server_name _;
+              root /var/www/wordpress;
+              index index.php;
+              
+              client_max_body_size 64M;
+              
+              location / {
+                  try_files $uri $uri/ /index.php?$args;
+              }
+              
+              location ~ \.php$ {
+                  include snippets/fastcgi-php.conf;
+                  fastcgi_pass unix:/run/php/php8.3-fpm-wordpress.sock;
+                  fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+                  include fastcgi_params;
+              }
+              
+              location ~ /\.ht {
+                  deny all;
+              }
+              
+              location = /favicon.ico {
+                  log_not_found off;
+                  access_log off;
+              }
+              
+              location = /robots.txt {
+                  allow all;
+                  log_not_found off;
+                  access_log off;
+              }
+              
+              location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+                  expires max;
+                  log_not_found off;
+              }
+          }
+          EOF
+          
+          ln -sf /etc/nginx/sites-available/wordpress /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          nginx -s reload
+      
+      - name: "Set permissions"
+        command: |
+          chown -R www-data:www-data /var/www/wordpress
+          find /var/www/wordpress -type d -exec chmod 755 {} \;
+          find /var/www/wordpress -type f -exec chmod 644 {} \;
+      
+      - name: "Create health check script"
+        command: |
+          mkdir -p /tests
+          cat > /tests/check_wordpress.sh << 'EOF'
+          #!/bin/bash
+          
+          echo "Testing WordPress installation..."
+          
+          # Check if WordPress responds
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/)
+          if [ "$response" = "200" ] || [ "$response" = "302" ]; then
+              echo "✓ WordPress is responding (HTTP $response)"
+          else
+              echo "✗ WordPress is not responding (HTTP $response)"
+              exit 1
+          fi
+          
+          # Check database connection
+          if mysql -u wordpress -pwordpress wordpress -e "SELECT 1" > /dev/null 2>&1; then
+              echo "✓ Database connection working"
+          else
+              echo "✗ Database connection failed"
+              exit 1
+          fi
+          
+          # Check Redis connection
+          if redis-cli ping > /dev/null 2>&1; then
+              echo "✓ Redis cache available"
+          else
+              echo "✗ Redis cache not available"
+              exit 1
+          fi
+          
+          echo "All tests passed!"
+          EOF
+          chmod +x /tests/check_wordpress.sh

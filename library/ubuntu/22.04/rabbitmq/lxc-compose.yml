@@ -42,4 +42,7 @@ containers:
           
           # Restart to apply changes
           service rabbitmq-server restart
-          echo "RabbitMQ is ready! Management UI at port 15672"
+          echo "RabbitMQ is ready! Management UI at port 15672"    
+    logs:
+      - rabbitmq:/var/log/rabbitmq/rabbit.log
+      - startup:/var/log/rabbitmq/startup_log

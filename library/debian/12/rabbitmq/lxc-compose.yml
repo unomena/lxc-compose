@@ -44,3 +44,7 @@ containers:
           
           systemctl restart rabbitmq-server
           echo "RabbitMQ is ready!"
+    
+    logs:
+      - rabbitmq:/var/log/rabbitmq/rabbit.log
+      - startup:/var/log/rabbitmq/startup_log

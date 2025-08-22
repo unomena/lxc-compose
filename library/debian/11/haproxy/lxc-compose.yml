@@ -29,3 +29,6 @@ containers:
           systemctl start haproxy
           
           echo "Haproxy is ready!"
+    
+    logs:
+      - haproxy:/var/log/haproxy.log

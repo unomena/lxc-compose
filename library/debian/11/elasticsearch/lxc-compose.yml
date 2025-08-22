@@ -58,3 +58,6 @@ containers:
             sleep 2
           done
           echo "Elasticsearch is ready!"
+    
+    logs:
+      - elasticsearch:/opt/elasticsearch/logs/elasticsearch.log

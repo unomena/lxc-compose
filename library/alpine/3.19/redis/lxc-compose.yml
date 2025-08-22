@@ -46,4 +46,6 @@ containers:
           
           # Verify it's running
           redis-cli ping
-          echo "Redis is ready!"
+          echo "Redis is ready!"    
+    logs:
+      - redis:/var/log/redis/redis-server.log

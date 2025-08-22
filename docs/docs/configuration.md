@@ -2,11 +2,13 @@
 
 Complete reference for `lxc-compose.yml` configuration files.
 
+> **New!** See [Templates and Library Services](templates-and-library.md) for information about template inheritance and using pre-configured services from the library.
+
 ## Table of Contents
 
 - [Basic Structure](#basic-structure)
 - [Container Configuration](#container-configuration)
-- [Templates and Releases](#templates-and-releases)
+- [Templates and Library Services](#templates-and-library-services)
 - [Package Management](#package-management)
 - [Mount Configuration](#mount-configuration)
 - [Network Configuration](#network-configuration)
@@ -84,20 +86,52 @@ containers:
         - type:/path/to/test.sh
 ```
 
-## Templates and Releases
+## Templates and Library Services
+
+### Quick Overview
+
+LXC Compose now supports template inheritance and library services:
+
+```yaml
+containers:
+  myapp:
+    template: alpine-3.19        # Base OS template
+    includes:                    # Include pre-configured services
+      - postgresql
+      - redis
+    packages:                    # Additional packages
+      - python3
+    # ... rest of your config
+```
 
 ### Available Templates
 
-| Template | Base Size | With Packages | Use Cases |
-|----------|-----------|---------------|-----------|
-| alpine | ~5MB | ~150MB | Databases, caches, minimal services |
-| ubuntu-minimal | ~100MB | ~300MB | Applications, balanced size |
-| ubuntu | ~500MB | ~1GB+ | Development, complex apps |
+| Template | Alias | Base Size | Package Manager | Use Cases |
+|----------|-------|-----------|-----------------|-----------|
+| `alpine-3.19` | `alpine-latest` | ~150MB | apk | Minimal services, databases |
+| `ubuntu-24.04` | `ubuntu-lts` | ~500MB | apt | Full environment |
+| `ubuntu-22.04` | `ubuntu-jammy` | ~500MB | apt | Stable Ubuntu LTS |
+| `ubuntu-minimal-24.04` | - | ~300MB | apt | Balanced size |
+| `ubuntu-minimal-22.04` | - | ~300MB | apt | Lightweight Ubuntu |
+| `debian-12` | `debian-bookworm` | ~450MB | apt | Stable Debian |
+| `debian-11` | `debian-bullseye` | ~450MB | apt | Old stable |
 
-### Template Examples
+### Library Services
+
+Pre-configured services available for all base templates:
+- **Databases**: PostgreSQL, MySQL, MongoDB
+- **Caching**: Redis, Memcached  
+- **Web**: Nginx, HAProxy
+- **Messaging**: RabbitMQ
+- **Search**: Elasticsearch
+- **Monitoring**: Grafana, Prometheus
+
+> **See [Templates and Library Services Guide](templates-and-library.md)** for complete documentation on template inheritance and building composite containers.
+
+### Basic Template Usage
 
 ```yaml
-# Alpine - for databases and caches
+# Minimal template only
 template: alpine
 release: "3.19"
 
@@ -254,30 +288,116 @@ logs:
 
 ## Complete Example
 
+### Modern Approach: Single Container with Library Services
+
+```yaml
+version: "1.0"
+
+containers:
+  # All-in-one container using library services
+  myapp:
+    # Use lightweight Ubuntu base
+    template: ubuntu-minimal-24.04
+    
+    # Include pre-configured services from library
+    includes:
+      - postgresql  # Full PostgreSQL setup
+      - redis       # Redis cache
+      - nginx       # Web server
+    
+    # Add application-specific packages
+    packages:
+      - python3
+      - python3-pip
+      - python3-venv
+    
+    # Expose application port (library services ports are inherited)
+    exposed_ports:
+      - 8000  # Gunicorn
+    
+    # Mount application code
+    mounts:
+      - ./app:/app
+      - ./data:/var/lib/postgresql/data
+    
+    # Define application service
+    services:
+      webapp:
+        command: /app/venv/bin/gunicorn app:application --bind 0.0.0.0:8000
+        directory: /app
+        user: www-data
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/webapp.log
+        environment:
+          DATABASE_URL: postgresql://localhost/myapp
+          REDIS_URL: redis://localhost:6379
+    
+    # Application logs (library service logs are inherited)
+    logs:
+      - webapp:/var/log/webapp.log
+    
+    # Application tests (library service tests are inherited)
+    tests:
+      external:
+        - api:/app/tests/test_api.sh
+    
+    # Application setup
+    post_install:
+      - name: "Setup Python environment"
+        command: |
+          cd /app
+          python3 -m venv venv
+          ./venv/bin/pip install -r requirements.txt
+      
+      - name: "Initialize database"
+        command: |
+          su - postgres -c "createdb myapp"
+          su - postgres -c "psql myapp -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'"
+      
+      - name: "Configure Nginx"
+        command: |
+          cat > /etc/nginx/sites-enabled/default << EOF
+          server {
+            listen 80;
+            location / {
+              proxy_pass http://localhost:8000;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+            }
+          }
+          EOF
+          nginx -s reload
+```
+
+### Traditional Approach: Multiple Containers
+
 ```yaml
 version: "1.0"
 
 containers:
   # Database container
   myapp-db:
-    template: alpine
-    release: "3.19"
+    template: alpine-3.19
     packages:
-      - postgresql
-      - redis
+      - postgresql15
+      - postgresql15-client
+    exposed_ports:
+      - 5432
     mounts:
       - ./data:/var/lib/postgresql/data
     post_install:
       - name: "Setup PostgreSQL"
         command: |
-          su postgres -c "initdb -D /var/lib/postgresql/data"
-          su postgres -c "pg_ctl start -D /var/lib/postgresql/data"
-          su postgres -c "createdb ${DB_NAME}"
+          mkdir -p /run/postgresql
+          chown postgres:postgres /run/postgresql
+          su - postgres -c "initdb -D /var/lib/postgresql/data"
+          su - postgres -c "pg_ctl start -D /var/lib/postgresql/data"
+          su - postgres -c "createdb myapp"
 
   # Application container
   myapp-web:
-    template: ubuntu-minimal
-    release: lts
+    template: ubuntu-minimal-24.04
     depends_on:
       - myapp-db
     packages:

@@ -13,8 +13,8 @@ containers:
       - 15672
     
     packages:
-
-    
+      - rabbitmq-server
+      
     tests:
       external:
         - rabbitmq:/tests/rabbitmq.sh
@@ -22,6 +22,22 @@ containers:
     post_install:
       - name: "Setup Rabbitmq"
         command: |
-# TODO: Implement for this base image
+          # Configure and start RabbitMQ
+          # Enable management plugin
+          rabbitmq-plugins enable rabbitmq_management
           
+          # Start RabbitMQ manually
+          /usr/sbin/rabbitmq-server -detached
+          
+          # Wait for RabbitMQ to start
+          sleep 15
+          
+          # Create admin user
+          rabbitmqctl add_user admin admin || true
+          rabbitmqctl set_user_tags admin administrator || true
+          rabbitmqctl set_permissions -p / admin ".*" ".*" ".*" || true
           echo "Rabbitmq is ready!"
+    
+    logs:
+      - rabbitmq:/var/log/rabbitmq/rabbit.log
+      - startup:/var/log/rabbitmq/startup_log

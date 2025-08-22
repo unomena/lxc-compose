@@ -38,4 +38,6 @@ containers:
             -p 11211 \
             -u nobody
           
-          echo "Memcached is ready with ${MEMCACHED_MEMORY}MB memory!"
+          echo "Memcached is ready with ${MEMCACHED_MEMORY}MB memory!"    
+    logs:
+      - memcached:/var/log/memcached.log

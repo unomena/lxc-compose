@@ -47,4 +47,7 @@ containers:
           
           # Start nginx
           nginx
-          echo "Nginx is ready!"
+          echo "Nginx is ready!"    
+    logs:
+      - access:/var/log/nginx/access.log
+      - error:/var/log/nginx/error.log

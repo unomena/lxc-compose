@@ -83,6 +83,7 @@ nav:
     - Getting Started: getting-started.md
   - Reference:
     - Configuration: configuration.md
+    - Templates & Library: templates-and-library.md
     - Commands: commands.md
     - Standards: standards.md
   - Guides:

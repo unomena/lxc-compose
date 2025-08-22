@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Configuration
-SERVER="root@5.78.92.103"
+SERVER="root@192.168.64.47"
 REMOTE_DIR="/root/lxc-compose"
 LOG_FILE="test_results_$(date +%Y%m%d_%H%M%S).log"
 

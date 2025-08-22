@@ -57,4 +57,7 @@ containers:
           
           # Restart MySQL with new config
           service mysql restart
-          echo "MySQL is ready!"
+          echo "MySQL is ready!"    
+    logs:
+      - mysql:/var/log/mysql/error.log
+      - query:/var/log/mysql/query.log

@@ -57,4 +57,6 @@ containers:
             --web.console.templates=/usr/share/prometheus/consoles \
             --web.listen-address=0.0.0.0:9090 &
           
-          echo "Prometheus is ready at port 9090!"
+          echo "Prometheus is ready at port 9090!"    
+    logs:
+      - prometheus:/opt/prometheus/prometheus.log

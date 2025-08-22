@@ -13,15 +13,45 @@ containers:
       - 9300
     
     packages:
-
-    
+      - openjdk11-jre
+      - curl
+      - bash
     tests:
       external:
         - elasticsearch:/tests/elasticsearch.sh
     
+    
+    logs:
+      - elasticsearch:/opt/elasticsearch/logs/elasticsearch.log
     post_install:
       - name: "Setup Elasticsearch"
         command: |
-# TODO: Implement for this base image
+          # Note: Elasticsearch requires manual download on Alpine
+          # Download and install Elasticsearch
+          cd /tmp
+          wget https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.17.9-linux-x86_64.tar.gz
+          tar -xzf elasticsearch-7.17.9-linux-x86_64.tar.gz
+          mv elasticsearch-7.17.9 /opt/elasticsearch
           
+          # Create elasticsearch user
+          adduser -D -h /opt/elasticsearch elasticsearch
+          chown -R elasticsearch:elasticsearch /opt/elasticsearch
+          # Configure Elasticsearch
+          cat > /opt/elasticsearch/config/elasticsearch.yml << EOF
+          network.host: 0.0.0.0
+          discovery.type: single-node
+          xpack.security.enabled: false
+          EOF
+          # Create startup script
+          cat > /usr/local/bin/start-elasticsearch.sh << 'SCRIPT'
+          #!/bin/sh
+          su - elasticsearch -c "ES_JAVA_OPTS='-Xms512m -Xmx512m' /opt/elasticsearch/bin/elasticsearch"
+          SCRIPT
+          chmod +x /usr/local/bin/start-elasticsearch.sh
+          # Start Elasticsearch in background
+          nohup /usr/local/bin/start-elasticsearch.sh > /var/log/elasticsearch.log 2>&1 &
+          # Wait for Elasticsearch to start
+          sleep 30
+          # Test connection
+          curl -X GET "localhost:9200/" || echo "Elasticsearch starting..."
           echo "Elasticsearch is ready!"

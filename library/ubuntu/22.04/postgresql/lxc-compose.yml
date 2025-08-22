@@ -54,4 +54,6 @@ containers:
           service postgresql restart
           
           echo "PostgreSQL is ready!"
-          sudo -u postgres psql -l
+          sudo -u postgres psql -l    
+    logs:
+      - postgresql:/var/log/postgresql/postgresql.log

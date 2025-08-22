@@ -31,3 +31,6 @@ containers:
           echo "Consider using full Ubuntu instead"
           exit 1
           echo "mongodb is ready!"
+    
+    logs:
+      - mongodb:/var/log/mongodb.log

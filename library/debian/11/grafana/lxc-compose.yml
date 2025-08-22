@@ -45,3 +45,6 @@ containers:
           systemctl enable grafana-server
           systemctl start grafana-server
           echo "Grafana is ready!"
+    
+    logs:
+      - grafana:/var/log/grafana/grafana.log

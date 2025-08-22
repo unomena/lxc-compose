@@ -44,3 +44,6 @@ containers:
           systemctl start mongod
           sleep 5
           echo "mongodb is ready!"
+    
+    logs:
+      - mongodb:/var/log/mongodb.log

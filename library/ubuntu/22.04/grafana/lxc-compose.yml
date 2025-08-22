@@ -42,4 +42,6 @@ containers:
           systemctl enable grafana-server
           systemctl start grafana-server
           
-          echo "Grafana is ready! Login: admin / $GF_SECURITY_ADMIN_PASSWORD"
+          echo "Grafana is ready! Login: admin / $GF_SECURITY_ADMIN_PASSWORD"    
+    logs:
+      - grafana:/var/log/grafana/grafana.log

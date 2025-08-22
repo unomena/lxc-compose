@@ -58,4 +58,6 @@ containers:
           fi
           
           echo "PostgreSQL is ready!"
-          su postgres -c "psql -l"
+          su postgres -c "psql -l"    
+    logs:
+      - postgresql:/var/log/postgresql/postgresql.log

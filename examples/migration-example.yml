@@ -1,0 +1,182 @@
+# Migration Example: From Docker Compose to LXC Compose
+# This shows how to migrate a typical Docker Compose stack
+
+# Original Docker Compose (docker-compose.yml):
+# =============================================
+# version: '3.8'
+# services:
+#   db:
+#     image: postgres:14-alpine
+#     environment:
+#       POSTGRES_DB: myapp
+#       POSTGRES_USER: myapp
+#       POSTGRES_PASSWORD: secret
+#     volumes:
+#       - db_data:/var/lib/postgresql/data
+#   
+#   redis:
+#     image: redis:7-alpine
+#   
+#   app:
+#     build: .
+#     ports:
+#       - "3000:3000"
+#     depends_on:
+#       - db
+#       - redis
+#     environment:
+#       DATABASE_URL: postgresql://myapp:secret@db/myapp
+#       REDIS_URL: redis://redis:6379
+#     volumes:
+#       - ./src:/app/src
+# 
+# volumes:
+#   db_data:
+
+# Equivalent LXC Compose (lxc-compose.yml):
+# ==========================================
+
+version: '1.0'
+
+containers:
+  # Combine all services in one efficient container
+  myapp:
+    # Use Alpine for minimal footprint (like the Docker images)
+    template: alpine-3.19
+    
+    # Include the same services from library
+    includes:
+      - postgresql  # Replaces postgres:14-alpine
+      - redis       # Replaces redis:7-alpine
+    
+    # Add Node.js for the application (replaces Dockerfile)
+    packages:
+      - nodejs
+      - npm
+      - git
+    
+    # Expose application port (replaces ports mapping)
+    exposed_ports:
+      - 3000
+    
+    # Mount source code (same as Docker volumes)
+    mounts:
+      - ./src:/app/src
+      - ./data:/var/lib/postgresql/data  # Persistent database
+    
+    # Application service (replaces container command)
+    services:
+      app:
+        command: npm start
+        directory: /app
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/app.log
+        environment:
+          # Note: Use localhost since everything is in one container
+          DATABASE_URL: postgresql://myapp:secret@localhost/myapp
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: production
+    
+    # Logs for debugging (bonus - not in Docker Compose)
+    logs:
+      - app:/var/log/app.log
+      - postgres:/var/log/postgresql/postgresql.log
+      - redis:/var/log/redis/redis-server.log
+    
+    # Tests (bonus - not in Docker Compose)
+    tests:
+      external:
+        - health:/app/tests/health.sh
+    
+    # Setup (replaces Dockerfile and docker-entrypoint)
+    post_install:
+      - name: "Install application dependencies"
+        command: |
+          # Clone or copy application code
+          if [ ! -d /app/package.json ]; then
+            # Example: Clone from git
+            # git clone https://github.com/user/myapp /app
+            
+            # Or copy from local
+            cp -r /app/src/* /app/
+          fi
+          
+          # Install Node dependencies (replaces Dockerfile RUN)
+          cd /app
+          npm ci --production
+      
+      - name: "Configure PostgreSQL"
+        command: |
+          # Wait for PostgreSQL to be ready
+          sleep 5
+          
+          # Create database and user (replaces environment variables)
+          su - postgres -c "createdb myapp" || true
+          su - postgres -c "psql -c \"CREATE USER myapp WITH PASSWORD 'secret';\"" || true
+          su - postgres -c "psql -c \"GRANT ALL ON DATABASE myapp TO myapp;\"" || true
+      
+      - name: "Initialize application"
+        command: |
+          # Run database migrations
+          cd /app
+          npm run migrate || true
+          
+          # Seed database if needed
+          npm run seed || true
+      
+      - name: "Create health check"
+        command: |
+          mkdir -p /app/tests
+          cat > /app/tests/health.sh << 'EOF'
+          #!/bin/sh
+          # Check app is responding
+          curl -f http://localhost:3000/health || exit 1
+          
+          # Check database connection
+          pg_isready -h localhost -U myapp || exit 1
+          
+          # Check Redis
+          redis-cli ping || exit 1
+          
+          echo "All services healthy!"
+          EOF
+          chmod +x /app/tests/health.sh
+
+# Key Differences and Benefits:
+# ==============================
+# 
+# 1. Single Container vs Multiple:
+#    - Docker: 3 separate containers with overhead
+#    - LXC: 1 efficient system container
+#    - Benefit: ~70% less memory usage
+# 
+# 2. Networking:
+#    - Docker: Container names as hostnames (db, redis)
+#    - LXC: Use localhost for all services
+#    - Benefit: No network overhead, faster communication
+# 
+# 3. Storage:
+#    - Docker: Named volumes managed by Docker
+#    - LXC: Direct mount paths
+#    - Benefit: Easier backup and management
+# 
+# 4. Build Process:
+#    - Docker: Dockerfile with layers
+#    - LXC: post_install commands
+#    - Benefit: No image building, faster iterations
+# 
+# 5. Service Management:
+#    - Docker: One process per container
+#    - LXC: Supervisor manages multiple services
+#    - Benefit: Better process control and logging
+# 
+# 6. Testing:
+#    - Docker: External testing tools needed
+#    - LXC: Built-in test framework
+#    - Benefit: Integrated health checks
+# 
+# 7. Resource Usage (typical):
+#    - Docker Compose: ~1.5GB RAM for this stack
+#    - LXC Compose: ~400MB RAM for same functionality
+#    - Benefit: Run more apps on same hardware

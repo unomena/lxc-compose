@@ -29,3 +29,7 @@ containers:
           sleep 5
           
           echo "Mysql is ready!"
+    
+    logs:
+      - mysql:/var/log/mysql/error.log
+      - query:/var/log/mysql/query.log

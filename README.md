@@ -85,15 +85,43 @@ Most applications can be migrated in under an hour. [See our migration guide →
 ## Features
 
 - **Docker Compose-like syntax**: Familiar YAML configuration for LXC containers
+- **Template Inheritance**: Start with base OS, add library services, customize on top
+- **Pre-configured Library**: 77 production-ready services (PostgreSQL, Redis, Nginx, etc.) across 7 base images
+- **Composite Containers**: Combine multiple services efficiently in one container
 - **Minimal footprint**: Alpine Linux support for ~150MB containers
 - **Dynamic service configuration**: Define services in YAML, auto-generate supervisor configs
-- **Comprehensive testing**: Built-in health checks with internal, external, and port forwarding tests
+- **Comprehensive testing**: Built-in health checks with test inheritance from library services
 - **Shared networking**: Containers communicate via shared hosts file
 - **Security-first**: iptables rules block all non-exposed ports
-- **Log aggregation**: Centralized log viewing with follow mode
+- **Log aggregation**: Centralized log viewing with automatic log inheritance
 - **Environment variables**: Full `.env` file support with variable expansion
 - **Container dependencies**: Ordered startup with `depends_on`
 - **Post-install automation**: Flexible container initialization
+
+## Quick Start
+
+### Create a full stack with one command:
+
+```yaml
+# lxc-compose.yml
+version: '1.0'
+containers:
+  mystack:
+    template: ubuntu-minimal-24.04
+    includes:
+      - postgresql  # Database
+      - redis       # Cache  
+      - nginx       # Web server
+    packages: [python3, python3-pip]
+    mounts: [./app:/app]
+    services:
+      app:
+        command: python3 /app/main.py
+```
+
+```bash
+lxc-compose up    # That's it! Full stack running
+```
 
 ## Installation
 

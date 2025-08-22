@@ -86,6 +86,63 @@ FLASK_ENV=development
 
 ## Step 3: Define Container Configuration
 
+You have two options for configuring your containers:
+
+### Option A: Modern Approach with Library Services (Recommended)
+
+Create `lxc-compose.yml`:
+
+```yaml
+version: "1.0"
+
+containers:
+  # Single container with all services
+  myapp:
+    template: ubuntu-minimal-24.04
+    
+    # Include pre-configured Redis from library
+    includes:
+      - redis
+    
+    # Add Python for our app
+    packages:
+      - python3
+      - python3-pip
+    
+    # Expose Flask port
+    exposed_ports:
+      - 5000
+    
+    # Mount application code
+    mounts:
+      - .:/app
+    
+    # Define Flask service
+    services:
+      webapp:
+        command: python3 /app/app.py
+        directory: /app
+        autostart: true
+        autorestart: true
+        stdout_logfile: /var/log/webapp.log
+        environment:
+          REDIS_HOST: localhost
+          FLASK_ENV: development
+    
+    # Application logs (Redis logs inherited)
+    logs:
+      - webapp:/var/log/webapp.log
+    
+    # Setup
+    post_install:
+      - name: "Install Python dependencies"
+        command: |
+          cd /app
+          pip3 install -r requirements.txt
+```
+
+### Option B: Traditional Multi-Container Approach
+
 Create `lxc-compose.yml`:
 
 ```yaml
@@ -94,8 +151,7 @@ version: "1.0"
 containers:
   # Redis cache container
   myapp-cache:
-    template: alpine
-    release: "3.19"
+    template: alpine-3.19
     packages:
       - redis
     post_install:

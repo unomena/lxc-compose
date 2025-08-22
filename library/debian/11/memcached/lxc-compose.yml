@@ -27,3 +27,6 @@ containers:
           systemctl restart memcached
           
           echo "Memcached is ready!"
+    
+    logs:
+      - memcached:/var/log/memcached.log
