@@ -88,7 +88,7 @@ containers:
     
     services:
       nodejs:
-        command: /usr/local/bin/node /app/server.js
+        command: /usr/bin/node /app/server.js
         directory: /app
         user: www-data
         autostart: true
@@ -106,6 +106,8 @@ containers:
           apt-get install -y nodejs
           
           # Verify installation
+          ln -sf /usr/bin/node /usr/local/bin/node || true
+          ln -sf /usr/bin/npm /usr/local/bin/npm || true
           node --version
           npm --version
       
