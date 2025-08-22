@@ -4,7 +4,7 @@
 version: "1.0"
 
 containers:
-  sample-datastore:
+  sample-django-celery-app-datastore:
     image: images:alpine/3.19
 
     packages:
@@ -17,7 +17,7 @@ containers:
       - 6379 # Redis
 
     mounts:
-      - ./config/sample-datastore/redis.conf:/etc/redis.conf
+      - ./config/datastore/redis.conf:/etc/redis.conf
 
     logs:
       - postgres:/var/lib/postgresql/logfile
@@ -90,16 +90,16 @@ containers:
           # Start Redis directly (OpenRC might not work properly in LXC)
           /usr/bin/redis-server /etc/redis.conf --daemonize yes
 
-  sample-django-app:
+  sample-django-celery-app:
     image: ubuntu-minimal:lts
 
     # Dependencies must exist before this container can start
     depends_on:
-      - sample-datastore
+      - sample-django-celery-app-datastore
 
     mounts:
       - .:/app
-      - ./config/sample-django-app/supervisord.conf:/etc/supervisord.conf
+      - ./config/app/supervisord.conf:/etc/supervisord.conf
 
     exposed_ports:
       - 8000 # Django development server

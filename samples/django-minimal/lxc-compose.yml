@@ -63,7 +63,7 @@ containers:
           sleep 2
           su postgres -c "pg_ctl -D /var/lib/postgresql/data status" || true
 
-  sample-django-app:
+  sample-django-minimal-app:
     image: ubuntu-minimal:lts
     
     # Dependencies must exist before this container can start
@@ -72,7 +72,7 @@ containers:
     
     mounts:
       - .:/app
-      - ./config/sample-django-app/supervisord.conf:/etc/supervisord.conf
+      - ./config/app/supervisord.conf:/etc/supervisord.conf
     
     exposed_ports:
       - 8000    # Django development server
