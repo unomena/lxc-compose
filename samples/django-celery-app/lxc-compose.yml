@@ -60,7 +60,6 @@ containers:
 
     mounts:
       - .:/app
-      - ./config/app/supervisord.conf:/etc/supervisord.conf
 
     exposed_ports:
       - 8000 # Django development server
@@ -72,7 +71,6 @@ containers:
       - celery-error:/var/log/celery/celery_err.log
       - celery-beat:/var/log/celery/celery-beat.log
       - celery-beat-error:/var/log/celery/celery-beat_err.log
-      - supervisor:/var/log/supervisord.log
     
     tests:
       internal:
@@ -130,7 +128,6 @@ containers:
         command: |
           mkdir -p /var/log/django /var/log/celery /run/django
           mkdir -p /app/static /app/media
-          mkdir -p /var/log/nginx
 
       - name: "Setup Python environment"
         command: |

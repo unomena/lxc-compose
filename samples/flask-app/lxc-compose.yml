@@ -1,95 +1,144 @@
-# Flask Application with Redis
-# Multi-container setup using library services
+# =============================================================================
+# Flask Application with Redis Cache
+# =============================================================================
+# This sample demonstrates a typical Flask web application with Redis caching.
+# It showcases:
+# - Multi-container setup with dependencies
+# - Using library services (Redis, Python3) via includes
+# - Automatic supervisor inclusion for process management
+# - Service configuration for long-running processes
+# - Health checks and testing strategies
+#
+# Architecture:
+#   [Flask App] ---> [Redis Cache]
+#       |
+#       v
+#   Port 5000 (auto-forwarded to host)
+# =============================================================================
 
 version: '1.0'
 
 containers:
+  # ---------------------------------------------------------------------------
+  # Redis Cache Container
+  # ---------------------------------------------------------------------------
+  # Provides in-memory caching for the Flask application
+  # Uses Alpine Linux for minimal footprint (~30MB)
   sample-flask-datastore:
-    template: alpine-3.19
+    template: alpine-3.19  # Minimal Alpine Linux base
     
-    # Use pre-configured Redis from library
+    # Include pre-configured Redis service from library
+    # This provides:
+    # - Redis server installation and configuration
+    # - Port 6379 exposed internally
+    # - Optimized Redis settings for containers
+    # - Automatic startup via supervisor
     includes:
       - redis
     
-    # Configure Redis if needed
+    # Optional: Set Redis password (empty by default for development)
+    # In production, always set a strong password
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    
-    # Redis library service already provides:
-    # - Redis package installation
-    # - Exposed port 6379
-    # - Service setup and startup
-    # - Basic configuration
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}  # Uses .env file or defaults to empty
 
+  # ---------------------------------------------------------------------------
+  # Flask Application Container  
+  # ---------------------------------------------------------------------------
+  # Main web application serving HTTP requests on port 5000
   sample-flask-app:
-    template: alpine-3.19
+    template: alpine-3.19  # Consistent OS with datastore
     
-    # Include Python3 with all build tools
+    # Library includes provide pre-configured services:
+    # - python3: Python runtime, pip, build tools, essential libraries
+    # - supervisor: Automatically included when 'services' are defined
     includes:
       - python3
-    # Optional: include nginx for production serving
-    #   - nginx
     
+    # Ensure Redis is running before starting Flask
     depends_on:
       - sample-flask-datastore
     
+    # Mount application code from host for development
+    # In production, consider copying code during build instead
     mounts:
-      - .:/app
+      - .:/app  # Current directory mounted as /app in container
     
+    # Expose Flask development server port
+    # This will be auto-forwarded to the host machine
     exposed_ports:
-      - 5000    # Flask development server
+      - 5000
     
+    # Log file paths for centralized monitoring
+    # Use 'lxc-compose logs sample-flask-app flask' to view
     logs:
       - flask:/var/log/flask/flask.log
       - flask-error:/var/log/flask/flask_err.log
     
+    # Automated testing configuration
+    # Run with: lxc-compose test sample-flask-app
     tests:
       internal:
-        - health:/app/tests/internal_tests.sh
+        - health:/app/tests/internal_tests.sh   # Tests run inside container
       external:
-        - health:/app/tests/external_tests.sh
+        - api:/app/tests/external_tests.sh      # Tests run from host
       port_forwarding:
-        - iptables:/app/tests/port_forwarding_tests.sh
+        - network:/app/tests/port_forwarding_tests.sh  # Network security tests
     
+    # Additional packages not provided by includes
     packages:
-      # Only packages not provided by python3 or supervisor includes
-      - redis   # For redis-cli
-      - curl    # For testing
+      - redis      # Redis CLI tools for debugging
+      - curl       # For health checks and API testing
     
+    # Service definition for supervisor to manage
+    # Supervisor is automatically included when services are defined
     services:
       flask:
-        command: /app/venv/bin/python /app/app.py
-        directory: /app
-        autostart: true
-        autorestart: true
-        stdout_logfile: /var/log/flask/flask.log
-        stderr_logfile: /var/log/flask/flask_err.log
+        command: /app/venv/bin/python /app/app.py  # Start Flask with venv Python
+        directory: /app                             # Working directory
+        autostart: true                             # Start automatically
+        autorestart: true                           # Restart on crash
+        stdout_logfile: /var/log/flask/flask.log   # Capture stdout
+        stderr_logfile: /var/log/flask/flask_err.log # Capture stderr
         environment: FLASK_ENV=development,REDIS_HOST=sample-flask-datastore
-        startsecs: 10
-        stopwaitsecs: 30
+        startsecs: 10                               # Time to consider "started"
+        stopwaitsecs: 30                            # Grace period for shutdown
     
+    # Post-installation setup commands
+    # These run after packages are installed but before services start
     post_install:
-      - name: "Setup Flask directories"
+      - name: "Create application directories"
         command: |
-          mkdir -p /var/log/flask
-          mkdir -p /app/static /app/templates
+          # Create required directories with proper permissions
+          mkdir -p /var/log/flask      # Application logs
+          mkdir -p /app/static          # Static assets (CSS, JS, images)
+          mkdir -p /app/templates       # Jinja2 templates
       
-      - name: "Setup Python environment"
+      - name: "Install Python dependencies"
         command: |
           cd /app
+          # Create isolated Python environment
           python3 -m venv venv
+          
+          # Upgrade pip for latest features and security fixes
           ./venv/bin/pip install --upgrade pip setuptools wheel
+          
+          # Install application dependencies from requirements.txt
+          # This includes Flask, redis-py, and other needed packages
           ./venv/bin/pip install -r requirements.txt
       
-      - name: "Test Redis connection"
+      - name: "Verify Redis connectivity"
         command: |
-          # Wait for Redis to be ready
-          echo "Testing Redis connection..."
-          for i in $(seq 1 10); do
+          # Wait for Redis container to be ready
+          # This prevents race conditions during startup
+          echo "Checking Redis connection..."
+          MAX_ATTEMPTS=10
+          for i in $(seq 1 $MAX_ATTEMPTS); do
             if redis-cli -h sample-flask-datastore ping > /dev/null 2>&1; then
-              echo "Redis is ready!"
-              break
+              echo "✓ Redis is ready and responding"
+              exit 0
             fi
-            echo "Waiting for Redis... (attempt $i/10)"
+            echo "  Waiting for Redis... (attempt $i/$MAX_ATTEMPTS)"
             sleep 2
           done
+          echo "✗ Redis connection failed after $MAX_ATTEMPTS attempts"
+          exit 1  # Fail the setup if Redis is not available
