@@ -2,6 +2,16 @@
 
 Production-ready sample applications demonstrating LXC Compose configuration best practices. All samples follow the reference project structure from https://github.com/euan/sample-lxc-compose-app.
 
+## 🚀 Production Resilience Features (v2.1+)
+
+All samples now include enhanced production resilience:
+- **Automatic Service Recovery**: Supervisor and all services auto-start after container restart
+- **Environment Variable Inheritance**: Services automatically inherit from .env files via load-env.sh wrapper
+- **OS-Aware Configuration**: Supervisor configs placed correctly (Ubuntu: /etc/supervisor/conf.d/, Alpine: /etc/supervisor.d/)
+- **Port Forwarding Persistence**: UPF rules automatically update when containers get new IPs
+- **Database Auto-Start**: PostgreSQL, MySQL, MongoDB configured to start automatically
+- **"Pull the Plug" Resilience**: Complete recovery after system restart - no manual intervention needed
+
 ## Available Samples
 
 ### 1. Django Minimal (`django-minimal/`)
@@ -106,11 +116,20 @@ containers:
 
 3. **Dictionary Format**: Containers are defined as a dictionary (not a list) with container names as keys.
 
-4. **Service Management**: Services can be either:
-   - System services (managed by systemd)
-   - Supervisor services (managed by supervisord)
+4. **Service Management**: Services are managed by Supervisor with automatic recovery:
+   - Auto-starts on container boot (systemd/OpenRC integration)
+   - Environment variables inherited automatically via load-env.sh
+   - OS-aware configuration placement
 
-5. **Environment Variables**: Configuration is done through environment variables, making it easy to adapt for different environments.
+5. **Environment Variables**: Configuration through .env files - the single source of truth:
+   - No duplication in lxc-compose.yml
+   - Automatically propagated to all services
+   - Supports variable expansion in YAML
+
+6. **Production Resilience**: All samples demonstrate "pull the plug" recovery:
+   - Services auto-recover after restart
+   - Port forwarding persists through lifecycle
+   - Databases auto-start on boot
 
 ## Quick Start
 

@@ -147,10 +147,35 @@ containers:
 Key methods that handle core functionality:
 - `load_config()`: Parses YAML with environment variable expansion
 - `setup_container_environment()`: Mounts hosts file, sets up networking
-- `manage_exposed_ports()`: Creates/removes iptables rules
-- `generate_supervisor_config()`: Converts services to supervisor configs
+- `manage_exposed_ports()`: Creates/removes iptables rules with proper cleanup
+- `setup_services()`: Generates supervisor configs with OS detection (Ubuntu vs Alpine)
+- `enable_supervisor_autostart()`: Configures init system for automatic supervisor startup
+- `setup_port_forwarding()`: Creates UPF rules with automatic cleanup of stale entries
+- `remove_port_forwarding()`: Enhanced cleanup matching multiple rule patterns
 - `handle_post_install()`: Executes post-install commands in container
 - `run_tests()`: Executes internal/external/port_forwarding tests
+
+### Critical v2.1 Improvements
+1. **OS-Aware Supervisor Configuration** (Line 1072-1120)
+   - Detects OS using `which systemctl` to differentiate Ubuntu/Debian from Alpine
+   - Ubuntu/Debian: Places configs in `/etc/supervisor/conf.d/*.conf`
+   - Alpine: Places configs in `/etc/supervisor.d/*.ini`
+   - Wraps all service commands with `/usr/local/bin/load-env.sh` for environment inheritance
+
+2. **Environment Variable Inheritance** (Line 1089-1091)
+   - All service commands wrapped with load-env.sh script
+   - Script sources /app/.env before executing the actual command
+   - Ensures all services have access to environment variables
+
+3. **Port Forwarding Resilience** (Line 561-571, 585-606)
+   - Always removes existing UPF rules before adding new ones
+   - Enhanced cleanup matches hostname, destination, and comment patterns
+   - Prevents stale rules after container destroy/recreate cycles
+
+4. **Service Auto-Start** (Line 1113-1136)
+   - Systemd detection for Ubuntu/Debian: `systemctl enable supervisor`
+   - OpenRC detection for Alpine: `rc-update add supervisord default`
+   - Ensures services recover automatically after container restart
 
 ### GitHub Template Handler (cli/github_template_handler.py)
 - **Primary handler**: Fetches templates and services directly from GitHub

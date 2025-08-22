@@ -84,20 +84,28 @@ Most applications can be migrated in under an hour. [See our migration guide →
 
 ## Features
 
+### 🚀 Production-Ready Resilience (v2.1+)
+- **Automatic Service Recovery**: Supervisor auto-starts on container restart, bringing all services back online
+- **Environment Variable Inheritance**: Services automatically inherit .env variables through load-env.sh wrapper
+- **OS-Aware Configuration**: Supervisor configs placed correctly for Ubuntu (/etc/supervisor/conf.d/) and Alpine (/etc/supervisor.d/)
+- **Port Forwarding Persistence**: UPF rules automatically update when containers get new IPs after destroy/recreate
+- **Database Auto-Start**: PostgreSQL, MySQL, and other databases configured to start automatically on boot
+- **"Pull the Plug" Resilience**: Complete recovery after system restart - no manual intervention needed
+
+### Core Features
 - **Docker Compose-like syntax**: Familiar YAML configuration for LXC containers
 - **Template Inheritance**: Start with base OS, add library services, customize on top
 - **Pre-configured Library**: 77 production-ready services (PostgreSQL, Redis, Nginx, etc.) across 7 base images
 - **Composite Containers**: Combine multiple services efficiently in one container
 - **Minimal footprint**: Alpine Linux support for ~150MB containers
-- **Dynamic service configuration**: Define services in YAML, auto-generate supervisor configs
-- **Container Resilience**: Automatic service recovery after container restarts (NEW!)
+- **Dynamic service configuration**: Define services in YAML, auto-generate supervisor configs with proper OS detection
 - **Comprehensive testing**: Built-in health checks with test inheritance from library services
-- **Shared networking**: Containers communicate via shared hosts file
-- **Security-first**: iptables rules block all non-exposed ports
+- **Shared networking**: Containers communicate via shared hosts file with persistent IPs
+- **Security-first**: iptables rules block all non-exposed ports with proper cleanup on destroy
 - **Log aggregation**: Centralized log viewing with automatic log inheritance
-- **Environment variables**: Full `.env` file support with variable expansion
+- **Environment variables**: Full `.env` file support with automatic propagation to all services
 - **Container dependencies**: Ordered startup with `depends_on`
-- **Post-install automation**: Flexible container initialization
+- **Post-install automation**: Flexible container initialization with environment context
 
 ## Quick Start
 
@@ -558,6 +566,76 @@ logs:
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [Migration Guide](docs/MIGRATION.md) - Migrating from Docker Compose
 - [API Reference](docs/API.md) - Python API for custom integrations
+
+## Troubleshooting
+
+### Services Not Starting After Container Restart
+**Problem**: Supervisor or services don't auto-start after container restart.
+
+**Solution**: This has been fixed in v2.1+. The fix includes:
+- Supervisor is enabled in the init system (systemd for Ubuntu, OpenRC for Alpine)
+- Services are wrapped with `/usr/local/bin/load-env.sh` to inherit environment variables
+- Database services (PostgreSQL, MySQL) are configured to auto-start
+
+**Manual Fix for Existing Containers**:
+```bash
+# For Ubuntu containers
+lxc exec <container> -- systemctl enable supervisor
+
+# For Alpine containers  
+lxc exec <container> -- rc-update add supervisord default
+lxc exec <container> -- rc-update add postgresql default  # If using PostgreSQL
+```
+
+### Environment Variables Not Available to Services
+**Problem**: Services can't access variables from .env file.
+
+**Solution**: Services are now automatically wrapped with an environment loader. The system creates `/usr/local/bin/load-env.sh` that sources the .env file before executing commands.
+
+**Manual Fix**:
+```bash
+# Create the environment loader
+lxc exec <container> -- bash -c 'cat > /usr/local/bin/load-env.sh << "EOF"
+#!/bin/bash
+if [ -f /app/.env ]; then
+    set -a
+    source /app/.env
+    set +a
+fi
+exec "$@"
+EOF'
+lxc exec <container> -- chmod +x /usr/local/bin/load-env.sh
+```
+
+### Port Forwarding Not Working After Container Recreation
+**Problem**: After destroying and recreating containers, port forwarding points to old IPs.
+
+**Solution**: v2.1+ automatically cleans up and updates UPF rules. The system:
+- Removes existing rules before adding new ones
+- Uses hostname-based forwarding for resilience
+- Properly cleans up rules on container destroy
+
+**Manual Fix**:
+```bash
+# Clean all UPF rules and let lxc-compose recreate them
+sudo upf clean
+lxc-compose down -f lxc-compose.yml
+lxc-compose up -f lxc-compose.yml
+```
+
+### Supervisor Config Not Found
+**Problem**: Supervisor can't find service configurations.
+
+**Solution**: The system now detects the OS and places configs in the correct location:
+- Ubuntu/Debian: `/etc/supervisor/conf.d/*.conf`
+- Alpine: `/etc/supervisor.d/*.ini`
+
+**Manual Fix**:
+```bash
+# For Ubuntu - move configs to correct location
+lxc exec <container> -- mv /etc/supervisor.d/*.ini /etc/supervisor/conf.d/
+lxc exec <container> -- supervisorctl reload
+```
 
 ## Contributing
 
