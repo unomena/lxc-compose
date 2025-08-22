@@ -9,8 +9,8 @@ import yaml
 from typing import Dict, Any, List
 
 class TemplateHandler:
-    def __init__(self, templates_dir: str = '/srv/lxc-compose/templates', 
-                 library_dir: str = '/srv/lxc-compose/library'):
+    def __init__(self, templates_dir: str = '/srv/lxc-compose/library/templates', 
+                 library_dir: str = '/srv/lxc-compose/library/services'):
         """Initialize template handler with templates and library directories"""
         self.templates_dir = templates_dir
         self.library_dir = library_dir
@@ -19,11 +19,11 @@ class TemplateHandler:
         if not os.path.exists(self.templates_dir):
             # Try relative path from CLI directory
             cli_dir = os.path.dirname(os.path.abspath(__file__))
-            self.templates_dir = os.path.join(os.path.dirname(cli_dir), 'templates')
+            self.templates_dir = os.path.join(os.path.dirname(cli_dir), 'library', 'templates')
         
         if not os.path.exists(self.library_dir):
             cli_dir = os.path.dirname(os.path.abspath(__file__))
-            self.library_dir = os.path.join(os.path.dirname(cli_dir), 'library')
+            self.library_dir = os.path.join(os.path.dirname(cli_dir), 'library', 'services')
     
     def load_template(self, template_name: str) -> Dict[str, Any]:
         """Load a template configuration file"""

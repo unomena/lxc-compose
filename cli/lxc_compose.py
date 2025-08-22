@@ -14,14 +14,23 @@ import subprocess
 import re
 from typing import Dict, Any, Optional, List
 
-# Import template handler
+# Import template handler - prefer GitHub handler, fallback to local
+USING_GITHUB_HANDLER = False
 try:
-    from template_handler import TemplateHandler
+    from github_template_handler import GitHubTemplateHandler as TemplateHandler
+    USING_GITHUB_HANDLER = True
 except ImportError:
-    # Fallback if module not in path
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from template_handler import TemplateHandler
+    try:
+        from template_handler import TemplateHandler
+    except ImportError:
+        # Fallback if module not in path
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        try:
+            from github_template_handler import GitHubTemplateHandler as TemplateHandler
+            USING_GITHUB_HANDLER = True
+        except ImportError:
+            from template_handler import TemplateHandler
 
 # Terminal colors
 RED = '\033[0;31m'
@@ -108,7 +117,17 @@ class LXCCompose:
         self.all_containers = all_containers
         self.config_file = config_file
         self.env_vars = {}
-        self.template_handler = TemplateHandler()
+        
+        # Initialize template handler with GitHub support
+        if USING_GITHUB_HANDLER:
+            # Allow customization via environment variables
+            repo_url = os.environ.get('LXC_COMPOSE_REPO', 'https://github.com/unomena/lxc-compose')
+            branch = os.environ.get('LXC_COMPOSE_BRANCH', 'main')
+            self.template_handler = TemplateHandler(repo_url=repo_url, branch=branch)
+            if not all_containers:
+                click.echo(f"{GREEN}Using GitHub templates from {repo_url} ({branch}){NC}")
+        else:
+            self.template_handler = TemplateHandler()
         
         if not all_containers:
             if not config_file or not os.path.exists(config_file):
