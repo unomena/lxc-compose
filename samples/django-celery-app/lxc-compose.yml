@@ -15,12 +15,8 @@ containers:
       - postgresql  # Includes PostgreSQL with all setup
       - redis       # Includes Redis with all setup
     
-    # Override environment for PostgreSQL setup
-    environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    # Environment variables are loaded from .env file automatically
+    # No need to duplicate them here
     
     # The includes already provide:
     # - All necessary packages
@@ -87,39 +83,39 @@ containers:
       - postgresql-client  # For psql CLI
       - curl            # For testing
 
-    # Note: Environment variables from .env are automatically available
-
+    # Services are automatically wrapped with load-env.sh for environment inheritance
+    # Supervisor is auto-included and configured for auto-start
     services:
       django:
         command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
         directory: /app/src
-        user: www-data
         autostart: true
         autorestart: true
         stdout_logfile: /var/log/django/django.log
         stderr_logfile: /var/log/django/django_err.log
+        environment: PYTHONUNBUFFERED=1,DJANGO_SETTINGS_MODULE=config.settings
         startsecs: 10
         stopwaitsecs: 600
 
       celery:
         command: /app/venv/bin/celery -A config worker -l info
         directory: /app/src
-        user: www-data
         autostart: true
         autorestart: true
         stdout_logfile: /var/log/celery/celery.log
         stderr_logfile: /var/log/celery/celery_err.log
+        environment: PYTHONUNBUFFERED=1
         startsecs: 10
         stopwaitsecs: 600
 
       celery-beat:
         command: /app/venv/bin/celery -A config beat -l info
         directory: /app/src
-        user: www-data
         autostart: true
         autorestart: true
         stdout_logfile: /var/log/celery/celery-beat.log
         stderr_logfile: /var/log/celery/celery-beat_err.log
+        environment: PYTHONUNBUFFERED=1
         startsecs: 10
         stopwaitsecs: 600
 

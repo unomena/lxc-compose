@@ -3,19 +3,20 @@ version: "1.0"
 containers:
   # Documentation server container
   lxc-docs:
-    # Use Alpine for minimal footprint (~200MB total with Python)
-    image: images:alpine/3.19
+    # Use Alpine template for minimal footprint (~200MB total with Python)
+    template: alpine-3.19
     
-    # Install required packages
+    # Include pre-configured services from library
+    includes:
+      - nginx    # Nginx web server with configuration
+      - python3  # Python3 with pip and build tools
+    
+    # Additional packages not provided by includes
     packages:
       - git
-      - python3
-      - py3-pip
-      - nginx
-      - supervisor
-      - curl
       - make
       - bash
+      - curl
     
     # Expose web server ports
     exposed_ports:
@@ -33,7 +34,8 @@ containers:
       # Test scripts
       - ./tests:/docs/tests
     
-    # Services managed by supervisor
+    # Services are automatically wrapped with load-env.sh for environment inheritance
+    # Supervisor is auto-included and configured for auto-start
     services:
       nginx:
         command: sh -c "mkdir -p /run/nginx && nginx -g 'daemon off;'"
@@ -41,6 +43,7 @@ containers:
         autorestart: true
         stdout_logfile: /var/log/nginx.log
         stderr_logfile: /var/log/nginx.error.log
+        environment: NGINX_HOST=localhost,NGINX_PORT=80
       
       mkdocs-watch:
         command: /docs/scripts/rebuild-docs.sh
@@ -49,6 +52,7 @@ containers:
         autorestart: true
         stdout_logfile: /var/log/mkdocs.log
         stderr_logfile: /var/log/mkdocs.error.log
+        environment: PYTHONUNBUFFERED=1
     
     # Log files to monitor
     logs:
@@ -73,5 +77,3 @@ containers:
           chmod +x /docs/scripts/*.sh
           chmod +x /docs/tests/*.sh
           /docs/scripts/init-docs.sh 2>&1 | tee /var/log/build.log
-          # Start supervisor if not already running
-          supervisord -c /etc/supervisord.conf || true
