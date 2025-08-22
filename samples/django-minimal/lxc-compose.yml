@@ -1,112 +1,263 @@
-# Minimal Django Application with PostgreSQL
-# Multi-container setup using library services
+# =============================================================================
+# Django Minimal Application with PostgreSQL
+# =============================================================================
+# This sample demonstrates a production-ready Django web application with:
+# - PostgreSQL database for persistent data storage
+# - Automatic database configuration and migrations
+# - Django admin interface with pre-configured superuser
+# - Static file serving for CSS/JS/images
+# - Comprehensive health checks and monitoring
+#
+# Architecture:
+#   [Django App] ---> [PostgreSQL Database]
+#        |
+#        v
+#   Port 8000 (auto-forwarded to host)
+#
+# Default Credentials:
+#   Django Admin: admin / admin123 (change in .env file)
+#   PostgreSQL: djangouser / djangopass (change in .env file)
+# =============================================================================
 
 version: '1.0'
 
 containers:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database Container
+  # ---------------------------------------------------------------------------
+  # Provides persistent data storage for Django models
+  # Uses Alpine Linux for minimal footprint (~40MB + PostgreSQL)
   sample-django-minimal-database:
-    template: alpine-3.19
+    template: alpine-3.19  # Minimal Alpine Linux base
     
-    # Use pre-configured PostgreSQL from library
+    # Include pre-configured PostgreSQL service from library
+    # This provides:
+    # - PostgreSQL 15+ installation
+    # - Port 5432 exposed internally
+    # - Optimized PostgreSQL settings for containers
+    # - Automatic database initialization
     includes:
       - postgresql
     
-    # Configure PostgreSQL for Django
+    # PostgreSQL configuration uses variables from .env file
+    # Maps .env variables to PostgreSQL-expected environment variable names
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}  
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}           # Database name from .env
+      POSTGRES_USER: ${DB_USER}         # Database user from .env  
+      POSTGRES_PASSWORD: ${DB_PASSWORD} # Database password from .env
     
-    # Additional Django-specific setup
+    # Django-specific database setup
+    # Creates the database and user with proper permissions
     post_install:
-      - name: "Configure PostgreSQL for Django"
+      - name: "Initialize Django database"
         command: |
-          # Wait for PostgreSQL to start
+          # Wait for PostgreSQL to fully start
+          echo "Waiting for PostgreSQL to initialize..."
           sleep 5
+          
+          # Create the database if it doesn't exist
+          su postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'\" | grep -q 1 || psql -c \"CREATE DATABASE ${DB_NAME};\""
           
           # Create Django user if different from postgres
           if [ "${DB_USER}" != "postgres" ]; then
-            su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\"" || true
+            echo "Creating Django database user..."
+            su postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';\"" 2>/dev/null || true
+            su postgres -c "psql -c \"ALTER USER ${DB_USER} CREATEDB;\"" || true
             su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\"" || true
+            
+            # Grant schema permissions (required for Django migrations)
             su postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\"" || true
+            su postgres -c "psql -d ${DB_NAME} -c \"ALTER SCHEMA public OWNER TO ${DB_USER};\"" || true
           fi
+          
+          # Enable required PostgreSQL extensions for Django
+          su postgres -c "psql -d ${DB_NAME} -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'" || true  # For text search
+          su postgres -c "psql -d ${DB_NAME} -c 'CREATE EXTENSION IF NOT EXISTS uuid-ossp;'" || true  # For UUID fields
+          
+          echo "✓ PostgreSQL configured for Django"
 
+  # ---------------------------------------------------------------------------
+  # Django Application Container
+  # ---------------------------------------------------------------------------
+  # Main web application serving HTTP requests on port 8000
   sample-django-minimal-app:
-    template: ubuntu-22.04
+    template: ubuntu-22.04  # Ubuntu LTS for maximum compatibility
     
-    # Include Python3 with all build tools
+    # Library includes provide pre-configured services:
+    # - python3: Python runtime, pip, build tools, essential libraries
+    # - supervisor: Automatically included when 'services' are defined
     includes:
       - python3
     
+    # Ensure database is running before starting Django
     depends_on:
       - sample-django-minimal-database
     
+    # Mount application code from host for development
+    # In production, consider copying code during container build
     mounts:
-      - .:/app
+      - .:/app  # Current directory mounted as /app in container
     
+    # Expose Django development server port
+    # This will be auto-forwarded to the host machine
     exposed_ports:
-      - 8000    # Django development server
+      - 8000
     
+    # Environment variables are automatically loaded from .env file
+    # No need to duplicate them here - lxc-compose mounts and loads .env automatically
+    
+    # Log file paths for centralized monitoring
+    # Use 'lxc-compose logs sample-django-minimal-app django' to view
     logs:
       - django:/var/log/django/django.log
       - django-error:/var/log/django/django_err.log
+      - django-access:/var/log/django/access.log
     
+    # Automated testing configuration
+    # Run with: lxc-compose test sample-django-minimal-app
     tests:
       internal:
-        - health:/app/tests/internal_tests.sh
+        - health:/app/tests/internal_tests.sh   # Tests run inside container
       external:
-        - health:/app/tests/external_tests.sh
+        - api:/app/tests/external_tests.sh      # Tests run from host
       port_forwarding:
-        - iptables:/app/tests/port_forwarding_tests.sh
+        - network:/app/tests/port_forwarding_tests.sh  # Network security tests
     
+    # Additional packages not provided by includes
+    # Keep this minimal - only what's absolutely necessary
     packages:
-      # Only packages not provided by python3 include
-      - libpq-dev           # For psycopg2
-      - postgresql-client   # For psql CLI
-      - curl                # For testing
+      - libpq-dev           # Required for psycopg2 compilation
+      - postgresql-client   # For database debugging with psql
+      - curl                # For health checks and API testing
+      - gettext             # For Django translations (i18n)
     
+    # Service definition for supervisor to manage
+    # Supervisor is automatically included when services are defined
     services:
       django:
         command: /app/venv/bin/python /app/src/manage.py runserver 0.0.0.0:8000
-        directory: /app/src
-        autostart: true
-        autorestart: true
-        stdout_logfile: /var/log/django/django.log
-        stderr_logfile: /var/log/django/django_err.log
-        startsecs: 10
-        stopwaitsecs: 600
+        directory: /app/src                        # Django project directory
+        autostart: true                            # Start automatically
+        autorestart: true                          # Restart on crash
+        stdout_logfile: /var/log/django/django.log # Capture stdout
+        stderr_logfile: /var/log/django/django_err.log # Capture stderr
+        environment: PYTHONUNBUFFERED=1,DJANGO_SETTINGS_MODULE=config.settings
+        startsecs: 10                              # Time to consider "started"
+        stopwaitsecs: 600                          # Grace period for shutdown
+        # For production, consider using gunicorn or uwsgi instead:
+        # command: /app/venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4
     
+    # Post-installation setup commands
+    # These run after packages are installed but before services start
     post_install:
-      - name: "Setup Django directories"
+      - name: "Create application directories"
         command: |
-          mkdir -p /var/log/django /run/django
-          mkdir -p /app/static /app/media
+          # Create required directories with proper permissions
+          mkdir -p /var/log/django      # Django application logs
+          mkdir -p /run/django           # Runtime files (PID, sockets)
+          mkdir -p /app/static           # Collected static files
+          mkdir -p /app/media            # User-uploaded media files
+          
+          # Set proper permissions for www-data user (if needed)
+          # chown -R www-data:www-data /app/media /var/log/django
       
-      - name: "Setup Python environment"
+      - name: "Install Python dependencies"
         command: |
           cd /app
+          # Create isolated Python environment
+          echo "Creating Python virtual environment..."
           python3 -m venv venv
+          
+          # Upgrade pip for latest features and security fixes
           ./venv/bin/pip install --upgrade pip setuptools wheel
+          
+          # Install application dependencies from requirements.txt
+          echo "Installing Python packages..."
           ./venv/bin/pip install -r requirements.txt
+          
+          # Verify critical packages are installed
+          ./venv/bin/python -c "import django; print(f'✓ Django {django.__version__} installed')"
+          ./venv/bin/python -c "import psycopg2; print('✓ PostgreSQL adapter installed')"
       
-      - name: "Run Django migrations"
+      - name: "Wait for database and run migrations"
         command: |
           cd /app/src
-          # Wait for PostgreSQL
-          echo "Waiting for PostgreSQL..."
-          for i in $(seq 1 30); do
-            if PGPASSWORD=${DB_PASSWORD} psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME} -c "SELECT 1" > /dev/null 2>&1; then
-              echo "PostgreSQL is ready!"
+          
+          # Wait for PostgreSQL to be ready
+          echo "Checking database connection..."
+          MAX_ATTEMPTS=30
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            if PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1" > /dev/null 2>&1; then
+              echo "✓ Database connection established"
               break
             fi
-            echo "Waiting for PostgreSQL... (attempt $i/30)"
+            echo "  Waiting for database... (attempt $i/$MAX_ATTEMPTS)"
             sleep 2
           done
-          ../venv/bin/python manage.py migrate
-          ../venv/bin/python manage.py collectstatic --noinput
+          
+          # Run database migrations
+          echo "Running database migrations..."
+          ../venv/bin/python manage.py migrate --noinput
+          
+          # Collect static files for serving
+          echo "Collecting static files..."
+          ../venv/bin/python manage.py collectstatic --noinput --clear
+          
+          echo "✓ Django application configured"
       
       - name: "Create Django superuser"
         command: |
           cd /app/src
-          ../venv/bin/python manage.py createsuperuser --noinput --username ${ADMIN_USER} --email ${ADMIN_EMAIL} || true
-          echo "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='${ADMIN_USER}'); u.set_password('${ADMIN_PASSWORD}'); u.save()" | ../venv/bin/python manage.py shell
+          
+          # Create superuser for admin interface
+          # Uses environment variables from .env file
+          echo "Creating Django superuser..."
+          
+          # Set default values if not provided
+          ADMIN_USER="${ADMIN_USER:-admin}"
+          ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+          ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
+          
+          # Check if user already exists and create/update
+          ../venv/bin/python << 'EOF'
+          import os
+          import django
+          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+          django.setup()
+          
+          from django.contrib.auth import get_user_model
+          User = get_user_model()
+          
+          admin_user = os.environ.get('ADMIN_USER', 'admin')
+          admin_email = os.environ.get('ADMIN_EMAIL', 'admin@example.com')
+          admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+          
+          if not User.objects.filter(username=admin_user).exists():
+              User.objects.create_superuser(admin_user, admin_email, admin_password)
+              print('✓ Superuser created')
+          else:
+              # Update password if user exists
+              u = User.objects.get(username=admin_user)
+              u.set_password(admin_password)
+              u.email = admin_email
+              u.save()
+              print('✓ Superuser password updated')
+          EOF
+          
+          echo "Django admin available at http://localhost:8000/admin"
+          echo "Username: ${ADMIN_USER}"
+          echo "Password: ${ADMIN_PASSWORD}"
+      
+      - name: "Verify Django setup"
+        command: |
+          cd /app/src
+          
+          # Run Django system check
+          echo "Running Django system checks..."
+          ../venv/bin/python manage.py check --deploy 2>/dev/null || true
+          
+          # Show database migrations status
+          echo "Database migration status:"
+          ../venv/bin/python manage.py showmigrations --list | head -20
+          
+          echo "✓ Django setup complete"

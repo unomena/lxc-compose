@@ -36,10 +36,10 @@ containers:
     includes:
       - redis
     
-    # Optional: Set Redis password (empty by default for development)
-    # In production, always set a strong password
+    # Redis configuration uses variables from .env file
+    # Leave REDIS_PASSWORD empty in .env for development, set for production
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}  # Uses .env file or defaults to empty
+      REDIS_PASSWORD: ${REDIS_PASSWORD}  # Redis password from .env file
 
   # ---------------------------------------------------------------------------
   # Flask Application Container  
@@ -99,7 +99,7 @@ containers:
         autorestart: true                           # Restart on crash
         stdout_logfile: /var/log/flask/flask.log   # Capture stdout
         stderr_logfile: /var/log/flask/flask_err.log # Capture stderr
-        environment: FLASK_ENV=development,REDIS_HOST=sample-flask-datastore
+        environment: PYTHONUNBUFFERED=1
         startsecs: 10                               # Time to consider "started"
         stopwaitsecs: 30                            # Grace period for shutdown
     

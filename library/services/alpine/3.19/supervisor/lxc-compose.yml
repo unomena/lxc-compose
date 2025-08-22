@@ -45,6 +45,20 @@ containers:
           EOF
           fi
           
+          # Create environment variable loading script
+          cat > /usr/local/bin/load-env.sh << 'EOF'
+          #!/bin/sh
+          # Load environment variables from .env file for all supervised processes
+          if [ -f /app/.env ]; then
+              export $(cat /app/.env | grep -v '^#' | xargs)
+          fi
+          exec "$@"
+          EOF
+          chmod +x /usr/local/bin/load-env.sh
+          
+          # Enable supervisor auto-start
+          rc-update add supervisord default
+          
           echo "Supervisor configured successfully"
     
     tests:

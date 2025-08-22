@@ -557,17 +557,18 @@ class LXCCompose:
             
             # Create UPF rule using hostname for resilience
             destination = f"{name}:{container_port}"
+            
+            # ALWAYS remove any existing rule on this port first to avoid conflicts
+            # This ensures clean state especially after container destroy/recreate
+            self.run_command(['sudo', 'upf', 'remove', str(host_port)], check=False)
+            
+            # Now add the new rule
             result = self.run_command(['sudo', 'upf', 'add', str(host_port), destination], check=False)
             if result.returncode == 0:
                 click.echo(f"    Auto-forwarded port {host_port} -> {name}:{container_port}")
                 forwarded_any = True
             else:
-                # Try to remove existing rule and re-add
-                self.run_command(['sudo', 'upf', 'remove', str(host_port)], check=False)
-                result = self.run_command(['sudo', 'upf', 'add', str(host_port), destination], check=False)
-                if result.returncode == 0:
-                    click.echo(f"    Updated forwarding {host_port} -> {name}:{container_port}")
-                    forwarded_any = True
+                click.echo(f"    {YELLOW}Warning: Failed to forward port {host_port} -> {name}:{container_port}{NC}")
         
         # Only save if we forwarded any ports
         if forwarded_any:
@@ -595,8 +596,11 @@ class LXCCompose:
             try:
                 data = json.loads(result.stdout)
                 for rule in data.get('rules', []):
-                    # Remove rules that target this container
-                    if rule.get('hostname') == name:
+                    # Remove rules that target this container by hostname or contain the container name
+                    # This catches both hostname-based rules and IP-based rules with container references
+                    if (rule.get('hostname') == name or 
+                        name in str(rule.get('destination', '')) or
+                        name in str(rule.get('comment', ''))):
                         self.run_command(['sudo', 'upf', 'remove', str(rule['local_port'])], check=False)
                         click.echo(f"    Removed port forwarding {rule['local_port']}")
             except json.JSONDecodeError:
@@ -1073,8 +1077,20 @@ class LXCCompose:
         """Setup services by generating supervisor configs"""
         click.echo(f"  Setting up services...")
         
-        # Create supervisor.d directory if it doesn't exist
-        self.run_command(['lxc', 'exec', name, '--', 'mkdir', '-p', '/etc/supervisor.d'], check=False)
+        # Detect the correct supervisor config directory based on OS
+        # Check if it's Ubuntu/Debian (uses /etc/supervisor/conf.d/)
+        systemctl_check = self.run_command(['lxc', 'exec', name, '--', 'which', 'systemctl'], check=False)
+        if systemctl_check.returncode == 0:
+            # Ubuntu/Debian use /etc/supervisor/conf.d/
+            config_dir = '/etc/supervisor/conf.d'
+            config_ext = '.conf'
+        else:
+            # Alpine uses /etc/supervisor.d/
+            config_dir = '/etc/supervisor.d'
+            config_ext = '.ini'
+        
+        # Create the appropriate directory if it doesn't exist
+        self.run_command(['lxc', 'exec', name, '--', 'mkdir', '-p', config_dir], check=False)
         
         for service_name, service_config in services.items():
             click.echo(f"    Creating supervisor config for {service_name}...")
@@ -1086,7 +1102,10 @@ class LXCCompose:
             for key, value in service_config.items():
                 # Convert underscore to no underscore for supervisor options
                 supervisor_key = key.replace('_', '')
-                if key == 'stdout_logfile':
+                if key == 'command':
+                    # Wrap command with environment loader to inherit .env variables
+                    ini_content += f"command=/usr/local/bin/load-env.sh {value}\n"
+                elif key == 'stdout_logfile':
                     ini_content += f"stdout_logfile={value}\n"
                 elif key == 'stderr_logfile':
                     ini_content += f"stderr_logfile={value}\n"
@@ -1099,7 +1118,7 @@ class LXCCompose:
                 ini_content += f"environment={env_list}\n"
             
             # Write the config file to the container
-            config_path = f"/etc/supervisor.d/{service_name}.ini"
+            config_path = f"{config_dir}/{service_name}{config_ext}"
             escaped_content = ini_content.replace("'", "'\\''")
             self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', 
                             f"echo '{escaped_content}' > {config_path}"])

@@ -38,6 +38,9 @@ containers:
           su postgres -c "pg_ctl -D /var/lib/postgresql/data start"
           sleep 3
           
+          # Enable PostgreSQL to start at boot
+          rc-update add postgresql default
+          
           # Set password from environment (Docker-style)
           POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
           su postgres -c "psql -c \"ALTER USER postgres PASSWORD '$POSTGRES_PASSWORD';\""

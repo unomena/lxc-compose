@@ -26,6 +26,19 @@ containers:
           CONF
           fi
           
+          # Create environment variable loading script
+          cat > /usr/local/bin/load-env.sh << 'EOF'
+          #!/bin/bash
+          # Load environment variables from .env file for all supervised processes
+          if [ -f /app/.env ]; then
+              set -a  # automatically export all variables
+              source /app/.env
+              set +a  # turn off automatic export
+          fi
+          exec "$@"
+          EOF
+          chmod +x /usr/local/bin/load-env.sh
+          
           # Ensure supervisor can run without systemd
           # Create a startup script for non-systemd environments
           cat > /usr/local/bin/start-supervisor << 'SCRIPT'
@@ -33,6 +46,9 @@ containers:
           /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf
           SCRIPT
           chmod +x /usr/local/bin/start-supervisor
+          
+          # Enable supervisor auto-start
+          systemctl enable supervisor
           
           echo "Supervisor configured successfully"
     
