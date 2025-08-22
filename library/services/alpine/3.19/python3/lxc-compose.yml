@@ -49,18 +49,13 @@ containers:
           ln -sf /usr/bin/pip3 /usr/bin/pip 2>/dev/null || true
           
           # Upgrade pip to latest version
-          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install --break-system-packages --upgrade pip setuptools wheel
           
-          # Install commonly used Python tools
-          python3 -m pip install --upgrade \
+          # Install essential Python tools (Alpine requires --break-system-packages)
+          python3 -m pip install --break-system-packages --upgrade \
             virtualenv \
-            pipenv \
-            poetry \
             black \
-            flake8 \
-            mypy \
             pytest \
-            ipython \
             requests \
             python-dotenv
           
