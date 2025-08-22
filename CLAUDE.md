@@ -19,8 +19,11 @@ User → CLI (lxc_compose.py) → LXC/LXD API → Containers
 
 ### Core Components
 - **CLI Implementation**: `cli/lxc_compose.py` - Monolithic Python file (~2000 lines) containing all orchestration logic
-- **Template Handler**: `cli/template_handler.py` - Manages template inheritance and library service includes
-- **Library Services**: `library/{base}/{version}/{service}/` - 77 pre-configured services across 7 base images
+- **GitHub Template Handler**: `cli/github_template_handler.py` - Fetches templates/services from GitHub (NEW!)
+- **Local Template Handler**: `cli/template_handler.py` - Fallback for local template/service loading
+- **Library Structure**: 
+  - `library/templates/` - Base OS templates
+  - `library/services/{os}/{version}/{service}/` - Pre-configured services
 - **Installation**: `install.sh` - System-wide installation to `/usr/local/bin/lxc-compose`
 
 ### Critical Design Decisions
@@ -83,8 +86,8 @@ lxc-compose down -f library/alpine/3.19/postgresql/lxc-compose.yml
 version: '1.0'
 containers:
   myapp:
-    template: alpine-3.19        # Base template from templates/
-    includes:                    # Library services to include
+    template: alpine-3.19        # Fetched from GitHub: library/templates/alpine-3.19.yml
+    includes:                    # Services fetched from GitHub: library/services/alpine/3.19/{service}/
       - postgresql
       - redis
     
@@ -109,20 +112,29 @@ containers:
         - api:/app/tests/external.sh
 ```
 
-### Template System
-- **Base Templates** (`templates/`): 7 base images with aliases
+### Template System (GitHub-Based)
+
+#### New Structure (v2.0+)
+- **Base Templates** (`library/templates/`): Fetched from GitHub
   - Alpine 3.19 (minimal ~150MB)
   - Ubuntu 22.04/24.04 LTS (full environment)
   - Ubuntu-minimal 22.04/24.04 (balanced ~300MB)
   - Debian 11/12 (stable base)
 
-- **Library Services** (`library/{base}/{version}/{service}/`): 11 service types × 7 bases = 77 configs
+- **Library Services** (`library/services/{os}/{version}/{service}/`): Fetched from GitHub
+  - 11 service types × 7 base images = 77 pre-configured services
   - Databases: PostgreSQL, MySQL, MongoDB
   - Caching: Redis, Memcached
   - Web: Nginx, HAProxy
   - Messaging: RabbitMQ
   - Search: Elasticsearch
   - Monitoring: Grafana, Prometheus
+
+#### GitHub Fetching
+- Templates and services are fetched on-demand from GitHub
+- No local installation required for templates/services
+- Configurable repository and branch via environment variables
+- Falls back to local files if GitHub is unavailable
 
 ### Container Naming Convention
 - Library services: `{service}-{os}-{version}` (e.g., `postgresql-alpine-3-19`)
@@ -140,9 +152,19 @@ Key methods that handle core functionality:
 - `handle_post_install()`: Executes post-install commands in container
 - `run_tests()`: Executes internal/external/port_forwarding tests
 
-### Template Handler (cli/template_handler.py)
-- `load_template()`: Loads base template from templates/
-- `load_library_service()`: Loads and merges library service configs
+### GitHub Template Handler (cli/github_template_handler.py)
+- **Primary handler**: Fetches templates and services directly from GitHub
+- `load_template()`: Fetches from `library/templates/` on GitHub
+- `load_library_service()`: Fetches from `library/services/{os}/{version}/{service}/`
+- No caching - always fetches latest version
+- Configurable via environment variables:
+  - `LXC_COMPOSE_REPO`: Custom GitHub repository URL
+  - `LXC_COMPOSE_BRANCH`: Specific branch/tag to use
+
+### Local Template Handler (cli/template_handler.py)
+- **Fallback handler**: Used when GitHub is unavailable
+- `load_template()`: Loads from `/srv/lxc-compose/library/templates/`
+- `load_library_service()`: Loads from `/srv/lxc-compose/library/services/`
 - `merge_configs()`: Deep merges template → includes → local config
 - Stores `__library_service_path__` metadata for test inheritance
 

@@ -223,6 +223,98 @@ lxc-compose test sample-datastore internal # Run internal tests for datastore
 
 ## Configuration
 
+### GitHub-Based Templates (NEW!)
+
+LXC Compose now fetches templates and services directly from GitHub, eliminating the need for local installation:
+
+```bash
+# Templates and services are fetched automatically from GitHub
+lxc-compose up  # Downloads templates/services as needed
+```
+
+#### Using Custom Repositories
+
+You can use your own fork or custom repository:
+
+```bash
+# Use a custom repository
+export LXC_COMPOSE_REPO=https://github.com/yourusername/lxc-compose
+export LXC_COMPOSE_BRANCH=my-custom-branch
+lxc-compose up
+
+# Or use a specific version/tag
+export LXC_COMPOSE_BRANCH=v1.0.0
+lxc-compose up
+```
+
+#### How It Works
+
+1. **Templates** are fetched from `library/templates/` in the repository
+2. **Services** are fetched from `library/services/{os}/{version}/{service}/`
+3. **No caching** - always fetches the latest version
+4. **Fallback** - uses local files if GitHub is unavailable
+
+### Template Inheritance System
+
+LXC Compose uses a three-layer inheritance model:
+
+```
+Template (Base OS) → Library Services (includes) → Your Config (overrides)
+```
+
+#### 1. Templates - Base Operating System
+
+Templates define the base OS image and initial configuration:
+
+- **Alpine 3.19** - Minimal footprint (~150MB)
+- **Ubuntu 24.04/22.04** - Full Ubuntu environment
+- **Ubuntu-minimal 24.04/22.04** - Balanced size/features (~300MB)
+- **Debian 12/11** - Stable Debian base
+
+Example:
+```yaml
+containers:
+  myapp:
+    template: alpine-3.19  # Fetched from GitHub: library/templates/alpine-3.19.yml
+```
+
+#### 2. Library Services - Pre-configured Applications
+
+Services are pre-configured applications that extend templates:
+
+- **Databases**: PostgreSQL, MySQL, MongoDB
+- **Caching**: Redis, Memcached
+- **Web**: Nginx, HAProxy
+- **Messaging**: RabbitMQ
+- **Search**: Elasticsearch
+- **Monitoring**: Grafana, Prometheus
+
+Example:
+```yaml
+containers:
+  myapp:
+    template: alpine-3.19
+    includes:
+      - nginx      # Fetched from: library/services/alpine/3.19/nginx/
+      - postgresql # Fetched from: library/services/alpine/3.19/postgresql/
+```
+
+#### 3. Your Configuration - Final Customization
+
+Your local configuration has the highest priority:
+
+```yaml
+containers:
+  myapp:
+    template: alpine-3.19
+    includes: [nginx]
+    packages: [curl, jq]      # Additional packages
+    exposed_ports: [8080]     # Additional ports
+    post_install:             # Your custom setup
+      - name: "Setup my app"
+        command: "echo 'Custom setup here'"
+```
+
 ### Basic Configuration
 
 ```yaml
