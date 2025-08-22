@@ -43,6 +43,32 @@ if [ ! -d "/srv/lxc-compose" ]; then
     exit 1
 fi
 
+# Check if library exists, if not copy from current directory
+if [ ! -d "/srv/lxc-compose/library" ]; then
+    echo -e "${YELLOW}Library not found at /srv/lxc-compose/library${NC}"
+    
+    # Check if we have library in current directory
+    if [ -d "./library" ]; then
+        echo -e "${BLUE}Copying library from current directory...${NC}"
+        cp -r ./library /srv/lxc-compose/
+        echo -e "${GREEN}✓ Library copied successfully${NC}"
+    else
+        echo -e "${RED}Error: Library not found in current directory either${NC}"
+        echo "Please ensure you run this script from the lxc-compose repository root"
+        echo "Or manually copy the library to /srv/lxc-compose/library"
+        exit 1
+    fi
+fi
+
+# Also copy templates if they don't exist
+if [ ! -d "/srv/lxc-compose/templates" ]; then
+    if [ -d "./templates" ]; then
+        echo -e "${BLUE}Copying templates from current directory...${NC}"
+        cp -r ./templates /srv/lxc-compose/
+        echo -e "${GREEN}✓ Templates copied successfully${NC}"
+    fi
+fi
+
 # Create results directory structure
 mkdir -p "$RESULTS_DIR"
 
@@ -54,6 +80,7 @@ mkdir -p "$RESULTS_DIR"
     echo "Started: $(date)"
     echo "Host: $(hostname)"
     echo "User: $(whoami)"
+    echo "Working Directory: $(pwd)"
     echo "==================================================================="
     echo ""
     echo "FORMAT: [STATUS] OS/VERSION/SERVICE - REASON"
@@ -283,15 +310,21 @@ echo -e "${BLUE}║   LXC Compose Library Service Bulk Testing   ║${NC}"
 echo -e "${BLUE}╚═══════════════════════════════════════════════╝${NC}"
 echo ""
 echo "Running as: $(whoami)"
+echo "Working directory: $(pwd)"
 echo "Control file: $CONTROL_FILE"
 echo "Individual results: $RESULTS_DIR/"
 echo "Summary: $SUMMARY_FILE"
 echo ""
 
-# Verify library exists
+# Verify library exists after copy attempt
 if [ ! -d "/srv/lxc-compose/library" ]; then
-    echo -e "${YELLOW}Warning: Library not found at /srv/lxc-compose/library${NC}"
-    echo "The installation script should have installed it."
+    echo -e "${RED}Error: Library still not found at /srv/lxc-compose/library${NC}"
+    echo "Please check the installation"
+    exit 1
+else
+    echo -e "${GREEN}✓ Library found at /srv/lxc-compose/library${NC}"
+    echo "Library contents:"
+    ls -la /srv/lxc-compose/library/ | head -10
     echo ""
 fi
 
