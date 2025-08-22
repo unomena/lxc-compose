@@ -36,7 +36,7 @@ containers:
     # Services managed by supervisor
     services:
       nginx:
-        command: nginx -g "daemon off;"
+        command: sh -c "mkdir -p /run/nginx && nginx -g 'daemon off;'"
         autostart: true
         autorestart: true
         stdout_logfile: /var/log/nginx.log

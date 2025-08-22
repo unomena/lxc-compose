@@ -23,7 +23,9 @@ Complete reference for all LXC Compose commands and their options.
 lxc-compose [OPTIONS] COMMAND [ARGS]...
 
 Commands:
-  up       Create and start containers
+  launch   Create new containers (must not exist)
+  start    Start existing containers (must already exist)
+  up       Create and/or start containers (smart command)
   down     Stop containers
   list     List containers and their status
   destroy  Stop and remove containers
@@ -33,9 +35,45 @@ Commands:
 
 ## Core Commands
 
+### launch Command
+
+Create new containers from configuration file. Fails if containers already exist.
+
+#### Synopsis
+```bash
+lxc-compose launch [OPTIONS]
+```
+
+#### Options
+- `-f, --file FILE` - Specify configuration file (default: `lxc-compose.yml`)
+
+#### Behavior
+1. Reads configuration from YAML file
+2. Creates new containers (fails if they exist)
+3. Runs full initialization (packages, services, post-install)
+4. Starts containers with services
+
+### start Command
+
+Start existing containers. Fails if containers don't exist.
+
+#### Synopsis
+```bash
+lxc-compose start [OPTIONS]
+```
+
+#### Options
+- `-f, --file FILE` - Specify configuration file (default: `lxc-compose.yml`)
+- `--all` - Start ALL containers on the system (requires confirmation)
+
+#### Behavior
+1. Starts stopped containers
+2. Re-establishes networking and port forwarding
+3. Does NOT re-run initialization
+
 ### up Command
 
-Create and start containers from configuration file.
+Smart command that creates containers if needed, or starts them if they exist.
 
 #### Synopsis
 ```bash
@@ -47,7 +85,10 @@ lxc-compose up [OPTIONS]
 - `--all` - Start ALL containers on the system (requires confirmation)
 
 #### Behavior
-1. Reads configuration from YAML file
+1. For each container in configuration:
+   - If doesn't exist: Creates and initializes (like `launch`)
+   - If exists but stopped: Starts it (like `start`)
+   - If already running: Skips
 2. Loads environment variables from `.env` if present
 3. Creates containers if they don't exist
 4. Installs packages
@@ -358,9 +399,33 @@ lxc-compose COMMAND --all
 
 ## Command Examples
 
+### Container Lifecycle Management
+```bash
+# Create fresh containers (must not exist)
+lxc-compose launch
+
+# Start existing containers after reboot
+lxc-compose start
+
+# Smart command - creates or starts as needed
+lxc-compose up
+
+# Stop containers (preserves state)
+lxc-compose down
+
+# Stop and remove containers completely
+lxc-compose destroy
+```
+
 ### Development Workflow
 ```bash
-# Start development environment
+# Initial setup - create new environment
+lxc-compose launch
+
+# Daily workflow - start existing containers
+lxc-compose start
+
+# Or use smart command that handles both
 lxc-compose up
 
 # Check status
@@ -372,14 +437,20 @@ lxc-compose logs app-container django --follow
 # Run tests
 lxc-compose test
 
-# Stop for the day
+# Stop for the day (containers persist)
 lxc-compose down
+
+# Resume next day
+lxc-compose start  # or 'up'
 ```
 
 ### Production Deployment
 ```bash
-# Use production config
-lxc-compose up -f production.yml
+# Initial deployment - create containers
+lxc-compose launch -f production.yml
+
+# After server reboot - just start
+lxc-compose start -f production.yml
 
 # Monitor logs
 lxc-compose logs -f production.yml web nginx --follow

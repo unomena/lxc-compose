@@ -191,7 +191,21 @@ exposed_ports:
 
 ## Service Definitions
 
-Services are managed by Supervisor:
+Services are managed by Supervisor and automatically configured for container resilience:
+
+### Container Resilience (Auto-start)
+
+**🎉 New Feature**: Services automatically restart when containers are stopped and started!
+
+When you define services in your configuration, LXC Compose automatically:
+- Configures Supervisor to start at boot
+- Detects your init system (systemd for Ubuntu/Debian, OpenRC for Alpine)
+- Enables the appropriate service manager
+- Ensures all services resume after container restarts
+
+No configuration changes needed - this happens automatically for all containers with `services:` defined.
+
+### Service Configuration
 
 ```yaml
 services:
@@ -203,6 +217,28 @@ services:
     autorestart: true
     stdout_logfile: /var/log/app.log
     stderr_logfile: /var/log/app_error.log
+```
+
+### How It Works
+
+1. **Container Creation**: When services are defined, Supervisor is installed and configured
+2. **Auto-start Setup**: LXC Compose enables Supervisor in the init system:
+   - Alpine: `rc-update add supervisord default`
+   - Ubuntu/Debian: `systemctl enable supervisor`
+3. **Container Restart**: Services automatically resume without manual intervention
+
+### Testing Resilience
+
+```bash
+# Create container with services
+lxc-compose up -f lxc-compose.yml
+
+# Stop and restart container
+lxc stop <container-name>
+lxc start <container-name>
+
+# Verify services are running
+lxc exec <container-name> -- supervisorctl status
 ```
 
 ## Post-Install Commands

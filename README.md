@@ -90,6 +90,7 @@ Most applications can be migrated in under an hour. [See our migration guide →
 - **Composite Containers**: Combine multiple services efficiently in one container
 - **Minimal footprint**: Alpine Linux support for ~150MB containers
 - **Dynamic service configuration**: Define services in YAML, auto-generate supervisor configs
+- **Container Resilience**: Automatic service recovery after container restarts (NEW!)
 - **Comprehensive testing**: Built-in health checks with test inheritance from library services
 - **Shared networking**: Containers communicate via shared hosts file
 - **Security-first**: iptables rules block all non-exposed ports

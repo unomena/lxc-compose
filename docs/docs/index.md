@@ -112,6 +112,12 @@ LXC Compose is a minimalist container orchestration tool that:
 - Container name-based communication
 - Bridge network with IP tracking
 
+### 🔄 Container Resilience
+- **Automatic service recovery** after container restarts
+- Supervisor auto-start on boot (systemd/OpenRC)
+- No manual intervention needed for service restoration
+- Works with all base images automatically
+
 ## Quick Start
 
 ### Installation

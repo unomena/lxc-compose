@@ -314,6 +314,12 @@ class LXCCompose:
     
     def mount_hosts_file(self, name: str):
         """Mount the shared hosts file into the container"""
+        # Check if device already exists
+        result = self.run_command(['lxc', 'config', 'device', 'show', name], check=False)
+        if result.returncode == 0 and 'hosts:' in result.stdout:
+            click.echo(f"  Hosts file already mounted")
+            return
+        
         click.echo(f"  Mounting shared hosts file...")
         self.run_command(['lxc', 'config', 'device', 'add', name, 'hosts',
                          'disk', f'source={SHARED_HOSTS_FILE}', 
@@ -325,6 +331,12 @@ class LXCCompose:
         env_file = os.path.join(config_dir, DEFAULT_ENV_FILE)
         
         if os.path.exists(env_file):
+            # Check if device already exists
+            result = self.run_command(['lxc', 'config', 'device', 'show', name], check=False)
+            if result.returncode == 0 and 'envfile:' in result.stdout:
+                click.echo(f"  .env file already mounted")
+                return
+            
             click.echo(f"  Mounting .env file...")
             self.run_command(['lxc', 'config', 'device', 'add', name, 'envfile',
                              'disk', f'source={env_file}', 
@@ -682,6 +694,10 @@ class LXCCompose:
         
         config_dir = os.path.dirname(os.path.abspath(self.config_file))
         
+        # Get existing devices
+        result = self.run_command(['lxc', 'config', 'device', 'show', name], check=False)
+        existing_devices = result.stdout if result.returncode == 0 else ""
+        
         for mount in mounts:
             if isinstance(mount, str):
                 # Simple format: "./path:/container/path"
@@ -709,6 +725,12 @@ class LXCCompose:
             
             # Add mount to container with UID/GID shifting for unprivileged containers
             device_name = target.replace('/', '-').strip('-') or 'root'
+            
+            # Check if device already exists
+            if f'{device_name}:' in existing_devices:
+                click.echo(f"    Mount already exists: {source} -> {target}")
+                continue
+            
             # Use shift=true to handle UID/GID mapping for unprivileged containers
             self.run_command(['lxc', 'config', 'device', 'add', name, device_name, 
                             'disk', f'source={source}', f'path={target}', 'shift=true'])
@@ -799,6 +821,34 @@ class LXCCompose:
             escaped_content = ini_content.replace("'", "'\\''")
             self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', 
                             f"echo '{escaped_content}' > {config_path}"])
+        
+        # Enable supervisor to start at boot
+        self.enable_supervisor_autostart(name)
+    
+    def enable_supervisor_autostart(self, name: str):
+        """Enable supervisor to start automatically at boot"""
+        click.echo(f"    Enabling supervisor auto-start...")
+        
+        # First, detect the init system
+        # Check for systemd
+        systemctl_check = self.run_command(['lxc', 'exec', name, '--', 'which', 'systemctl'], check=False)
+        if systemctl_check.returncode == 0:
+            # Systemd-based system (Ubuntu, Debian, etc.)
+            # Enable and start supervisor service
+            self.run_command(['lxc', 'exec', name, '--', 'systemctl', 'enable', 'supervisor'], check=False)
+            self.run_command(['lxc', 'exec', name, '--', 'systemctl', 'start', 'supervisor'], check=False)
+        else:
+            # Check for OpenRC (Alpine)
+            rc_update_check = self.run_command(['lxc', 'exec', name, '--', 'which', 'rc-update'], check=False)
+            if rc_update_check.returncode == 0:
+                # OpenRC-based system (Alpine)
+                # Add supervisord to default runlevel
+                self.run_command(['lxc', 'exec', name, '--', 'rc-update', 'add', 'supervisord', 'default'], check=False)
+                # Start supervisord service
+                self.run_command(['lxc', 'exec', name, '--', 'rc-service', 'supervisord', 'start'], check=False)
+            else:
+                # Fallback: just start supervisord directly
+                self.run_command(['lxc', 'exec', name, '--', 'supervisord', '-c', '/etc/supervisord.conf'], check=False)
     
     def handle_dependencies(self, container: Dict):
         """Handle container dependencies"""
@@ -825,8 +875,31 @@ class LXCCompose:
                     self.save_container_ip(dep, ip, [])
                     self.update_hosts_file("add", dep, ip)
     
-    def up(self):
-        """Create and start containers"""
+    def launch(self):
+        """Create new containers (error if already exists)"""
+        if self.all_containers:
+            click.echo(f"{RED}Cannot use --all with launch command{NC}")
+            sys.exit(1)
+        
+        click.echo(f"{BOLD}Creating containers from {self.config_file}...{NC}")
+        
+        for container in self.containers:
+            name = container['name']
+            click.echo(f"\n{BLUE}Container: {name}{NC}")
+            
+            # Handle dependencies
+            self.handle_dependencies(container)
+            
+            if self.container_exists(name):
+                click.echo(f"  {RED}✗ Container already exists{NC}")
+                sys.exit(1)
+            else:
+                self.create_container(container)
+        
+        click.echo(f"\n{GREEN}✓{NC} All containers created and started")
+    
+    def start(self):
+        """Start existing containers (error if doesn't exist)"""
         if self.all_containers:
             click.echo(f"{BOLD}Starting all containers on system...{NC}")
             containers = self.get_all_containers()
@@ -841,7 +914,47 @@ class LXCCompose:
                 else:
                     click.echo(f"Container {name} already running")
         else:
-            click.echo(f"{BOLD}Creating/starting containers from {self.config_file}...{NC}")
+            click.echo(f"{BOLD}Starting containers from {self.config_file}...{NC}")
+            
+            for container in self.containers:
+                name = container['name']
+                click.echo(f"\n{BLUE}Container: {name}{NC}")
+                
+                # Handle dependencies
+                self.handle_dependencies(container)
+                
+                if not self.container_exists(name):
+                    click.echo(f"  {RED}✗ Container doesn't exist{NC}")
+                    sys.exit(1)
+                
+                if self.container_running(name):
+                    click.echo(f"  Already running")
+                else:
+                    click.echo(f"  Starting...")
+                    self.run_command(['lxc', 'start', name])
+                    
+                    # Wait for network
+                    ip = self.wait_for_network(name)
+                    if ip:
+                        # Only re-setup networking components
+                        exposed_ports = container.get('exposed_ports', [])
+                        if isinstance(exposed_ports, int):
+                            exposed_ports = [exposed_ports]
+                        # Just update hosts and ports, don't remount
+                        self.update_hosts_file("add", name, ip)
+                        self.update_host_machine_hosts("add", name, ip)
+                        if exposed_ports:
+                            self.manage_exposed_ports("add", ip, exposed_ports)
+            
+            click.echo(f"\n{GREEN}✓{NC} All containers started")
+    
+    def up(self):
+        """Create and start containers (smart: creates if needed, starts if exists)"""
+        if self.all_containers:
+            # For --all, just start existing containers
+            self.start()
+        else:
+            click.echo(f"{BOLD}Bringing up containers from {self.config_file}...{NC}")
             
             for container in self.containers:
                 name = container['name']
@@ -854,17 +967,29 @@ class LXCCompose:
                     if self.container_running(name):
                         click.echo(f"  Already running")
                     else:
-                        click.echo(f"  Starting...")
+                        click.echo(f"  Starting existing container...")
                         self.run_command(['lxc', 'start', name])
                         
-                        # Re-setup networking
+                        # Wait for network
                         ip = self.wait_for_network(name)
                         if ip:
+                            # Only re-setup networking components
                             exposed_ports = container.get('exposed_ports', [])
                             if isinstance(exposed_ports, int):
                                 exposed_ports = [exposed_ports]
-                            self.setup_container_networking(name, exposed_ports)
+                            # Update hosts and ports
+                            self.update_hosts_file("add", name, ip)
+                            self.update_host_machine_hosts("add", name, ip)
+                            # Re-mount hosts file and env file if needed
+                            self.mount_hosts_file(name)
+                            self.mount_env_file(name)
+                            # Re-setup mounts if specified
+                            if 'mounts' in container:
+                                self.setup_mounts(name, container['mounts'])
+                            if exposed_ports:
+                                self.manage_exposed_ports("add", ip, exposed_ports)
                 else:
+                    click.echo(f"  Creating new container...")
                     self.create_container(container)
             
             click.echo(f"\n{GREEN}✓{NC} All containers are up")
@@ -1139,9 +1264,26 @@ def cli():
 
 @cli.command()
 @click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
+def launch(file):
+    """Create new containers (must not exist)"""
+    compose = LXCCompose(file, False)
+    compose.launch()
+
+@cli.command()
+@click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
+@click.option('--all', 'all_containers', is_flag=True, help='Start ALL containers on system')
+def start(file, all_containers):
+    """Start existing containers (must already exist)"""
+    if all_containers:
+        confirm_all_operation("start")
+    compose = LXCCompose(file if not all_containers else None, all_containers)
+    compose.start()
+
+@cli.command()
+@click.option('-f', '--file', default=DEFAULT_CONFIG, help='Config file')
 @click.option('--all', 'all_containers', is_flag=True, help='Start ALL containers on system')
 def up(file, all_containers):
-    """Create and start containers"""
+    """Create and/or start containers (smart command)"""
     if all_containers:
         confirm_all_operation("start")
     compose = LXCCompose(file if not all_containers else None, all_containers)
