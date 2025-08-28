@@ -1023,7 +1023,7 @@ class LXCCompose:
             click.echo(f"    Mounted {source} -> {target}")
     
     def install_packages(self, name: str, packages: List[str]):
-        """Install packages in container with retry logic"""
+        """Install packages in container with retry logic and mirror fallback"""
         if not packages:
             return
             
@@ -1033,67 +1033,147 @@ class LXCCompose:
         result = self.run_command(['lxc', 'exec', name, '--', 'which', 'apt-get'], check=False)
         if result.returncode == 0:
             # Ubuntu/Debian
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'update'])
-                    self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'install', '-y'] + packages)
-                    break
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
-                        click.echo(f"    Package installation failed, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
-                        time.sleep(wait_time)
-                    else:
-                        raise
+            self._install_packages_debian(name, packages)
         else:
             # Try Alpine
             result = self.run_command(['lxc', 'exec', name, '--', 'which', 'apk'], check=False)
             if result.returncode == 0:
-                max_retries = 5  # Alpine needs more retries due to CDN issues
-                for attempt in range(max_retries):
-                    try:
-                        # Try to update package index with timeout
-                        update_result = self.run_command(
-                            ['lxc', 'exec', name, '--', 'sh', '-c', 
-                             'timeout 30 apk update || (sleep 2 && timeout 30 apk update)'],
-                            check=False
-                        )
-                        
-                        if update_result.returncode != 0:
-                            # Try alternative mirror
-                            click.echo(f"    Trying alternative Alpine mirror...")
-                            # Get Alpine version dynamically
-                            version_result = self.run_command(
-                                ['lxc', 'exec', name, '--', 'cat', '/etc/alpine-release'],
-                                check=False
-                            )
-                            alpine_version = "v3.19"  # Default
-                            if version_result.returncode == 0 and version_result.stdout:
-                                # Extract major.minor version (e.g., 3.19.0 -> v3.19)
-                                parts = version_result.stdout.strip().split('.')
-                                if len(parts) >= 2:
-                                    alpine_version = f"v{parts[0]}.{parts[1]}"
-                            
-                            self.run_command(
-                                ['lxc', 'exec', name, '--', 'sh', '-c',
-                                 f'echo "https://alpine.global.ssl.fastly.net/alpine/{alpine_version}/main" > /etc/apk/repositories && ' +
-                                 f'echo "https://alpine.global.ssl.fastly.net/alpine/{alpine_version}/community" >> /etc/apk/repositories'],
-                                check=False
-                            )
-                            self.run_command(['lxc', 'exec', name, '--', 'apk', 'update'])
-                        
+                self._install_packages_alpine(name, packages)
+    
+    def _install_packages_debian(self, name: str, packages: List[str]):
+        """Install packages on Debian/Ubuntu with retry logic"""
+        max_retries = int(os.environ.get('LXC_COMPOSE_PKG_RETRIES', '5'))
+        max_backoff = int(os.environ.get('LXC_COMPOSE_MAX_BACKOFF', '32'))
+        
+        # List of Ubuntu/Debian mirror URLs to try
+        mirrors = [
+            None,  # Use default mirror first
+            'http://archive.ubuntu.com/ubuntu/',
+            'http://us.archive.ubuntu.com/ubuntu/',
+            'http://mirrors.kernel.org/ubuntu/',
+            'http://deb.debian.org/debian/',
+        ]
+        
+        for mirror_idx, mirror in enumerate(mirrors):
+            if mirror and mirror_idx > 0:
+                click.echo(f"    Trying alternative mirror: {mirror}")
+                # Update sources.list to use alternative mirror
+                self.run_command(
+                    ['lxc', 'exec', name, '--', 'sh', '-c',
+                     f"sed -i.bak 's|http://[^ ]*|{mirror.rstrip('/')}|g' /etc/apt/sources.list"],
+                    check=False
+                )
+            
+            for attempt in range(max_retries):
+                try:
+                    # Update package index with timeout
+                    update_result = self.run_command(
+                        ['lxc', 'exec', name, '--', 'sh', '-c',
+                         'timeout 60 apt-get update'],
+                        check=False
+                    )
+                    
+                    if update_result.returncode == 0:
                         # Install packages
-                        self.run_command(['lxc', 'exec', name, '--', 'apk', 'add'] + packages)
+                        self.run_command(
+                            ['lxc', 'exec', name, '--', 'sh', '-c',
+                             f'DEBIAN_FRONTEND=noninteractive apt-get install -y {" ".join(packages)}']
+                        )
+                        return  # Success!
+                    
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait_time = min(2 ** attempt, max_backoff)  # Cap at max_backoff
+                        click.echo(f"    Package operation failed, retrying in {wait_time}s... (attempt {attempt + 2}/{max_retries})")
+                        time.sleep(wait_time)
+                    elif mirror_idx < len(mirrors) - 1:
+                        # Try next mirror
                         break
-                    except Exception as e:
-                        if attempt < max_retries - 1:
-                            wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4, 8, 16 seconds
-                            click.echo(f"    Package installation failed, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
-                            time.sleep(wait_time)
-                        else:
-                            click.echo(f"    {YELLOW}Warning: Package installation failed after {max_retries} attempts{NC}")
-                            raise
+                    else:
+                        click.echo(f"    {RED}Error: Package installation failed after all retries{NC}")
+                        raise
+    
+    def _install_packages_alpine(self, name: str, packages: List[str]):
+        """Install packages on Alpine with retry logic and mirror rotation"""
+        max_retries = int(os.environ.get('LXC_COMPOSE_PKG_RETRIES', '5'))
+        max_backoff = int(os.environ.get('LXC_COMPOSE_MAX_BACKOFF', '32'))
+        
+        # Get Alpine version
+        version_result = self.run_command(
+            ['lxc', 'exec', name, '--', 'cat', '/etc/alpine-release'],
+            check=False
+        )
+        alpine_version = "v3.19"  # Default
+        if version_result.returncode == 0 and version_result.stdout:
+            parts = version_result.stdout.strip().split('.')
+            if len(parts) >= 2:
+                alpine_version = f"v{parts[0]}.{parts[1]}"
+        
+        # List of Alpine mirrors to try (ordered by reliability)
+        mirrors = [
+            None,  # Use current mirror first
+            f"https://dl-cdn.alpinelinux.org/alpine/{alpine_version}",
+            f"https://uk.alpinelinux.org/alpine/{alpine_version}",
+            f"https://dl-4.alpinelinux.org/alpine/{alpine_version}",
+            f"https://dl-5.alpinelinux.org/alpine/{alpine_version}",
+            f"https://mirror.leaseweb.com/alpine/{alpine_version}",
+            f"https://mirrors.edge.kernel.org/alpine/{alpine_version}",
+            f"https://alpine.global.ssl.fastly.net/alpine/{alpine_version}",
+        ]
+        
+        for mirror_idx, mirror in enumerate(mirrors):
+            if mirror and mirror_idx > 0:
+                click.echo(f"    Trying Alpine mirror: {mirror}")
+                # Update repositories to use alternative mirror
+                self.run_command(
+                    ['lxc', 'exec', name, '--', 'sh', '-c',
+                     f'echo "{mirror}/main" > /etc/apk/repositories && ' +
+                     f'echo "{mirror}/community" >> /etc/apk/repositories'],
+                    check=False
+                )
+            
+            for attempt in range(max_retries):
+                try:
+                    # Update package index with timeout and retry
+                    update_cmd = 'timeout 30 apk update 2>&1'
+                    update_result = self.run_command(
+                        ['lxc', 'exec', name, '--', 'sh', '-c', update_cmd],
+                        check=False
+                    )
+                    
+                    # Check for common network errors in output
+                    if update_result.returncode != 0:
+                        output = update_result.stdout + update_result.stderr
+                        if "timeout" in output.lower() or "timed out" in output.lower():
+                            click.echo(f"    Mirror timeout detected")
+                            if mirror_idx < len(mirrors) - 1:
+                                break  # Try next mirror
+                        elif "temporary failure" in output.lower() or "could not resolve" in output.lower():
+                            click.echo(f"    DNS resolution issue detected")
+                            # Wait a bit for DNS to recover
+                            time.sleep(2)
+                    
+                    if update_result.returncode == 0:
+                        # Install packages with timeout
+                        install_cmd = f'timeout 120 apk add --no-cache {" ".join(packages)}'
+                        self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', install_cmd])
+                        click.echo(f"    {GREEN}Successfully installed packages{NC}")
+                        return  # Success!
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    
+                if attempt < max_retries - 1:
+                    wait_time = min(2 ** attempt, max_backoff)
+                    click.echo(f"    Retry {attempt + 1}/{max_retries} failed, waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                elif mirror_idx < len(mirrors) - 1:
+                    click.echo(f"    All retries failed for this mirror, trying next...")
+                    break  # Try next mirror
+        
+        # If we get here, all mirrors and retries failed
+        click.echo(f"    {YELLOW}Warning: Could not install packages after trying {len([m for m in mirrors if m])} mirrors{NC}")
+        click.echo(f"    {YELLOW}You may need to install packages manually or check network connectivity{NC}")
     
     def run_post_install(self, name: str, commands: List):
         """Run post-installation commands with environment variables"""

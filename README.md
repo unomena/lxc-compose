@@ -91,6 +91,7 @@ Most applications can be migrated in under an hour. [See our migration guide →
 - **Port Forwarding Persistence**: UPF rules automatically update when containers get new IPs after destroy/recreate
 - **Database Auto-Start**: PostgreSQL, MySQL, and other databases configured to start automatically on boot
 - **"Pull the Plug" Resilience**: Complete recovery after system restart - no manual intervention needed
+- **Resilient Package Installation**: Automatic retry with exponential backoff and mirror fallback for unreliable package servers
 
 ### Core Features
 - **Docker Compose-like syntax**: Familiar YAML configuration for LXC containers
@@ -350,6 +351,36 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for complete configuration re
 - Container dependencies
 - Test configurations
 - Log definitions
+
+### Package Installation Retry Configuration
+
+LXC Compose automatically retries package installation when mirrors are slow or unavailable. This is especially useful for Alpine Linux which frequently experiences CDN issues.
+
+#### Environment Variables
+
+- `LXC_COMPOSE_PKG_RETRIES`: Number of retry attempts per mirror (default: 5)
+- `LXC_COMPOSE_MAX_BACKOFF`: Maximum backoff time in seconds between retries (default: 32)
+
+#### Example Usage
+
+```bash
+# Increase retries for unreliable networks
+export LXC_COMPOSE_PKG_RETRIES=10
+export LXC_COMPOSE_MAX_BACKOFF=60
+lxc-compose up
+
+# Or use inline for a single command
+LXC_COMPOSE_PKG_RETRIES=3 lxc-compose up
+```
+
+#### How It Works
+
+1. **Exponential Backoff**: Waits 1, 2, 4, 8, 16... seconds between retries (capped at MAX_BACKOFF)
+2. **Mirror Rotation**: Automatically tries alternative mirrors when timeouts occur
+   - Alpine: 7 different CDN endpoints
+   - Ubuntu/Debian: 4 different archive mirrors
+3. **Smart Detection**: Recognizes timeout and DNS issues to switch mirrors faster
+4. **Graceful Degradation**: Continues with warning if all retries fail (won't break your deployment)
 
 ## Service Library
 

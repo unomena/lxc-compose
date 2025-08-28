@@ -5,6 +5,28 @@ All notable changes to LXC Compose will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2024-11-28
+
+### Added
+
+#### Resilient Package Installation
+- **Automatic Retry with Exponential Backoff**: Package installation now retries automatically when mirrors are slow or unavailable
+  - Default 5 retries per mirror with exponential backoff (1, 2, 4, 8, 16... seconds)
+  - Configurable via `LXC_COMPOSE_PKG_RETRIES` and `LXC_COMPOSE_MAX_BACKOFF` environment variables
+- **Mirror Rotation**: Automatically tries alternative mirrors on timeout
+  - Alpine: 7 different CDN endpoints (dl-cdn, uk, dl-4, dl-5, leaseweb, kernel.org, fastly)
+  - Ubuntu/Debian: 4 different archive mirrors (default, archive.ubuntu.com, us.archive, kernel.org, deb.debian.org)
+- **Smart Error Detection**: Recognizes specific error patterns
+  - Timeout detection: Switches to next mirror immediately
+  - DNS issues: Waits briefly for DNS recovery before retry
+- **Graceful Degradation**: Continues with warning if all retries fail instead of failing deployment
+
+### Changed
+- Refactored `install_packages()` into separate methods:
+  - `_install_packages_alpine()`: Alpine-specific logic with CDN mirror rotation
+  - `_install_packages_debian()`: Ubuntu/Debian-specific logic with archive mirror fallback
+- Improved error messages to show retry attempts and mirror switches
+
 ## [2.1.0] - 2024-08-22
 
 ### 🚀 Major Production Resilience Improvements

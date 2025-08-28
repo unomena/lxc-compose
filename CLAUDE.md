@@ -19,55 +19,48 @@ User → CLI (lxc_compose.py) → LXC/LXD API → Containers
 
 ### Core Components
 - **CLI Implementation**: `cli/lxc_compose.py` - Monolithic Python file (~2000 lines) containing all orchestration logic
-- **GitHub Template Handler**: `cli/github_template_handler.py` - Fetches templates/services from GitHub (NEW!)
+- **GitHub Template Handler**: `cli/github_template_handler.py` - Fetches templates/services from GitHub (primary)
 - **Local Template Handler**: `cli/template_handler.py` - Fallback for local template/service loading
 - **Library Structure**: 
-  - `library/templates/` - Base OS templates
-  - `library/services/{os}/{version}/{service}/` - Pre-configured services
+  - `library/templates/` - Base OS templates (7 images: Alpine, Ubuntu, Ubuntu-minimal, Debian)
+  - `library/services/{os}/{version}/{service}/` - Pre-configured services (77 total)
 - **Installation**: `install.sh` - System-wide installation to `/usr/local/bin/lxc-compose`
 
 ### Critical Design Decisions
 - **Stateless Operation**: No database or state files - all state derived from LXC runtime and `/srv/lxc-compose/etc/container-metadata.json`
 - **Security Model**: iptables DNAT rules for port forwarding, FORWARD chain blocking for non-exposed ports
-- **Networking**: Static IP assignment with shared hosts file at `/srv/lxc-compose/etc/hosts`
-- **Template Inheritance**: Base template → Library includes → Local configuration
+- **Networking**: Static IP assignment (10.0.3.0/24 subnet) with shared hosts file at `/srv/lxc-compose/etc/hosts`
+- **Template Inheritance**: Base template → Library includes → Local configuration (deep merge)
 
-## Development Commands
+## Essential Development Commands
 
-### Documentation Development
+### Quick Testing (No Installation Required)
 ```bash
-cd docs
-make dev        # Live-reload server on port 8000
-make build      # Build static site
-make test       # Test with strict mode
-make deploy     # Deploy to GitHub Pages
-```
-
-### CLI Testing Without Installation
-```bash
-# Basic operations
+# Container lifecycle
 python3 cli/lxc_compose.py up -f lxc-compose.yml
 python3 cli/lxc_compose.py down -f lxc-compose.yml
-python3 cli/lxc_compose.py list
 python3 cli/lxc_compose.py destroy -f lxc-compose.yml
+python3 cli/lxc_compose.py list
 
 # Container testing
-python3 cli/lxc_compose.py test                    # Test all
-python3 cli/lxc_compose.py test <container>        # Test specific
-python3 cli/lxc_compose.py test <container> list   # List tests
+python3 cli/lxc_compose.py test                    # Test all containers
+python3 cli/lxc_compose.py test <container>        # Test specific container
+python3 cli/lxc_compose.py test <container> list   # List available tests
 
-# Logs viewing
-python3 cli/lxc_compose.py logs <container>        # List logs
-python3 cli/lxc_compose.py logs <container> <log>  # View log
+# Debugging
+python3 cli/lxc_compose.py logs <container>        # List available logs
+python3 cli/lxc_compose.py logs <container> <log>  # View specific log
 python3 cli/lxc_compose.py logs <container> <log> --follow
+python3 cli/lxc_compose.py exec <container>        # Shell access
 
-# Shell access
-python3 cli/lxc_compose.py exec <container>
+# Status checking
+python3 cli/lxc_compose.py status                  # View all container statuses
+python3 cli/lxc_compose.py status <container>      # View specific container
 ```
 
 ### Library Service Testing
 ```bash
-# Test all 77 services
+# Test all 77 services (takes ~30 minutes)
 sudo ./bulk_test.sh
 
 # Test individual service
@@ -75,27 +68,44 @@ lxc-compose up -f library/alpine/3.19/postgresql/lxc-compose.yml
 lxc-compose test postgresql-alpine-3-19
 lxc-compose down -f library/alpine/3.19/postgresql/lxc-compose.yml
 
-# Quick server deployment test
+# Quick deployment test
 ./quick_server_test.sh
+```
+
+### Documentation Development
+```bash
+cd docs
+make dev        # Live-reload server on http://localhost:8000
+make build      # Build static site to site/
+make test       # Test with strict mode
+make deploy     # Deploy to GitHub Pages
+```
+
+### System Installation/Uninstallation
+```bash
+sudo ./install.sh       # Install to /usr/local/bin/lxc-compose
+sudo ./install.sh -u    # Uninstall
 ```
 
 ## Configuration Architecture
 
-### YAML Structure with Template Inheritance
+### YAML Structure
 ```yaml
 version: '1.0'
 containers:
   myapp:
-    template: alpine-3.19        # Fetched from GitHub: library/templates/alpine-3.19.yml
-    includes:                    # Services fetched from GitHub: library/services/alpine/3.19/{service}/
+    template: alpine-3.19        # Base OS template
+    includes:                    # Library services to include
       - postgresql
       - redis
     
-    exposed_ports: [8080]        # Additional ports
-    packages: [python3]          # Additional packages
+    exposed_ports: [8080]        # Ports accessible from host
+    packages: [python3]          # Additional packages to install
     
-    mounts:
+    mounts:                      # Volume mounts
       - ./app:/app
+    
+    environment_file: .env       # Environment variables file
     
     services:                    # Supervisor-managed services
       app:
@@ -112,158 +122,131 @@ containers:
         - api:/app/tests/external.sh
 ```
 
-### Template System (GitHub-Based)
+### Template System
 
-#### New Structure (v2.0+)
-- **Base Templates** (`library/templates/`): Fetched from GitHub
-  - Alpine 3.19 (minimal ~150MB)
-  - Ubuntu 22.04/24.04 LTS (full environment)
-  - Ubuntu-minimal 22.04/24.04 (balanced ~300MB)
-  - Debian 11/12 (stable base)
+#### GitHub Fetching (Primary)
+- Fetches from `https://raw.githubusercontent.com/unomena/lxc-compose/main/`
+- Configurable via environment variables:
+  - `LXC_COMPOSE_REPO`: Custom repository URL
+  - `LXC_COMPOSE_BRANCH`: Specific branch/tag
 
-- **Library Services** (`library/services/{os}/{version}/{service}/`): Fetched from GitHub
-  - 11 service types × 7 base images = 77 pre-configured services
-  - Databases: PostgreSQL, MySQL, MongoDB
-  - Caching: Redis, Memcached
-  - Web: Nginx, HAProxy
-  - Messaging: RabbitMQ
-  - Search: Elasticsearch
-  - Monitoring: Grafana, Prometheus
+#### Available Base Templates
+- `alpine-3.19` - Minimal ~150MB
+- `ubuntu-22.04`, `ubuntu-24.04` - Full environment ~400MB
+- `ubuntu-minimal-22.04`, `ubuntu-minimal-24.04` - Balanced ~300MB
+- `debian-11`, `debian-12` - Stable base ~400MB
 
-#### GitHub Fetching
-- Templates and services are fetched on-demand from GitHub
-- No local installation required for templates/services
-- Configurable repository and branch via environment variables
-- Falls back to local files if GitHub is unavailable
+#### Available Library Services (per OS)
+- Databases: `postgresql`, `mysql`, `mongodb`
+- Caching: `redis`, `memcached`
+- Web: `nginx`, `haproxy`
+- Messaging: `rabbitmq`
+- Search: `elasticsearch`
+- Monitoring: `grafana`, `prometheus`
+- Runtime: `python3`, `supervisor`
 
 ### Container Naming Convention
 - Library services: `{service}-{os}-{version}` (e.g., `postgresql-alpine-3-19`)
 - Custom containers: User-defined in YAML
-- Must be unique across the system to prevent conflicts
+- Must be globally unique to prevent conflicts
 
 ## Critical Implementation Details
 
-### LXCCompose Class Methods (cli/lxc_compose.py)
-Key methods that handle core functionality:
-- `load_config()`: Parses YAML with environment variable expansion
-- `setup_container_environment()`: Mounts hosts file, sets up networking
-- `manage_exposed_ports()`: Creates/removes iptables rules with proper cleanup
-- `setup_services()`: Generates supervisor configs with OS detection (Ubuntu vs Alpine)
-- `enable_supervisor_autostart()`: Configures init system for automatic supervisor startup
-- `setup_port_forwarding()`: Creates UPF rules with automatic cleanup of stale entries
-- `remove_port_forwarding()`: Enhanced cleanup matching multiple rule patterns
-- `run_post_install()`: Executes post-install commands in container
-- `run_tests()`: Executes internal/external/port_forwarding tests
+### LXCCompose Class (cli/lxc_compose.py)
 
-### Critical v2.1 Improvements
-1. **OS-Aware Supervisor Configuration** (Line 1072-1120)
-   - Detects OS using `which systemctl` to differentiate Ubuntu/Debian from Alpine
-   - Ubuntu/Debian: Places configs in `/etc/supervisor/conf.d/*.conf`
-   - Alpine: Places configs in `/etc/supervisor.d/*.ini`
-   - Wraps all service commands with `/usr/local/bin/load-env.sh` for environment inheritance
+#### Key Methods and Line References
+- `load_config()` (Line ~200): YAML parsing with env var expansion
+- `setup_container_environment()` (Line ~950): Mounts, networking setup
+- `manage_exposed_ports()` (Line ~450): iptables rule management
+- `setup_services()` (Line ~1072): OS-aware supervisor config generation
+- `enable_supervisor_autostart()` (Line ~1113): Init system configuration
+- `setup_port_forwarding()` (Line ~561): UPF rule creation with cleanup
+- `remove_port_forwarding()` (Line ~585): Enhanced rule cleanup
+- `run_post_install()` (Line ~1200): Post-install command execution
+- `run_tests()` (Line ~1400): Test execution framework
 
-2. **Environment Variable Inheritance** (Line 1089-1091)
-   - All service commands wrapped with load-env.sh script
-   - Script sources /app/.env before executing the actual command
-   - Ensures all services have access to environment variables
+#### v2.1 Production Resilience Features
+1. **OS Detection** (Line 1072-1120)
+   - Uses `which systemctl` to differentiate Ubuntu/Debian from Alpine
+   - Ubuntu/Debian: `/etc/supervisor/conf.d/*.conf`
+   - Alpine: `/etc/supervisor.d/*.ini`
 
-3. **Port Forwarding Resilience** (Line 561-571, 585-606)
-   - Always removes existing UPF rules before adding new ones
-   - Enhanced cleanup matches hostname, destination, and comment patterns
-   - Prevents stale rules after container destroy/recreate cycles
+2. **Environment Wrapper** (Line 1089-1091)
+   - All commands wrapped with `/usr/local/bin/load-env.sh`
+   - Sources `/app/.env` before execution
 
-4. **Service Auto-Start** (Line 1113-1136)
-   - Systemd detection for Ubuntu/Debian: `systemctl enable supervisor`
-   - OpenRC detection for Alpine: `rc-update add supervisord default`
-   - Ensures services recover automatically after container restart
+3. **Port Forwarding Recovery** (Line 561-606)
+   - Always removes existing rules before adding
+   - Matches hostname, destination, and comment patterns
 
-### GitHub Template Handler (cli/github_template_handler.py)
-- **Primary handler**: Fetches templates and services directly from GitHub
-- `load_template()`: Fetches from `library/templates/` on GitHub
-- `load_library_service()`: Fetches from `library/services/{os}/{version}/{service}/`
-- No caching - always fetches latest version
-- Configurable via environment variables:
-  - `LXC_COMPOSE_REPO`: Custom GitHub repository URL
-  - `LXC_COMPOSE_BRANCH`: Specific branch/tag to use
+4. **Auto-Start Services** (Line 1113-1136)
+   - Systemd: `systemctl enable supervisor`
+   - OpenRC: `rc-update add supervisord default`
 
-### Local Template Handler (cli/template_handler.py)
-- **Fallback handler**: Used when GitHub is unavailable
-- `load_template()`: Loads from `/srv/lxc-compose/library/templates/`
-- `load_library_service()`: Loads from `/srv/lxc-compose/library/services/`
-- `merge_configs()`: Deep merges template → includes → local config
-- Stores `__library_service_path__` metadata for test inheritance
+### State Management Files
+- `/srv/lxc-compose/etc/container-metadata.json` - Container IPs and ports
+- `/srv/lxc-compose/etc/hosts` - Shared DNS resolution
+- `/srv/lxc-compose/etc/port-mappings.json` - UPF port mappings
 
-### Network Management
-- **IP Assignment**: Static IPs from 10.0.3.0/24 subnet
-- **Port Forwarding**: iptables DNAT rules from host to container
-- **Security**: Default DROP policy with explicit ACCEPT for exposed ports
-- **DNS**: Shared hosts file mounted at `/etc/hosts` in all containers
+### Network Architecture
+- **Subnet**: 10.0.3.0/24 (configurable in code)
+- **IP Assignment**: Static, sequential from .2
+- **Port Forwarding**: iptables DNAT from host to container
+- **Security**: Default DROP with explicit ACCEPT for exposed ports
 
-### State Persistence
-- `/srv/lxc-compose/etc/container-metadata.json`: Stores container metadata (IPs, ports) for persistence across recreations
-- `/srv/lxc-compose/etc/hosts`: Shared hosts file for container DNS
-- `/srv/lxc-compose/etc/port-mappings.json`: Host-to-container port mappings for UPF integration
-- No other state files - everything else derived from LXC runtime
-
-## Testing Architecture
+## Testing Framework
 
 ### Test Types
-1. **Internal Tests**: Run inside container, check services/processes
-2. **External Tests**: Run from host, verify network accessibility  
-3. **Port Forwarding Tests**: Verify iptables rules and security
+1. **Internal**: Run inside container
+2. **External**: Run from host
+3. **Port Forwarding**: Verify iptables rules
 
 ### Test Inheritance
-When using library includes, tests are automatically inherited:
+Library includes automatically inherit their tests:
 ```yaml
 includes:
-  - postgresql  # Inherits postgresql CRUD test
+  - postgresql  # Inherits CRUD test
 tests:
   external:
-    - myapp:/tests/myapp.sh  # Additional custom test
+    - custom:/tests/mytest.sh  # Additional test
 ```
 
-### Bulk Testing Script
-`bulk_test.sh` tests all library services:
-- Creates control file with timestamps
-- Deploys each service sequentially
-- Runs all defined tests
-- Logs results to individual files
-- Generates summary report
+### Bulk Testing
+- `bulk_test.sh`: Sequential testing of all library services
+- Generates timestamped logs in test-results/
+- Creates summary report with pass/fail status
 
-## Security Considerations
+## Common Issues and Solutions
 
-### Port Security Model
-1. Default: All container ports blocked from external access
-2. `exposed_ports`: Creates iptables DNAT rules for access
-3. Container-to-container: Full access via internal network
-4. Host-to-container: Only through exposed ports
-
-### Privilege Requirements
-- Container operations require sudo/root
-- Wrapper script (`lxc-compose-wrapper.sh`) handles elevation
-- System-wide operations (--all flag) require confirmation
-
-## Common Troubleshooting
-
-### Container IP Issues
+### Container IP Conflicts
 ```bash
-# Check saved container metadata
+# Check metadata
 cat /srv/lxc-compose/etc/container-metadata.json
 
-# Reset container networking
-lxc-compose down -f config.yml
+# Full reset
 lxc-compose destroy -f config.yml
+rm /srv/lxc-compose/etc/container-metadata.json
 lxc-compose up -f config.yml
 ```
 
-### Port Forwarding Not Working
+### Port Forwarding Issues
 ```bash
-# Check iptables rules
+# Check iptables
 sudo iptables -t nat -L PREROUTING -n | grep DNAT
-sudo iptables -L FORWARD -n
+sudo iptables -L FORWARD -n | grep <container_ip>
 
-# Manually test port
+# Manual test
 nc -zv localhost <port>
+```
+
+### Service Not Starting
+```bash
+# Check supervisor status
+lxc-compose exec <container>
+supervisorctl status
+
+# Check logs
+cat /var/log/supervisor/supervisord.log
 ```
 
 ### Test Failures
@@ -272,30 +255,41 @@ nc -zv localhost <port>
 lxc-compose test <container> internal
 lxc-compose test <container> external
 
-# Check container logs
-lxc-compose logs <container>
-lxc-compose exec <container>  # Debug interactively
+# Debug interactively
+lxc-compose exec <container>
 ```
 
 ## Performance Characteristics
 
 ### Resource Usage
-- Alpine containers: ~150MB RAM, minimal CPU
-- Ubuntu-minimal: ~300MB RAM
-- Full Ubuntu/Debian: ~400-500MB RAM
-- Shared kernel = dynamic resource allocation (unlike Docker's pre-allocation)
+- Alpine: ~150MB RAM per container
+- Ubuntu-minimal: ~300MB RAM per container
+- Full Ubuntu/Debian: ~400-500MB RAM per container
+- Dynamic CPU allocation (shared kernel advantage)
 
-### Startup Times
-- Container creation: 5-10 seconds (first time)
-- Container start: 1-2 seconds (subsequent)
-- Service startup: Depends on post_install complexity
-- No parallel container startup (sequential for dependency order)
+### Timing
+- First container creation: 5-10 seconds
+- Subsequent starts: 1-2 seconds
+- Service startup: Varies by post_install complexity
+- Container operations: Sequential (dependency ordering)
 
-## Limitations and Constraints
+## Architectural Constraints
 
-1. **No Dockerfile Equivalent**: Use post_install commands instead
-2. **No Private Registry**: Templates and library services are from GitHub or local
-3. **Single Host Only**: No multi-host orchestration
+1. **No Dockerfile Support**: Use post_install commands
+2. **No Private Registry**: GitHub or local templates only
+3. **Single Host**: No multi-host orchestration
 4. **No Auto-scaling**: Manual container management
-5. **Limited Health Checks**: Test-based, not continuous monitoring
-6. **Sequential Startup**: No parallel container creation
+5. **Limited Health Checks**: Test-based, not continuous
+6. **Sequential Operations**: No parallel container creation
+7. **Root Required**: Most operations need sudo/root access
+
+## Sample Projects Location
+
+Full examples available in `samples/` directory:
+- `django-celery-app/` - Multi-service Django with Celery, Redis, PostgreSQL
+- `flask-app/` - Flask with Redis backend
+- `nodejs-app/` - Node.js application
+- `searxng/` - Privacy-focused search engine
+- `docs-server/` - MkDocs documentation server
+
+Each sample includes complete configuration, tests, and README.
