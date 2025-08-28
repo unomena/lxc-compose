@@ -1,0 +1,9 @@
+version: '1.0'
+containers:
+  python3-uminimal2404-test:
+    template: ubuntu-minimal-24.04
+    includes:
+      - python3
+    tests:
+      internal:
+        - python3-check:library/services/ubuntu-minimal/24.04/python3/tests/python3.sh

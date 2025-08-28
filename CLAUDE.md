@@ -152,7 +152,7 @@ Key methods that handle core functionality:
 - `enable_supervisor_autostart()`: Configures init system for automatic supervisor startup
 - `setup_port_forwarding()`: Creates UPF rules with automatic cleanup of stale entries
 - `remove_port_forwarding()`: Enhanced cleanup matching multiple rule patterns
-- `handle_post_install()`: Executes post-install commands in container
+- `run_post_install()`: Executes post-install commands in container
 - `run_tests()`: Executes internal/external/port_forwarding tests
 
 ### Critical v2.1 Improvements
@@ -294,7 +294,7 @@ lxc-compose exec <container>  # Debug interactively
 ## Limitations and Constraints
 
 1. **No Dockerfile Equivalent**: Use post_install commands instead
-2. **No Private Registry**: Templates and library services are local
+2. **No Private Registry**: Templates and library services are from GitHub or local
 3. **Single Host Only**: No multi-host orchestration
 4. **No Auto-scaling**: Manual container management
 5. **Limited Health Checks**: Test-based, not continuous monitoring

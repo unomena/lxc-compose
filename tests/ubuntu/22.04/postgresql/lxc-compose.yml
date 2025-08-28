@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  postgresql-ubuntu2204-test:
+    template: ubuntu-22.04
+    includes:
+      - postgresql
+    exposed_ports: [5432]
+    tests:
+      internal:
+        - postgresql-check:library/services/ubuntu/22.04/postgresql/tests/postgresql.sh

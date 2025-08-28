@@ -1,0 +1,9 @@
+version: '1.0'
+containers:
+  python3-debian11-test:
+    template: debian-11
+    includes:
+      - python3
+    tests:
+      internal:
+        - python3-check:library/services/debian/11/python3/tests/python3.sh

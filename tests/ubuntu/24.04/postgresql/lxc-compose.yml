@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  postgresql-ubuntu2404-test:
+    template: ubuntu-24.04
+    includes:
+      - postgresql
+    exposed_ports: [5432]
+    tests:
+      internal:
+        - postgresql-check:library/services/ubuntu/24.04/postgresql/tests/postgresql.sh

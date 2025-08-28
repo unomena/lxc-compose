@@ -1,0 +1,16 @@
+version: '1.0'
+containers:
+  all-services-uminimal2204-test:
+    template: ubuntu-minimal-22.04
+    includes:
+      - haproxy
+      - nginx
+      - postgresql
+      - python3
+      - redis
+      - supervisor
+    exposed_ports: [80, 443, 5432, 6379, 8080, 8404]
+    post_install:
+      - echo "All ubuntu-minimal-22.04 services installed"
+    tests:
+      internal:

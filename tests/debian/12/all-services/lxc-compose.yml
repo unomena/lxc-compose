@@ -1,0 +1,16 @@
+version: '1.0'
+containers:
+  all-services-debian12-test:
+    template: debian-12
+    includes:
+      - haproxy
+      - nginx
+      - postgresql
+      - python3
+      - redis
+      - supervisor
+    exposed_ports: [80, 443, 5432, 6379, 8080, 8404]
+    post_install:
+      - echo "All debian-12 services installed"
+    tests:
+      internal:

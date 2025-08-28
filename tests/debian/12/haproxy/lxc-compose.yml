@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  haproxy-debian12-test:
+    template: debian-12
+    includes:
+      - haproxy
+    exposed_ports: [80, 443, 8404]
+    tests:
+      internal:
+        - haproxy-check:library/services/debian/12/haproxy/tests/haproxy.sh

@@ -1,0 +1,22 @@
+version: '1.0'
+containers:
+  all-services-alpine-test:
+    template: alpine-3.19
+    includes:
+      - haproxy
+      - nginx
+      - postgresql
+      - python3
+      - redis
+      - supervisor
+    exposed_ports: [80, 443, 5432, 6379, 8080, 8404]
+    post_install:
+      - echo "All Alpine services installed"
+    tests:
+      internal:
+        - haproxy-check:library/services/alpine/3.19/haproxy/tests/test.sh
+        - nginx-check:library/services/alpine/3.19/nginx/tests/test.sh
+        - postgresql-check:library/services/alpine/3.19/postgresql/tests/test.sh
+        - python3-check:library/services/alpine/3.19/python3/tests/python3.sh
+        - redis-check:library/services/alpine/3.19/redis/tests/test.sh
+        - supervisor-check:library/services/alpine/3.19/supervisor/tests/supervisor.sh

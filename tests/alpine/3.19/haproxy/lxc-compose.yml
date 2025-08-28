@@ -1,0 +1,12 @@
+version: '1.0'
+containers:
+  haproxy-alpine-test:
+    template: alpine-3.19
+    includes:
+      - haproxy
+    exposed_ports: [80, 443, 8404]
+    tests:
+      internal:
+        - haproxy-check:library/services/alpine/3.19/haproxy/tests/test.sh
+      external:
+        - haproxy-external:library/services/alpine/3.19/haproxy/tests/haproxy.sh

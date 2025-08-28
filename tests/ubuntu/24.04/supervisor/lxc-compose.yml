@@ -1,0 +1,9 @@
+version: '1.0'
+containers:
+  supervisor-ubuntu2404-test:
+    template: ubuntu-24.04
+    includes:
+      - supervisor
+    tests:
+      internal:
+        - supervisor-check:library/services/ubuntu/24.04/supervisor/tests/supervisor.sh

@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  nginx-uminimal2204-test:
+    template: ubuntu-minimal-22.04
+    includes:
+      - nginx
+    exposed_ports: [80, 443]
+    tests:
+      internal:
+        - nginx-check:library/services/ubuntu-minimal/22.04/nginx/tests/nginx.sh
