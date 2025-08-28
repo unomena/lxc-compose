@@ -390,7 +390,7 @@ copy_sample_projects() {
     info "Creating symbolic link to samples for easy access..."
     
     # Get the real user's home directory (not root)
-    if [ -n "$SUDO_USER" ]; then
+    if [ -n "${SUDO_USER:-}" ]; then
         USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
         USER_NAME="$SUDO_USER"
     else
