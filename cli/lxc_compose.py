@@ -15,22 +15,30 @@ import re
 from typing import Dict, Any, Optional, List
 
 # Import template handler - prefer GitHub handler, fallback to local
+# Can be forced to use local with LXC_COMPOSE_USE_LOCAL=true
 USING_GITHUB_HANDLER = False
-try:
-    from github_template_handler import GitHubTemplateHandler as TemplateHandler
-    USING_GITHUB_HANDLER = True
-except ImportError:
+USE_LOCAL = os.environ.get('LXC_COMPOSE_USE_LOCAL', '').lower() in ['true', '1', 'yes']
+
+if USE_LOCAL:
+    # Force local template handler
+    from template_handler import TemplateHandler
+else:
+    # Default behavior - try GitHub first, fallback to local
     try:
-        from template_handler import TemplateHandler
+        from github_template_handler import GitHubTemplateHandler as TemplateHandler
+        USING_GITHUB_HANDLER = True
     except ImportError:
-        # Fallback if module not in path
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         try:
-            from github_template_handler import GitHubTemplateHandler as TemplateHandler
-            USING_GITHUB_HANDLER = True
-        except ImportError:
             from template_handler import TemplateHandler
+        except ImportError:
+            # Fallback if module not in path
+            import sys
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            try:
+                from github_template_handler import GitHubTemplateHandler as TemplateHandler
+                USING_GITHUB_HANDLER = True
+            except ImportError:
+                from template_handler import TemplateHandler
 
 # Terminal colors
 RED = '\033[0;31m'
@@ -128,6 +136,8 @@ class LXCCompose:
                 click.echo(f"{GREEN}Using GitHub templates from {repo_url} ({branch}){NC}")
         else:
             self.template_handler = TemplateHandler()
+            if not all_containers and USE_LOCAL:
+                click.echo(f"{GREEN}Using local templates (LXC_COMPOSE_USE_LOCAL=true){NC}")
         
         if not all_containers:
             if not config_file or not os.path.exists(config_file):
@@ -962,6 +972,10 @@ class LXCCompose:
         if 'mounts' in container:
             self.setup_mounts(name, container['mounts'])
         
+        # Mount test files from library services if present
+        if '__library_service_path__' in container and 'tests' in container:
+            self.mount_library_tests(name, container)
+        
         # Install packages
         if 'packages' in container:
             self.install_packages(name, container['packages'])
@@ -974,6 +988,30 @@ class LXCCompose:
         if 'post_install' in container:
             self.run_post_install(name, container['post_install'])
             
+    def mount_library_tests(self, name: str, container: Dict):
+        """Mount test files from library services into the container"""
+        library_path = container.get('__library_service_path__')
+        if not library_path:
+            return
+            
+        tests_config = container.get('tests', {})
+        
+        # Check if test directory exists in the library service
+        test_dir = os.path.join(library_path, 'tests')
+        if os.path.exists(test_dir):
+            # Mount the test directory into the container
+            click.echo(f"  Mounting library tests from {test_dir}...")
+            
+            # Check if device already exists
+            result = self.run_command(['lxc', 'config', 'device', 'show', name], check=False)
+            existing_devices = result.stdout if result.returncode == 0 else ""
+            
+            if 'library-tests:' not in existing_devices:
+                # Mount the library tests directory to /tests in the container
+                self.run_command(['lxc', 'config', 'device', 'add', name, 'library-tests',
+                                'disk', f'source={test_dir}', 'path=/tests', 'shift=true'])
+                click.echo(f"    Mounted library tests -> /tests")
+    
     def setup_mounts(self, name: str, mounts: List):
         """Setup container mounts"""
         click.echo(f"  Setting up mounts...")

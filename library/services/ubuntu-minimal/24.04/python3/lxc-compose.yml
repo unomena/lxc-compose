@@ -1,5 +1,5 @@
-# Python 3 Development Environment for ubuntu-minimal-24.04
-# Complete Python 3 setup with pip, venv, and build tools
+# Python 3 Virtual Environment Service
+# Sets up Python 3 in a virtual environment at /opt/venv that acts as the system Python
 # Usage: Include this service for Python applications
 
 version: '1.0'
@@ -36,33 +36,41 @@ containers:
       PIP_NO_CACHE_DIR: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       DEBIAN_FRONTEND: "noninteractive"
+      # Add virtual environment to PATH
+      PATH: "/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      VIRTUAL_ENV: "/opt/venv"
     
     post_install:
-      - name: "Setup Python environment"
+      - name: "Setup Python virtual environment"
         command: |
           # Update package index
           apt-get update
           
-          # Create symlinks for consistency
-          ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
+          # Create virtual environment at /opt/venv
+          python3 -m venv /opt/venv
           
-          # Upgrade pip to latest version
-          python3 -m pip install --upgrade pip setuptools wheel
+          # Activate the virtual environment and upgrade pip
+          /opt/venv/bin/python -m pip install --upgrade pip setuptools wheel
           
-          # Install essential Python tools
-          python3 -m pip install --upgrade \
-            virtualenv \
-            black \
-            pytest \
-            requests \
-            python-dotenv
+          # Create symlinks to make venv Python the default
+          ln -sf /opt/venv/bin/python /usr/local/bin/python
+          ln -sf /opt/venv/bin/python3 /usr/local/bin/python3
+          ln -sf /opt/venv/bin/pip /usr/local/bin/pip
+          ln -sf /opt/venv/bin/pip3 /usr/local/bin/pip3
           
-          # Create standard directories for Python apps
-          mkdir -p /app /var/log/python
+          # Update profile to activate venv on login
+          cat >> /etc/profile.d/python-venv.sh << 'EOF'
+          # Automatically use the Python virtual environment
+          export PATH="/opt/venv/bin:$PATH"
+          export VIRTUAL_ENV="/opt/venv"
+          EOF
           
-          echo "Python 3 environment ready!"
-          python3 --version
-          pip3 --version
+          # Create standard directory for applications
+          mkdir -p /app
+          
+          echo "Python 3 virtual environment ready!"
+          /opt/venv/bin/python --version
+          /opt/venv/bin/pip --version
     
     tests:
       internal:
