@@ -1,0 +1,9 @@
+version: '1.0'
+containers:
+  supervisor-alpine-test:
+    template: alpine-3.19
+    includes:
+      - supervisor
+    tests:
+      internal:
+        - supervisor-check:library/services/alpine/3.19/supervisor/tests/supervisor.sh

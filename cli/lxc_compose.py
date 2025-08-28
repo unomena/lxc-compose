@@ -1023,7 +1023,7 @@ class LXCCompose:
             click.echo(f"    Mounted {source} -> {target}")
     
     def install_packages(self, name: str, packages: List[str]):
-        """Install packages in container"""
+        """Install packages in container with retry logic"""
         if not packages:
             return
             
@@ -1033,14 +1033,67 @@ class LXCCompose:
         result = self.run_command(['lxc', 'exec', name, '--', 'which', 'apt-get'], check=False)
         if result.returncode == 0:
             # Ubuntu/Debian
-            self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'update'])
-            self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'install', '-y'] + packages)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'update'])
+                    self.run_command(['lxc', 'exec', name, '--', 'apt-get', 'install', '-y'] + packages)
+                    break
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
+                        click.echo(f"    Package installation failed, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                    else:
+                        raise
         else:
             # Try Alpine
             result = self.run_command(['lxc', 'exec', name, '--', 'which', 'apk'], check=False)
             if result.returncode == 0:
-                self.run_command(['lxc', 'exec', name, '--', 'apk', 'update'])
-                self.run_command(['lxc', 'exec', name, '--', 'apk', 'add'] + packages)
+                max_retries = 5  # Alpine needs more retries due to CDN issues
+                for attempt in range(max_retries):
+                    try:
+                        # Try to update package index with timeout
+                        update_result = self.run_command(
+                            ['lxc', 'exec', name, '--', 'sh', '-c', 
+                             'timeout 30 apk update || (sleep 2 && timeout 30 apk update)'],
+                            check=False
+                        )
+                        
+                        if update_result.returncode != 0:
+                            # Try alternative mirror
+                            click.echo(f"    Trying alternative Alpine mirror...")
+                            # Get Alpine version dynamically
+                            version_result = self.run_command(
+                                ['lxc', 'exec', name, '--', 'cat', '/etc/alpine-release'],
+                                check=False
+                            )
+                            alpine_version = "v3.19"  # Default
+                            if version_result.returncode == 0 and version_result.stdout:
+                                # Extract major.minor version (e.g., 3.19.0 -> v3.19)
+                                parts = version_result.stdout.strip().split('.')
+                                if len(parts) >= 2:
+                                    alpine_version = f"v{parts[0]}.{parts[1]}"
+                            
+                            self.run_command(
+                                ['lxc', 'exec', name, '--', 'sh', '-c',
+                                 f'echo "https://alpine.global.ssl.fastly.net/alpine/{alpine_version}/main" > /etc/apk/repositories && ' +
+                                 f'echo "https://alpine.global.ssl.fastly.net/alpine/{alpine_version}/community" >> /etc/apk/repositories'],
+                                check=False
+                            )
+                            self.run_command(['lxc', 'exec', name, '--', 'apk', 'update'])
+                        
+                        # Install packages
+                        self.run_command(['lxc', 'exec', name, '--', 'apk', 'add'] + packages)
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4, 8, 16 seconds
+                            click.echo(f"    Package installation failed, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(wait_time)
+                        else:
+                            click.echo(f"    {YELLOW}Warning: Package installation failed after {max_retries} attempts{NC}")
+                            raise
     
     def run_post_install(self, name: str, commands: List):
         """Run post-installation commands with environment variables"""

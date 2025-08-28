@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  redis-ubuntu2404-test:
+    template: ubuntu-24.04
+    includes:
+      - redis
+    exposed_ports: [6379]
+    tests:
+      internal:
+        - redis-check:library/services/ubuntu/24.04/redis/tests/redis.sh

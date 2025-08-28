@@ -1,0 +1,9 @@
+version: '1.0'
+containers:
+  supervisor-debian12-test:
+    template: debian-12
+    includes:
+      - supervisor
+    tests:
+      internal:
+        - supervisor-check:library/services/debian/12/supervisor/tests/supervisor.sh

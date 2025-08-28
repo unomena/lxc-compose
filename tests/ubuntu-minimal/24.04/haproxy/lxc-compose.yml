@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  haproxy-uminimal2404-test:
+    template: ubuntu-minimal-24.04
+    includes:
+      - haproxy
+    exposed_ports: [80, 443, 8404]
+    tests:
+      internal:
+        - haproxy-check:library/services/ubuntu-minimal/24.04/haproxy/tests/haproxy.sh

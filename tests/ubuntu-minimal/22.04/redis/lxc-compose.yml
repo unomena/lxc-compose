@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  redis-uminimal2204-test:
+    template: ubuntu-minimal-22.04
+    includes:
+      - redis
+    exposed_ports: [6379]
+    tests:
+      internal:
+        - redis-check:library/services/ubuntu-minimal/22.04/redis/tests/redis.sh

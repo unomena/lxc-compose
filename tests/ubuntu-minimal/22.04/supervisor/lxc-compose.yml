@@ -1,0 +1,9 @@
+version: '1.0'
+containers:
+  supervisor-uminimal2204-test:
+    template: ubuntu-minimal-22.04
+    includes:
+      - supervisor
+    tests:
+      internal:
+        - supervisor-check:library/services/ubuntu-minimal/22.04/supervisor/tests/supervisor.sh

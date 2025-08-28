@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  postgresql-debian12-test:
+    template: debian-12
+    includes:
+      - postgresql
+    exposed_ports: [5432]
+    tests:
+      internal:
+        - postgresql-check:library/services/debian/12/postgresql/tests/postgresql.sh

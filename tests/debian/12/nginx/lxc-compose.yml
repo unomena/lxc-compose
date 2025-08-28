@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  nginx-debian12-test:
+    template: debian-12
+    includes:
+      - nginx
+    exposed_ports: [80, 443]
+    tests:
+      internal:
+        - nginx-check:library/services/debian/12/nginx/tests/nginx.sh

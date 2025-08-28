@@ -1,0 +1,12 @@
+version: '1.0'
+containers:
+  nginx-alpine-test:
+    template: alpine-3.19
+    includes:
+      - nginx
+    exposed_ports: [80, 443]
+    tests:
+      internal:
+        - nginx-check:library/services/alpine/3.19/nginx/tests/test.sh
+      external:
+        - nginx-external:library/services/alpine/3.19/nginx/tests/nginx.sh

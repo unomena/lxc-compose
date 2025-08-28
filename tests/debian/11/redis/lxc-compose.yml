@@ -1,0 +1,10 @@
+version: '1.0'
+containers:
+  redis-debian11-test:
+    template: debian-11
+    includes:
+      - redis
+    exposed_ports: [6379]
+    tests:
+      internal:
+        - redis-check:library/services/debian/11/redis/tests/test.sh
