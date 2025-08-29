@@ -1111,25 +1111,33 @@ class LXCCompose:
                         check=False
                     )
                     
-                    if update_result.returncode == 0:
-                        # Install packages
-                        self.run_command(
-                            ['lxc', 'exec', name, '--', 'sh', '-c',
-                             f'DEBIAN_FRONTEND=noninteractive apt-get install -y {" ".join(packages)}']
-                        )
+                    if update_result.returncode != 0:
+                        raise Exception(f"apt-get update failed with code {update_result.returncode}")
+                    
+                    # Install packages
+                    install_result = self.run_command(
+                        ['lxc', 'exec', name, '--', 'sh', '-c',
+                         f'DEBIAN_FRONTEND=noninteractive timeout 120 apt-get install -y {" ".join(packages)}'],
+                        check=False
+                    )
+                    
+                    if install_result.returncode == 0:
+                        click.echo(f"    {GREEN}Successfully installed packages{NC}")
                         return  # Success!
+                    else:
+                        raise Exception(f"Package installation failed")
                     
                 except Exception as e:
                     if attempt < max_retries - 1:
                         wait_time = min(2 ** attempt, max_backoff)  # Cap at max_backoff
-                        click.echo(f"    Package operation failed, retrying in {wait_time}s... (attempt {attempt + 2}/{max_retries})")
+                        click.echo(f"    Package operation failed, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
                         time.sleep(wait_time)
                     elif mirror_idx < len(mirrors) - 1:
-                        # Try next mirror
-                        break
+                        click.echo(f"    All retries failed for this mirror, trying next...")
+                        break  # Try next mirror
                     else:
-                        click.echo(f"    {RED}Error: Package installation failed after all retries{NC}")
-                        raise
+                        click.echo(f"    {YELLOW}Warning: Package installation failed after all attempts{NC}")
+                        # Don't raise, just warn
     
     def _install_packages_alpine(self, name: str, packages: List[str]):
         """Install packages on Alpine with retry logic and mirror rotation"""
@@ -1148,15 +1156,17 @@ class LXCCompose:
                 alpine_version = f"v{parts[0]}.{parts[1]}"
         
         # List of Alpine mirrors to try (ordered by reliability)
+        # Try HTTP first as some environments have HTTPS issues
         mirrors = [
             None,  # Use current mirror first
+            f"http://dl-cdn.alpinelinux.org/alpine/{alpine_version}",
+            f"http://uk.alpinelinux.org/alpine/{alpine_version}",
+            f"http://dl-4.alpinelinux.org/alpine/{alpine_version}",
+            f"http://dl-5.alpinelinux.org/alpine/{alpine_version}",
             f"https://dl-cdn.alpinelinux.org/alpine/{alpine_version}",
             f"https://uk.alpinelinux.org/alpine/{alpine_version}",
-            f"https://dl-4.alpinelinux.org/alpine/{alpine_version}",
-            f"https://dl-5.alpinelinux.org/alpine/{alpine_version}",
             f"https://mirror.leaseweb.com/alpine/{alpine_version}",
             f"https://mirrors.edge.kernel.org/alpine/{alpine_version}",
-            f"https://alpine.global.ssl.fastly.net/alpine/{alpine_version}",
         ]
         
         for mirror_idx, mirror in enumerate(mirrors):
@@ -1184,30 +1194,39 @@ class LXCCompose:
                         output = update_result.stdout + update_result.stderr
                         if "timeout" in output.lower() or "timed out" in output.lower():
                             click.echo(f"    Mirror timeout detected")
-                            if mirror_idx < len(mirrors) - 1:
-                                break  # Try next mirror
+                            if mirror_idx < len(mirrors) - 1 and attempt == max_retries - 1:
+                                break  # Try next mirror only after all retries
+                            raise Exception("Mirror timeout")
                         elif "temporary failure" in output.lower() or "could not resolve" in output.lower():
                             click.echo(f"    DNS resolution issue detected")
                             # Wait a bit for DNS to recover
                             time.sleep(2)
+                            raise Exception("DNS resolution failure")
+                        else:
+                            raise Exception(f"apk update failed: {output[:200]}")
                     
-                    if update_result.returncode == 0:
-                        # Install packages with timeout
-                        install_cmd = f'timeout 120 apk add --no-cache {" ".join(packages)}'
-                        self.run_command(['lxc', 'exec', name, '--', 'sh', '-c', install_cmd])
+                    # If update succeeded, install packages
+                    install_cmd = f'timeout 120 apk add --no-cache {" ".join(packages)}'
+                    install_result = self.run_command(
+                        ['lxc', 'exec', name, '--', 'sh', '-c', install_cmd],
+                        check=False
+                    )
+                    
+                    if install_result.returncode == 0:
                         click.echo(f"    {GREEN}Successfully installed packages{NC}")
                         return  # Success!
+                    else:
+                        raise Exception(f"Package installation failed")
                     
                 except Exception as e:
                     error_msg = str(e)
-                    
-                if attempt < max_retries - 1:
-                    wait_time = min(2 ** attempt, max_backoff)
-                    click.echo(f"    Retry {attempt + 1}/{max_retries} failed, waiting {wait_time}s...")
-                    time.sleep(wait_time)
-                elif mirror_idx < len(mirrors) - 1:
-                    click.echo(f"    All retries failed for this mirror, trying next...")
-                    break  # Try next mirror
+                    if attempt < max_retries - 1:
+                        wait_time = min(2 ** attempt, max_backoff)
+                        click.echo(f"    Retry {attempt + 1}/{max_retries} failed, waiting {wait_time}s...")
+                        time.sleep(wait_time)
+                    elif mirror_idx < len(mirrors) - 1:
+                        click.echo(f"    All retries failed for this mirror, trying next...")
+                        break  # Try next mirror
         
         # If we get here, all mirrors and retries failed
         click.echo(f"    {YELLOW}Warning: Could not install packages after trying {len([m for m in mirrors if m])} mirrors{NC}")
